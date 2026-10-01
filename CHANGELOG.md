@@ -4,6 +4,9 @@ All notable changes to Claude HUD will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- A folder name containing ` │ ` no longer leaves the project link open over the rest of the HUD when line 1 wraps.
+
 ## [0.10.0] - 2026-10-01
 
 This release is a rewrite for simplicity, with the same options in about half the source and a quarter of the test code. It needs Claude Code v2.1.260 or later.
