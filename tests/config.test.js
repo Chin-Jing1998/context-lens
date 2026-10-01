@@ -1346,6 +1346,23 @@ test('mergeConfig rejects non-boolean showModelScopedUsage', () => {
   assert.equal(mergeConfig({ display: { showModelScopedUsage: 'no' } }).display.showModelScopedUsage, true);
 });
 
+test('mergeConfig defaults usagePace to false', () => {
+  const config = mergeConfig({});
+  assert.equal(config.display.usagePace, false);
+  assert.equal(DEFAULT_CONFIG.display.usagePace, false);
+});
+
+test('mergeConfig preserves explicit usagePace=true', () => {
+  const config = mergeConfig({ display: { usagePace: true } });
+  assert.equal(config.display.usagePace, true);
+});
+
+test('mergeConfig rejects non-boolean usagePace', () => {
+  // A truthy probe is the load-bearing one against a `false` default.
+  assert.equal(mergeConfig({ display: { usagePace: 1 } }).display.usagePace, false);
+  assert.equal(mergeConfig({ display: { usagePace: 'yes' } }).display.usagePace, false);
+});
+
 test('mergeConfig preserves explicit showAdvisor=true', () => {
   const config = mergeConfig({ display: { showAdvisor: true } });
   assert.equal(config.display.showAdvisor, true);

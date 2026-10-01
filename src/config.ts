@@ -218,6 +218,9 @@ export interface HudConfig {
     // Show the per-model weekly windows (`rate_limits.model_scoped`, e.g. Fable)
     // next to the 5h/7d windows. Set to false to keep only 5h/7d. Default on.
     showModelScopedUsage: boolean;
+    // Colour usage windows by consumption pace (projected usage at reset) and
+    // mark amber/red pace with ▲. Default off.
+    usagePace: boolean;
     showTools: boolean;
     showSkills: boolean;
     showMcp: boolean;
@@ -345,6 +348,7 @@ export const DEFAULT_CONFIG: HudConfig = {
     showResetLabel: true,
     usageCompact: false,
     showModelScopedUsage: true,
+    usagePace: false,
     showTools: false,
     showSkills: false,
     showMcp: false,
@@ -855,6 +859,9 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
     showModelScopedUsage: typeof migrated.display?.showModelScopedUsage === 'boolean'
       ? migrated.display.showModelScopedUsage
       : DEFAULT_CONFIG.display.showModelScopedUsage,
+    usagePace: typeof migrated.display?.usagePace === 'boolean'
+      ? migrated.display.usagePace
+      : DEFAULT_CONFIG.display.usagePace,
     showTools: typeof migrated.display?.showTools === 'boolean'
       ? migrated.display.showTools
       : DEFAULT_CONFIG.display.showTools,

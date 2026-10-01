@@ -5,6 +5,7 @@ All notable changes to Claude HUD will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- `display.usagePace` option to colour usage windows amber or red, marked `▲`, when they are on track to run out before they reset (#779).
 - `display.skillsMaxVisible` option to control how many skill names the skills line shows before `+N more`; `0` means unlimited, default stays 4 (#739).
 - `display.showWeeklyCost` option to show spend since the weekly quota window opened (`Week $123.45`), from the same ledger as `showDailyCost`; subscribers only (#762).
 - `display.showDailyCost` option to show today's cumulative spend across sessions (`Today $12.34`), accumulated from the native stdin `cost.total_cost_usd` into a per-day ledger that resets at local midnight (#695).
