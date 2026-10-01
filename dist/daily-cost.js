@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { getHudPluginDir } from './claude-config-dir.js';
 import { getNativeCostUsd } from './cost.js';
 import { createDebug } from './debug.js';
+import { SEVEN_DAY_WINDOW_MS } from './usage-pace.js';
 const debug = createDebug('daily-cost');
 const LEDGER_FILENAME = 'daily-cost.json';
 /**
@@ -16,8 +17,6 @@ const LEDGER_FILENAME = 'daily-cost.json';
 export const DAILY_COST_WRITE_THROTTLE_MS = 30_000;
 /** Sessions unseen for longer than this are dropped so the ledger stays bounded. */
 const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-/** Length of the weekly quota window the cost accumulator is aligned to. */
-const SEVEN_DAY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const defaultDeps = {
     homeDir: () => os.homedir(),
     now: () => Date.now(),

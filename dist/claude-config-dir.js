@@ -15,11 +15,7 @@ export function getClaudeConfigDir(homeDir) {
     }
     return path.resolve(expandHomeDirPrefix(envConfigDir, homeDir));
 }
-/**
- * Path of Claude Code's top-level config file (oauthAccount, mcpServers, …).
- *
- * With CLAUDE_CONFIG_DIR set, Claude Code keeps it INSIDE that directory as `.claude.json`. With the default config directory it instead lives BESIDE it as `~/.claude.json`, not inside `~/.claude/`.
- */
+// Claude Code keeps .claude.json inside CLAUDE_CONFIG_DIR when it is set, otherwise in the home directory.
 export function getClaudeConfigJsonPath(homeDir) {
     const envConfigDir = process.env.CLAUDE_CONFIG_DIR?.trim();
     if (!envConfigDir) {
