@@ -234,6 +234,7 @@ Claude Code → stdin JSON → claude-hud → stdout → 在终端中显示
 | `display.showMemoryUsage` | boolean | false | 在展开布局中显示近似系统 RAM 使用行 |
 | `display.showPromptCache` | boolean | false | 显示 prompt cache 的过期时刻，数据来自 transcript |
 | `display.promptCacheTtlSeconds` | number | `300` | 仅当 transcript 尚未报告 5 分钟或 1 小时缓存层级时使用的兼容回退值 |
+| `display.showCacheHitRate` | boolean | false | 以 `Cache hit X%` 形式显示整个会话的 prompt cache 命中率，数据来自 transcript 累积值 |
 | `colors.context` | 颜色值 | `green` | 上下文进度条和百分比的基础颜色 |
 | `colors.usage` | 颜色值 | `brightBlue` | 使用率进度条和低于警告阈值时百分比的颜色 |
 | `colors.warning` | 颜色值 | `yellow` | 上下文阈值和使用率警告文本的警告颜色 |
@@ -267,6 +268,8 @@ ClaudeHUD 会尽可能从 transcript 检测缓存层级。对于不提供层级�
 - **TTL 是检测出来的。** 每次缓存写入都会记录所用的层级（`usage.cache_creation.ephemeral_5m_input_tokens` 与 `ephemeral_1h_input_tokens`），因此 1 小时的会话按 1 小时计时，中途更换层级的会话也会被跟随。检测值优先于配置的回退值。
 - **计时从请求开始**，而不是从它产生的响应开始，因为缓存是在请求时被读取或写入的。若以响应为基准，会把生成该响应所用的时间也算作可用时间。
 - **忽略 subagent 响应。** subagent 使用自己的缓存，不会刷新主会话的缓存。
+
+`display.showCacheHitRate` 为 opt-in 选项，显示本会话的缓存命中率，例如 `Cache hit 98.3%`：缓存读取占全部输入 token（非缓存输入、缓存读取和缓存写入）的比例，数据来自 transcript 累积值。
 
 ### 使用率限制
 

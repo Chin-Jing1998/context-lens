@@ -249,6 +249,7 @@ Simplified and Traditional Chinese HUD labels are available as explicit opt-ins.
 | `display.showMemoryUsage` | boolean | false | Show an approximate system RAM usage line in expanded layout |
 | `display.showPromptCache` | boolean | false | Show the wall-clock time the session's prompt cache expires, read from the transcript |
 | `display.promptCacheTtlSeconds` | number | `300` | Compatibility fallback used only when the transcript has not reported a 5-minute or 1-hour cache tier |
+| `display.showCacheHitRate` | boolean | false | Show the session-wide prompt-cache hit rate as `Cache hit X%`, computed from cumulative transcript totals |
 | `colors.context` | color value | `green` | Base color for the context bar and context percentage |
 | `colors.usage` | color value | `brightBlue` | Base color for usage bars and percentages below warning thresholds |
 | `colors.warning` | color value | `yellow` | Warning color for context thresholds and usage warning text |
@@ -286,6 +287,8 @@ ClaudeHUD detects the cache tier from the transcript when possible. The existing
 - **The TTL is detected.** Every cache write records the tier it used (`usage.cache_creation.ephemeral_5m_input_tokens` vs `ephemeral_1h_input_tokens`), so a 1-hour session counts down against an hour, and a session that changes tier mid-run is followed. Detected values take precedence over the configured fallback.
 - **The clock starts at the request**, not at the response it produced, because that is when the cache is read or written. Anchoring on the response would hand the session however long that response took to generate.
 - **Subagent responses are ignored.** A subagent runs against its own cache and does not refresh the main session's.
+
+`display.showCacheHitRate` is opt-in and shows the session's cache hit rate, e.g. `Cache hit 98.3%`: cache reads as a share of all input tokens (uncached input, cache reads, and cache writes), from cumulative transcript totals.
 
 ### Usage Limits
 

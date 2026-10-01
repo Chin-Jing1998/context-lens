@@ -58,6 +58,7 @@ export type HudElement =
   | 'context'
   | 'usage'
   | 'promptCache'
+  | 'cacheHitRate'
   | 'memory'
   | 'environment'
   | 'tools'
@@ -131,6 +132,7 @@ export const DEFAULT_ELEMENT_ORDER: HudElement[] = [
   'context',
   'usage',
   'promptCache',
+  'cacheHitRate',
   'memory',
   'environment',
   'tools',
@@ -241,6 +243,8 @@ export interface HudConfig {
     // Compatibility fallback used only until transcript tier detection has a
     // real 5-minute or 1-hour cache write to follow.
     promptCacheTtlSeconds: number;
+    // Show the session's prompt-cache hit rate as `Cache hit X%`. Default off.
+    showCacheHitRate: boolean;
     showSessionTokens: boolean;
     showOutputStyle: boolean;
     showSessionStartDate: boolean;
@@ -359,6 +363,7 @@ export const DEFAULT_CONFIG: HudConfig = {
     showMemoryUsage: false,
     showPromptCache: false,
     promptCacheTtlSeconds: 300,
+    showCacheHitRate: false,
     showSessionTokens: false,
     showOutputStyle: false,
     showSessionStartDate: false,
@@ -909,6 +914,9 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
       migrated.display?.promptCacheTtlSeconds,
       DEFAULT_CONFIG.display.promptCacheTtlSeconds,
     ),
+    showCacheHitRate: typeof migrated.display?.showCacheHitRate === 'boolean'
+      ? migrated.display.showCacheHitRate
+      : DEFAULT_CONFIG.display.showCacheHitRate,
     showSessionTokens: typeof migrated.display?.showSessionTokens === 'boolean'
       ? migrated.display.showSessionTokens
       : DEFAULT_CONFIG.display.showSessionTokens,
