@@ -141,7 +141,7 @@ function parseFileStats(porcelainOutput) {
         if (line.startsWith('??')) {
             stats.untracked++;
         }
-        else if (index === 'A') {
+        else if (index === 'A' || (index === 'U' && worktree === 'A')) {
             stats.added++;
             const fullPath = parsePorcelainPath(line.slice(2).trimStart());
             stats.trackedFiles.push({ basename: fullPath.split('/').pop() ?? fullPath, fullPath, type: 'added' });
@@ -151,8 +151,8 @@ function parseFileStats(porcelainOutput) {
             const fullPath = parsePorcelainPath(line.slice(2).trimStart());
             stats.trackedFiles.push({ basename: fullPath.split('/').pop() ?? fullPath, fullPath, type: 'deleted' });
         }
-        else if (index === 'M' || worktree === 'M' || index === 'R' || index === 'C') {
-            // M=modified, R=renamed (counts as modified), C=copied (counts as modified)
+        else if (index === 'M' || worktree === 'M' || index === 'R' || index === 'C' || index === 'U') {
+            // M=modified, R=renamed and C=copied (count as modified), U=unmerged (UU)
             stats.modified++;
             // For renames, git porcelain shows "old -> new"; take the destination path
             const fullPath = parsePorcelainPath(line.slice(2).trimStart().split(' -> ').pop() ?? line.slice(2).trimStart());
