@@ -9,7 +9,7 @@ import { sanitizeDisplayText } from './utils/sanitize.js';
 import { sanitizeTranscriptModel } from './model-source.js';
 import { isDetectedPromptCacheTtl, PROMPT_CACHE_TTL_1H_SECONDS, PROMPT_CACHE_TTL_5M_SECONDS, } from './constants.js';
 const debug = createDebug('transcript');
-const TRANSCRIPT_CACHE_VERSION = 20;
+const TRANSCRIPT_CACHE_VERSION = 21;
 const MCP_TOOL_NAME_PATTERN = /^mcp__(.+?)__(.+)$/;
 const ACTIVITY_NAME_MAX_LEN = 64;
 const MESSAGE_ID_MAX_LEN = 128;
@@ -111,16 +111,19 @@ function accumulateMessageUsage(usageByMessageId, messageId, current, total) {
         outputTokens: 0,
         cacheCreationTokens: 0,
         cacheReadTokens: 0,
+        cacheCreationOneHourTokens: 0,
     };
     total.inputTokens += Math.max(0, current.inputTokens - prior.inputTokens);
     total.outputTokens += Math.max(0, current.outputTokens - prior.outputTokens);
     total.cacheCreationTokens += Math.max(0, current.cacheCreationTokens - prior.cacheCreationTokens);
     total.cacheReadTokens += Math.max(0, current.cacheReadTokens - prior.cacheReadTokens);
+    total.cacheCreationOneHourTokens += Math.max(0, current.cacheCreationOneHourTokens - prior.cacheCreationOneHourTokens);
     usageByMessageId.set(messageId, {
         inputTokens: Math.max(prior.inputTokens, current.inputTokens),
         outputTokens: Math.max(prior.outputTokens, current.outputTokens),
         cacheCreationTokens: Math.max(prior.cacheCreationTokens, current.cacheCreationTokens),
         cacheReadTokens: Math.max(prior.cacheReadTokens, current.cacheReadTokens),
+        cacheCreationOneHourTokens: Math.max(prior.cacheCreationOneHourTokens, current.cacheCreationOneHourTokens),
     });
 }
 function normalizeSessionTokens(tokens) {
@@ -133,6 +136,7 @@ function normalizeSessionTokens(tokens) {
         outputTokens: normalizeTokenCount(raw.outputTokens),
         cacheCreationTokens: normalizeTokenCount(raw.cacheCreationTokens),
         cacheReadTokens: normalizeTokenCount(raw.cacheReadTokens),
+        cacheCreationOneHourTokens: normalizeTokenCount(raw.cacheCreationOneHourTokens),
     };
 }
 function normalizeNameList(value) {
@@ -358,6 +362,7 @@ export async function parseTranscript(transcriptPath) {
         outputTokens: 0,
         cacheCreationTokens: 0,
         cacheReadTokens: 0,
+        cacheCreationOneHourTokens: 0,
     };
     const usageByMessageId = new Map();
     let lastUsageKey;
@@ -453,13 +458,14 @@ export async function parseTranscript(transcriptPath) {
                         outputTokens: normalizeTokenCount(usage.output_tokens),
                         cacheCreationTokens: normalizeTokenCount(usage.cache_creation_input_tokens),
                         cacheReadTokens: normalizeTokenCount(usage.cache_read_input_tokens),
+                        cacheCreationOneHourTokens: normalizeTokenCount(usage.cache_creation?.ephemeral_1h_input_tokens),
                     };
                     if (msgId !== null) {
                         lastUsageKey = undefined;
                         accumulateMessageUsage(usageByMessageId, msgId, normalizedUsage, sessionTokens);
                     }
                     else {
-                        const usageKey = `${usage.input_tokens}|${usage.output_tokens}|${usage.cache_creation_input_tokens}|${usage.cache_read_input_tokens}`;
+                        const usageKey = `${usage.input_tokens}|${usage.output_tokens}|${usage.cache_creation_input_tokens}|${usage.cache_read_input_tokens}|${normalizedUsage.cacheCreationOneHourTokens}`;
                         const shouldCount = usageKey !== lastUsageKey;
                         lastUsageKey = usageKey;
                         if (shouldCount) {
@@ -467,6 +473,7 @@ export async function parseTranscript(transcriptPath) {
                             sessionTokens.outputTokens += normalizedUsage.outputTokens;
                             sessionTokens.cacheCreationTokens += normalizedUsage.cacheCreationTokens;
                             sessionTokens.cacheReadTokens += normalizedUsage.cacheReadTokens;
+                            sessionTokens.cacheCreationOneHourTokens += normalizedUsage.cacheCreationOneHourTokens;
                         }
                     }
                 }

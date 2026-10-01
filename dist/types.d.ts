@@ -134,6 +134,7 @@ export interface SessionTokenUsage {
     outputTokens: number;
     cacheCreationTokens: number;
     cacheReadTokens: number;
+    cacheCreationOneHourTokens: number;
 }
 export interface TranscriptData {
     tools: ToolEntry[];
