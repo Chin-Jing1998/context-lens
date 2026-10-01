@@ -89,6 +89,7 @@ export const DEFAULT_CONFIG = {
         showResetLabel: true,
         usageCompact: false,
         showModelScopedUsage: true,
+        usagePace: false,
         showTools: false,
         showSkills: false,
         showMcp: false,
@@ -538,6 +539,9 @@ export function mergeConfig(userConfig) {
         showModelScopedUsage: typeof migrated.display?.showModelScopedUsage === 'boolean'
             ? migrated.display.showModelScopedUsage
             : DEFAULT_CONFIG.display.showModelScopedUsage,
+        usagePace: typeof migrated.display?.usagePace === 'boolean'
+            ? migrated.display.usagePace
+            : DEFAULT_CONFIG.display.usagePace,
         showTools: typeof migrated.display?.showTools === 'boolean'
             ? migrated.display.showTools
             : DEFAULT_CONFIG.display.showTools,
