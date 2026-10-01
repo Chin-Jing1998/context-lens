@@ -5,6 +5,7 @@ import { coloredBar, critical, git as gitColor, gitBranch as gitBranchColor, lab
 import { getAdaptiveBarWidth } from '../utils/terminal.js';
 import { renderCostEstimate } from './lines/cost.js';
 import { renderPromptCacheLine } from './lines/prompt-cache.js';
+import { renderCacheHitRateLine } from './lines/cache-hit-rate.js';
 import { renderSessionTimeLine } from './lines/session-time.js';
 import { renderAdvisorLine } from './lines/advisor.js';
 import { t } from '../i18n/index.js';
@@ -330,6 +331,10 @@ export function renderSessionLine(ctx) {
     const promptCacheLine = renderPromptCacheLine(ctx);
     if (promptCacheLine) {
         push(promptCacheLine);
+    }
+    const cacheHitRateLine = renderCacheHitRateLine(ctx);
+    if (cacheHitRateLine) {
+        push(cacheHitRateLine);
     }
     const costEstimate = renderCostEstimate(ctx);
     if (costEstimate) {

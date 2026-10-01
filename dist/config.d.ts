@@ -34,7 +34,7 @@ export type HourCycleMode = 'auto' | 'h11' | 'h12' | 'h23' | 'h24';
  *   'full':    Show the entire absolute path from root (e.g. "/Users/name/…")
  */
 export type PathLevels = 1 | 2 | 3 | 'full';
-export type HudElement = 'project' | 'addedDirs' | 'context' | 'usage' | 'promptCache' | 'memory' | 'environment' | 'tools' | 'skills' | 'mcp' | 'agents' | 'todos' | 'sessionTime';
+export type HudElement = 'project' | 'addedDirs' | 'context' | 'usage' | 'promptCache' | 'cacheHitRate' | 'memory' | 'environment' | 'tools' | 'skills' | 'mcp' | 'agents' | 'todos' | 'sessionTime';
 /**
  * Coarse, orderable segments of the first HUD line (the identity/project
  * line). Shared by the expanded project line and the compact session line:
@@ -136,6 +136,7 @@ export interface HudConfig {
         showMemoryUsage: boolean;
         showPromptCache: boolean;
         promptCacheTtlSeconds: number;
+        showCacheHitRate: boolean;
         showSessionTokens: boolean;
         showOutputStyle: boolean;
         showSessionStartDate: boolean;
