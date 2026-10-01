@@ -14,6 +14,7 @@ All notable changes to Claude HUD will be documented in this file.
 - Treat Agent `tool_result` payloads with `isAsync` or `status: async_launched` as background so the agents line stays up until the task-notification (#734).
 - Pass `--no-optional-locks` on `git diff --numstat` so a timed-out statusline poll cannot leave `.git/index.lock` behind (#726).
 - Render the prompt-cache clock as `until <time>` so the value reads as expiry, not write time (#727).
+- Price 1-hour prompt-cache writes at 2x input instead of 1.25x in the local cost estimate (#758).
 - Show the running session's Claude Code version from stdin, falling back to `claude --version`, so `CC v…` no longer sticks when `claude` is a wrapper script (#753).
 - Keep the context cache fresh when Claude Code reports `used_percentage: 0` while `current_usage` already holds real tokens, so a later empty frame no longer restores a stale percentage (#743).
 

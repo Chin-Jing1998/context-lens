@@ -148,6 +148,8 @@ export interface SessionTokenUsage {
   outputTokens: number;
   cacheCreationTokens: number;
   cacheReadTokens: number;
+  // Subset of cacheCreationTokens written with the 1-hour TTL.
+  cacheCreationOneHourTokens: number;
 }
 
 export interface TranscriptData {
