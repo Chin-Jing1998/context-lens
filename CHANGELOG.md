@@ -4,6 +4,8 @@ All notable changes to Claude HUD will be documented in this file.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-01
+
 This release is a rewrite for simplicity, with the same options in about half the source and a quarter of the test code. It needs Claude Code v2.1.260 or later.
 
 ### Changed
