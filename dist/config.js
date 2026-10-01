@@ -12,7 +12,6 @@ const UNSAFE_CONFIG_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 const LANGUAGES = ['en', 'zh', 'zh-Hans', 'zh-Hant', 'zh-TW'];
 const LINE_LAYOUTS = ['compact', 'expanded'];
 const PATH_LEVELS = [1, 2, 3, 'full'];
-const AUTOCOMPACT_BUFFER_MODES = ['enabled', 'disabled'];
 const CONTEXT_VALUE_MODES = ['percent', 'tokens', 'remaining', 'both'];
 const USAGE_VALUE_MODES = ['percent', 'remaining'];
 const GIT_BRANCH_OVERFLOW_MODES = ['truncate', 'wrap'];
@@ -121,7 +120,6 @@ export const DEFAULT_CONFIG = {
         effortFormat: 'full',
         showMemoryUsage: false,
         showPromptCache: false,
-        promptCacheTtlSeconds: 300,
         showCacheHitRate: false,
         showSessionTokens: false,
         showOutputStyle: false,
@@ -130,7 +128,6 @@ export const DEFAULT_CONFIG = {
         showCompactions: false,
         mergeGroups: DEFAULT_MERGE_GROUPS.map(group => [...group]),
         rightAlign: [],
-        autocompactBuffer: 'enabled',
         contextWarningThreshold: 70,
         contextCriticalThreshold: 85,
         usageThreshold: 0,
@@ -247,10 +244,8 @@ const RULES = {
     'display.skillsMaxVisible': count,
     'display.authUserLength': count,
     'display.effortFormat': oneOf(EFFORT_FORMATS),
-    'display.promptCacheTtlSeconds': (value, fallback) => (isNumber(value) && value > 0 ? Math.floor(value) : fallback),
     'display.mergeGroups': mergeGroups,
     'display.rightAlign': names(ELEMENTS, false),
-    'display.autocompactBuffer': oneOf(AUTOCOMPACT_BUFFER_MODES),
     'display.contextWarningThreshold': clamp(0, 100),
     'display.contextCriticalThreshold': clamp(0, 100),
     'display.usageThreshold': clamp(0, 100),

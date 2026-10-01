@@ -1,5 +1,4 @@
 import { isLimitReached } from "../../types.js";
-import { shouldHideUsage } from "../../stdin.js";
 import { critical, label, formatQuotaPercent, quotaBar } from "../colors.js";
 import { getAdaptiveBarWidth } from "../../utils/terminal.js";
 import { t, interpolate } from "../../i18n/index.js";
@@ -13,9 +12,6 @@ export function renderUsageLine(ctx, labelOptions = {}) {
         return null;
     }
     if (!ctx.usageData) {
-        return null;
-    }
-    if (shouldHideUsage(ctx.stdin)) {
         return null;
     }
     const usageLabel = progressLabel("label.usage", colors, labelOptions);

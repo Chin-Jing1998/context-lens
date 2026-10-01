@@ -1,18 +1,15 @@
 import { getProviderLabel } from '../stdin.js';
+import { effort } from './derive.js';
 function formatEffortSuffix(ctx, format) {
-    if (!ctx.effortLevel) {
+    const info = ctx.config?.display?.showEffortLevel ? effort(ctx) : null;
+    if (!info) {
         return '';
     }
-    // Ultracode's marker lives in the level text ("ultracode(xhigh)"), so the
-    // symbol alone cannot represent it; keep the full form in symbol mode.
-    const isUltracode = ctx.effortLevel.startsWith('ultracode(');
-    if (format === 'symbol' && ctx.effortSymbol && !isUltracode) {
-        return ` ${ctx.effortSymbol}`;
+    // The symbol alone can't carry the ultracode marker, so symbol mode keeps the full form.
+    if (format === 'symbol' && info.symbol && !info.level.startsWith('ultracode(')) {
+        return ` ${info.symbol}`;
     }
-    if (format === 'text' || !ctx.effortSymbol) {
-        return ` ${ctx.effortLevel}`;
-    }
-    return ` ${ctx.effortSymbol} ${ctx.effortLevel}`;
+    return format === 'text' || !info.symbol ? ` ${info.level}` : ` ${info.symbol} ${info.level}`;
 }
 export function formatModelDisplay(model, ctx) {
     const display = ctx.config?.display;

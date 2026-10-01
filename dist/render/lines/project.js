@@ -1,7 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { formatModelName, resolveModelName } from '../../stdin.js';
-import { getOutputSpeed } from '../../speed-tracker.js';
 import { git as gitColor, gitBranch as gitBranchColor, warning as warningColor, critical as criticalColor, label, model as modelColor, project as projectColor, red, green, yellow, dim, custom as customColor } from '../colors.js';
 import { t } from '../../i18n/index.js';
 import { renderCostEstimate } from './cost.js';
@@ -14,6 +13,7 @@ import { formatProjectPath } from '../project-path.js';
 import { DEFAULT_CONFIG, DEFAULT_PROJECT_LINE_ORDER } from '../../config.js';
 import { orderFirstLineParts } from '../first-line-order.js';
 import { getVcsDisplayState } from '../vcs-status.js';
+import { claudeCodeVersion, sessionDuration, sessionName } from '../derive.js';
 function resolvePathWithinCwd(cwd, candidatePath) {
     const resolvedCwd = path.resolve(cwd);
     const resolvedPath = path.resolve(cwd, candidatePath);
@@ -121,24 +121,27 @@ export function renderProjectLine(ctx) {
             push(advisorPart, 'advisor');
         }
     }
-    if (display?.showSessionName && ctx.transcript.sessionName) {
-        push(label(ctx.transcript.sessionName, colors), 'sessionName');
+    const name = display?.showSessionName ? sessionName(ctx) : undefined;
+    if (name) {
+        push(label(name, colors), 'sessionName');
     }
-    if (display?.showClaudeCodeVersion && ctx.claudeCodeVersion) {
-        push(label(`CC v${ctx.claudeCodeVersion}`, colors), 'version');
+    const version = display?.showClaudeCodeVersion ? claudeCodeVersion(ctx) : undefined;
+    if (version) {
+        push(label(`CC v${version}`, colors), 'version');
     }
     if (ctx.extraLabel) {
         push(label(ctx.extraLabel, colors), 'extra');
     }
-    if (display?.showDuration === true && ctx.sessionDuration) {
-        push(label(`⏱️  ${ctx.sessionDuration}`, colors), 'duration');
+    const duration = display?.showDuration === true ? sessionDuration(ctx) : '';
+    if (duration) {
+        push(label(`⏱️  ${duration}`, colors), 'duration');
     }
     const costEstimate = renderCostEstimate(ctx);
     if (costEstimate) {
         push(costEstimate, 'cost');
     }
     if (display?.showSpeed) {
-        const speed = getOutputSpeed(ctx.stdin);
+        const speed = ctx.outputSpeed;
         if (speed !== null) {
             push(label(`${t('format.out')}: ${speed.toFixed(1)} ${t('format.tokPerSec')}`, colors), 'speed');
         }

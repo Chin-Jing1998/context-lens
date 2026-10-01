@@ -1,37 +1,20 @@
-import { resolveSessionCost, formatUsd } from '../../cost.js';
-import { getCostTotals } from '../../daily-cost.js';
+import { formatUsd } from '../../cost.js';
 import { t } from '../../i18n/index.js';
 import { label } from '../colors.js';
+import { sessionCostUsd } from '../derive.js';
 export function renderCostEstimate(ctx) {
     const display = ctx.config?.display;
-    const allowRoutedCost = display?.showRoutedCost === true;
     const parts = [];
-    if (display?.showCost === true) {
-        const cost = resolveSessionCost(ctx.stdin, ctx.transcript.sessionTokens, {
-            allowRoutedCost,
-        });
-        if (cost) {
-            const labelKey = cost.source === 'native' ? 'label.cost' : 'label.estimatedCost';
-            parts.push(`${t(labelKey)} ${formatUsd(cost.totalUsd)}`);
-        }
+    const costUsd = display?.showCost === true ? sessionCostUsd(ctx) : null;
+    if (costUsd !== null) {
+        parts.push(`${t('label.cost')} ${formatUsd(costUsd)}`);
     }
-    if (display?.showDailyCost === true || display?.showWeeklyCost === true) {
-        const totals = getCostTotals(ctx.stdin, {
-            allowRoutedCost,
-            sevenDayResetAt: ctx.usageData?.sevenDayResetAt ?? null,
-        });
-        if (totals !== null) {
-            if (display?.showDailyCost === true) {
-                parts.push(`${t('label.today')} ${formatUsd(totals.todayUsd)}`);
-            }
-            if (display?.showWeeklyCost === true && totals.weekUsd !== null) {
-                parts.push(`${t('label.week')} ${formatUsd(totals.weekUsd)}`);
-            }
-        }
+    if (display?.showDailyCost === true && ctx.costTotals) {
+        parts.push(`${t('label.today')} ${formatUsd(ctx.costTotals.todayUsd)}`);
     }
-    if (parts.length === 0) {
-        return null;
+    if (display?.showWeeklyCost === true && ctx.costTotals?.weekUsd != null) {
+        parts.push(`${t('label.week')} ${formatUsd(ctx.costTotals.weekUsd)}`);
     }
-    return label(parts.join(' | '), ctx.config?.colors);
+    return parts.length > 0 ? label(parts.join(' | '), ctx.config?.colors) : null;
 }
 //# sourceMappingURL=cost.js.map

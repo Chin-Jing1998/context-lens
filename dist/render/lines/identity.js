@@ -1,28 +1,20 @@
-import { getContextPercent, getBufferedPercent, } from "../../stdin.js";
 import { coloredBar, label, getContextColor, RESET } from "../colors.js";
 import { getAdaptiveBarWidth } from "../../utils/terminal.js";
 import { t } from "../../i18n/index.js";
 import { progressLabel, } from "./label-align.js";
 import { formatTokens, formatContextValue } from "../../utils/format.js";
-import { createDebug } from "../../debug.js";
-const debug = createDebug("context");
+import { contextUsage } from '../derive.js';
 export function renderIdentityLine(ctx, labelOptions = {}) {
-    const autoCompactWindow = ctx.config?.display?.autoCompactWindow ?? null;
-    const rawPercent = getContextPercent(ctx.stdin, autoCompactWindow);
-    const bufferedPercent = getBufferedPercent(ctx.stdin, autoCompactWindow);
-    const autocompactMode = ctx.config?.display?.autocompactBuffer ?? "enabled";
-    const percent = autocompactMode === "disabled" ? rawPercent : bufferedPercent;
+    const context = contextUsage(ctx);
+    const percent = context.percent;
     const colors = ctx.config?.colors;
-    if (autocompactMode === "disabled") {
-        debug(`autocompactBuffer=disabled, showing raw ${rawPercent}% (buffered would be ${bufferedPercent}%)`);
-    }
     const display = ctx.config?.display;
     const contextThresholds = {
         warning: display?.contextWarningThreshold,
         critical: display?.contextCriticalThreshold,
     };
     const contextValueMode = display?.contextValue ?? "percent";
-    const contextValue = formatContextValue(ctx, percent, contextValueMode);
+    const contextValue = formatContextValue(context, contextValueMode);
     const contextValueDisplay = `${getContextColor(percent, colors, contextThresholds)}${contextValue}${RESET}`;
     let line = display?.showContextBar !== false
         ? `${progressLabel("label.context", colors, labelOptions)} ${coloredBar(percent, getAdaptiveBarWidth(), colors, contextThresholds)} ${contextValueDisplay}`

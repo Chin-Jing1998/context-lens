@@ -1,6 +1,7 @@
 import { critical, label } from "../colors.js";
 import { t } from "../../i18n/index.js";
 import { sanitizeDisplayText } from "../../utils/sanitize.js";
+import { outputStyle } from '../derive.js';
 /** How many failing server names to spell out before collapsing to a count. */
 const MAX_NAMED_MCP_ERRORS = 3;
 export function renderEnvironmentLine(ctx) {
@@ -31,8 +32,9 @@ export function renderEnvironmentLine(ctx) {
             parts.push(label(`${ctx.hooksCount} ${t("label.hooks")}`, colors));
         }
     }
-    if (showOutputStyle && ctx.outputStyle) {
-        parts.push(label(`style: ${ctx.outputStyle}`, colors));
+    const style = showOutputStyle ? outputStyle(ctx) : undefined;
+    if (style) {
+        parts.push(label(`style: ${style}`, colors));
     }
     if (mcpErrors.length > 0 && !renderedMcpCount) {
         parts.push(formatMcpErrors(mcpErrors, colors));

@@ -1,4 +1,4 @@
-import type { RenderContext } from '../types.js';
+import type { ContextUsage } from '../stdin.js';
 /**
  * Format a token count into a human-readable short string.
  *   >= 1M  → "1.2M"
@@ -6,12 +6,6 @@ import type { RenderContext } from '../types.js';
  *   < 1k   → "800"
  */
 export declare function formatTokens(n: number): string;
-/**
- * Format the context-window value for display.
- *   percent   → "45%"
- *   tokens    → "45k/200k"
- *   remaining → "55%"
- *   both      → "45% (45k/200k)"
- */
-export declare function formatContextValue(ctx: RenderContext, percent: number, mode: 'percent' | 'tokens' | 'remaining' | 'both'): string;
+export declare function formatContextValue(context: ContextUsage, mode: 'percent' | 'tokens' | 'remaining' | 'both'): string;
+export declare function formatSessionDuration(ms: number | null | undefined): string;
 //# sourceMappingURL=format.d.ts.map

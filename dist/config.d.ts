@@ -1,7 +1,6 @@
 import type { Language } from './i18n/types.js';
 declare const LINE_LAYOUTS: readonly ['compact', 'expanded'];
 declare const PATH_LEVELS: readonly [1, 2, 3, 'full'];
-declare const AUTOCOMPACT_BUFFER_MODES: readonly ['enabled', 'disabled'];
 declare const CONTEXT_VALUE_MODES: readonly ['percent', 'tokens', 'remaining', 'both'];
 declare const USAGE_VALUE_MODES: readonly ['percent', 'remaining'];
 declare const GIT_BRANCH_OVERFLOW_MODES: readonly ['truncate', 'wrap'];
@@ -17,7 +16,6 @@ declare const ELEMENTS: readonly ['project', 'addedDirs', 'context', 'usage', 'p
 declare const FIRST_LINE_SEGMENTS: readonly ['model', 'project', 'advisor', 'sessionName', 'version', 'extra', 'duration', 'cost', 'speed', 'auth'];
 export type LineLayoutType = typeof LINE_LAYOUTS[number];
 export type PathLevels = typeof PATH_LEVELS[number];
-export type AutocompactBufferMode = typeof AUTOCOMPACT_BUFFER_MODES[number];
 export type ContextValueMode = typeof CONTEXT_VALUE_MODES[number];
 export type UsageValueMode = typeof USAGE_VALUE_MODES[number];
 export type GitBranchOverflowMode = typeof GIT_BRANCH_OVERFLOW_MODES[number];
@@ -113,7 +111,6 @@ export interface HudConfig {
         effortFormat: EffortFormatMode;
         showMemoryUsage: boolean;
         showPromptCache: boolean;
-        promptCacheTtlSeconds: number;
         showCacheHitRate: boolean;
         showSessionTokens: boolean;
         showOutputStyle: boolean;
@@ -122,7 +119,6 @@ export interface HudConfig {
         showCompactions: boolean;
         mergeGroups: HudElement[][];
         rightAlign: HudElement[];
-        autocompactBuffer: AutocompactBufferMode;
         contextWarningThreshold: number;
         contextCriticalThreshold: number;
         usageThreshold: number;

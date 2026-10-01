@@ -1,4 +1,3 @@
-import { getTotalTokens } from '../stdin.js';
 /**
  * Format a token count into a human-readable short string.
  *   >= 1M  → "1.2M"
@@ -14,34 +13,26 @@ export function formatTokens(n) {
     }
     return n.toString();
 }
-/**
- * Format the context-window value for display.
- *   percent   → "45%"
- *   tokens    → "45k/200k"
- *   remaining → "55%"
- *   both      → "45% (45k/200k)"
- */
-export function formatContextValue(ctx, percent, mode) {
-    const totalTokens = getTotalTokens(ctx.stdin);
-    const autoCompactWindow = ctx.config?.display?.autoCompactWindow ?? null;
-    const size = typeof autoCompactWindow === 'number' && autoCompactWindow > 0
-        ? autoCompactWindow
-        : ctx.stdin.context_window?.context_window_size ?? 0;
-    if (mode === 'tokens') {
-        if (size > 0) {
-            return `${formatTokens(totalTokens)}/${formatTokens(size)}`;
-        }
-        return formatTokens(totalTokens);
-    }
-    if (mode === 'both') {
-        if (size > 0) {
-            return `${percent}% (${formatTokens(totalTokens)}/${formatTokens(size)})`;
-        }
-        return `${percent}%`;
-    }
-    if (mode === 'remaining') {
+// percent → "45%", tokens → "45k/200k", remaining → "55%", both → "45% (45k/200k)".
+export function formatContextValue(context, mode) {
+    const { percent, tokens, size } = context;
+    const ratio = size > 0 ? `${formatTokens(tokens)}/${formatTokens(size)}` : formatTokens(tokens);
+    if (mode === 'tokens')
+        return ratio;
+    if (mode === 'both')
+        return size > 0 ? `${percent}% (${ratio})` : `${percent}%`;
+    if (mode === 'remaining')
         return `${Math.max(0, 100 - percent)}%`;
-    }
     return `${percent}%`;
+}
+export function formatSessionDuration(ms) {
+    if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < 0)
+        return '';
+    const mins = Math.floor(ms / 60000);
+    if (mins < 1)
+        return '<1m';
+    if (mins < 60)
+        return `${mins}m`;
+    return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 //# sourceMappingURL=format.js.map
