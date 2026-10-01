@@ -203,6 +203,8 @@ export interface HudConfig {
     // Accumulate the native stdin cost into a per-day ledger and show
     // today's cumulative spend across sessions. Default off.
     showDailyCost: boolean;
+    // Show spend over the weekly quota window behind the `Weekly` usage bar. Default off.
+    showWeeklyCost: boolean;
     showDuration: boolean;
     showSpeed: boolean;
     showTokenBreakdown: boolean;
@@ -329,6 +331,7 @@ export const DEFAULT_CONFIG: HudConfig = {
     showCost: false,
     showRoutedCost: false,
     showDailyCost: false,
+    showWeeklyCost: false,
     showDuration: false,
     showSpeed: false,
     showTokenBreakdown: true,
@@ -817,6 +820,9 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
     showDailyCost: typeof migrated.display?.showDailyCost === 'boolean'
       ? migrated.display.showDailyCost
       : DEFAULT_CONFIG.display.showDailyCost,
+    showWeeklyCost: typeof migrated.display?.showWeeklyCost === 'boolean'
+      ? migrated.display.showWeeklyCost
+      : DEFAULT_CONFIG.display.showWeeklyCost,
     showDuration: typeof migrated.display?.showDuration === 'boolean'
       ? migrated.display.showDuration
       : DEFAULT_CONFIG.display.showDuration,
