@@ -69,7 +69,7 @@ test('setup install writes the statusLine and keeps other settings', async () =>
     assert.equal(inspected.existing, 'other');
     assert.equal(inspected.existingPreview, 'bash ~/statusline.sh --token=[REDACTED]');
 
-    const result = run(setupScript, ['install', '--shell', 'posix', '--refresh-interval', '5'], { configDir });
+    const result = run(setupScript, ['install', '--shell', 'posix'], { configDir });
     assert.equal(result.status, 0, result.stderr);
     const report = JSON.parse(result.stdout);
     const settings = JSON.parse(await readFile(settingsPath, 'utf8'));
@@ -79,7 +79,6 @@ test('setup install writes the statusLine and keeps other settings', async () =>
     assert.deepEqual(settings.statusLine, {
       type: 'command',
       command: `'${process.execPath}' '${installedLauncher}'`,
-      refreshInterval: 5,
     });
     assert.equal(await readFile(installedLauncher, 'utf8'), await readFile(launcher, 'utf8'));
     assert.match(await readFile(report.backupPath, 'utf8'), /secret123/);
@@ -87,6 +86,21 @@ test('setup install writes the statusLine and keeps other settings', async () =>
     if (process.platform !== 'win32') {
       assert.equal((await stat(report.previousCommandPath)).mode & 0o777, 0o600);
     }
+  });
+});
+
+test('setup reinstall keeps the existing claude-hud statusLine keys', async () => {
+  await withConfigDir(async (configDir) => {
+    const settingsPath = path.join(configDir, 'settings.json');
+    await writeFile(settingsPath, JSON.stringify({
+      statusLine: { type: 'command', command: 'old claude-hud command', refreshInterval: 10 },
+    }));
+
+    const result = run(setupScript, ['install', '--shell', 'posix'], { configDir });
+    assert.equal(result.status, 0, result.stderr);
+    const settings = JSON.parse(await readFile(settingsPath, 'utf8'));
+    assert.equal(settings.statusLine.refreshInterval, 10);
+    assert.notEqual(settings.statusLine.command, 'old claude-hud command');
   });
 });
 

@@ -1,7 +1,7 @@
 // Installs the claude-hud statusLine. Run under the runtime the status line
 // should use (node, or bun on macOS/Linux):
 //   <runtime> setup.mjs inspect --shell posix|gitbash|powershell
-//   <runtime> setup.mjs install --shell posix|gitbash|powershell [--refresh-interval N]
+//   <runtime> setup.mjs install --shell posix|gitbash|powershell
 // Both print a JSON report on stdout.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -63,7 +63,7 @@ function main(argv) {
   };
   const shell = flag('--shell');
   if (!['inspect', 'install'].includes(action) || !SHELLS.includes(shell)) {
-    throw new Error('usage: setup.mjs inspect|install --shell posix|gitbash|powershell [--refresh-interval N]');
+    throw new Error('usage: setup.mjs inspect|install --shell posix|gitbash|powershell');
   }
 
   const hudDir = path.join(configDir(), 'plugins', 'claude-hud');
@@ -92,12 +92,6 @@ function main(argv) {
   }
 
   const statusLine = { ...(existingKind === 'claude-hud' ? settings.statusLine : {}), type: 'command', command };
-  const refresh = flag('--refresh-interval');
-  if (refresh !== undefined) {
-    const seconds = Math.floor(Number(refresh));
-    if (seconds >= 1) statusLine.refreshInterval = seconds;
-    else delete statusLine.refreshInterval;
-  }
   // Write the real file (settings.json is often a dotfiles symlink) and keep its permissions.
   const target = fs.existsSync(settingsPath) ? fs.realpathSync(settingsPath) : settingsPath;
   const mode = fs.existsSync(target) ? fs.statSync(target).mode & 0o777 : 0o600;

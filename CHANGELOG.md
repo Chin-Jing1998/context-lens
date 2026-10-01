@@ -14,7 +14,7 @@ This release is a rewrite for simplicity, with the same options in about half th
 - Session duration is Claude Code's running time for the session.
 - Git status comes from one `git status --porcelain=v2` call, down from four or five, and the branch link comes from `workspace.repo`. A repository with no commits now shows its branch.
 - The compact layout gains expanded's branch link and push-threshold colours, and `display.timeFormat: "elapsed"` now works there.
-- `/claude-hud:setup` installs a small launcher and writes `settings.json` with a helper script instead of hand-built shell commands. Existing setups keep working; re-run setup to switch.
+- `/claude-hud:setup` installs a small launcher and writes `settings.json` with a helper script instead of hand-built shell commands. Existing setups keep working; re-run setup to switch. It asks nothing unless it would replace another status line; customize afterwards by asking Claude or with `/claude-hud:configure`. A `refreshInterval` you set yourself is kept.
 - `/claude-hud:configure` asks one short set of questions and previews the diff.
 - The default HUD no longer parses the transcript, runs `claude --version`, or keeps context or transcript caches on disk.
 

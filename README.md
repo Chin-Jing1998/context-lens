@@ -20,7 +20,7 @@ Inside Claude Code, run:
 /claude-hud:setup
 ```
 
-`/claude-hud:setup` points your status line at the HUD. Claude Code reloads settings on its own, so the HUD appears after your next message.
+`/claude-hud:setup` points your status line at the HUD. Claude Code reloads settings on its own, so the HUD appears right away. To customize it, ask Claude or run `/claude-hud:configure`.
 
 <details>
 <summary><strong>Prefer the terminal?</strong></summary>
@@ -247,7 +247,7 @@ Set `jjStatus.enabled` to `true` to show jj status, such as `jj:(mybookmark*)` o
 
 ### Auto-Refresh
 
-Claude Code re-runs the status line after each message, `/compact`, a permission or vim mode change, a rate-limit reset, and a prompt-cache expiry. To keep countdowns and durations ticking while a session is idle, add `refreshInterval` (seconds) to the `statusLine` entry in `~/.claude/settings.json`. `/claude-hud:setup` offers this.
+Claude Code re-runs the status line after each message, `/compact`, a permission or vim mode change, a rate-limit reset, and a prompt-cache expiry. To keep countdowns and durations ticking while a session is idle, add `refreshInterval` (seconds) to the `statusLine` entry in `~/.claude/settings.json`.
 
 ### Turning It Off for a Session
 

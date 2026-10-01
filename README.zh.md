@@ -20,7 +20,7 @@
 /claude-hud:setup
 ```
 
-`/claude-hud:setup` 会把状态栏指向 HUD。Claude Code 会自动重新加载设置，HUD 在你发送下一条消息后出现。
+`/claude-hud:setup` 会把状态栏指向 HUD。Claude Code 会自动重新加载设置，HUD 会立即出现。想要自定义，直接告诉 Claude，或运行 `/claude-hud:configure`。
 
 <details>
 <summary><strong>更喜欢用终端？</strong></summary>
@@ -247,7 +247,7 @@ Context █████░░░░░ 45% │ Usage ██░░░░░░░
 
 ### 自动刷新
 
-Claude Code 会在每条消息、`/compact`、权限或 vim 模式变化、使用率窗口重置以及 prompt cache 失效之后重新运行状态栏。若想在会话空闲时让倒计时和时长继续走动，在 `~/.claude/settings.json` 的 `statusLine` 中加上 `refreshInterval`（秒）。`/claude-hud:setup` 会提供这一选项。
+Claude Code 会在每条消息、`/compact`、权限或 vim 模式变化、使用率窗口重置以及 prompt cache 失效之后重新运行状态栏。若想在会话空闲时让倒计时和时长继续走动，在 `~/.claude/settings.json` 的 `statusLine` 中加上 `refreshInterval`（秒）。
 
 ### 临时关闭
 
