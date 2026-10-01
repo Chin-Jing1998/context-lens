@@ -130,7 +130,7 @@ interface TranscriptCacheFile {
   data: SerializedTranscriptData;
 }
 
-const TRANSCRIPT_CACHE_VERSION = 18;
+const TRANSCRIPT_CACHE_VERSION = 19;
 const MCP_TOOL_NAME_PATTERN = /^mcp__(.+?)__(.+)$/;
 const ACTIVITY_NAME_MAX_LEN = 64;
 const MESSAGE_ID_MAX_LEN = 128;
@@ -602,7 +602,8 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
         // model Claude Code thinks it's using (e.g. proxy redirect via cc-switch).
         if (entry.type === 'assistant') {
           const transcriptModel = sanitizeTranscriptModel(entry.message?.model);
-          if (transcriptModel) {
+          // Claude Code writes '<synthetic>' on locally generated assistant records.
+          if (transcriptModel && transcriptModel !== '<synthetic>') {
             result.lastAssistantModel = transcriptModel;
           }
         }
