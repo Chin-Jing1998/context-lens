@@ -49,5 +49,9 @@
   },
   "bugs": {
     "url": "https://github.com/Chin-Jing1998/context-lens/issues"
+  },
+  "dependencies": {
+    "js-tiktoken": "^1.0.21",
+    "smol-toml": "^1.9.0"
   }
 }
