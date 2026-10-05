@@ -172,7 +172,7 @@ export function getConfigPath() {
 // Lives outside plugins/, which users often symlink across several CLAUDE_CONFIG_DIRs,
 // so it stays per-directory and can override the shared config.
 export function getConfigOverridePath() {
-    return path.join(getClaudeConfigDir(os.homedir()), 'claude-hud.json');
+    return path.join(getClaudeConfigDir(os.homedir()), 'context-lens.json');
 }
 const isNumber = (value) => typeof value === 'number' && Number.isFinite(value);
 const oneOf = (allowed) => (value, fallback) => (allowed.includes(value) ? value : fallback);

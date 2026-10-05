@@ -17,9 +17,9 @@ import { resolveUsage, writeExternalUsageSnapshot } from "./external-usage.js";
 import { setLanguage, t } from "./i18n/index.js";
 const EMPTY_TRANSCRIPT = { tools: [], skills: [], mcpServers: [], mcpErrors: [], agents: [], todos: [] };
 const NO_COUNTS = { claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 };
-// CLAUDE_HUD_DISABLE=1 blanks the HUD for one session while keeping the statusLine setting.
+// CONTEXT_LENS_DISABLE=1 blanks the HUD for one session while keeping the statusLine setting.
 export function isHudDisabled(env = process.env) {
-    const value = env.CLAUDE_HUD_DISABLE?.trim().toLowerCase();
+    const value = env.CONTEXT_LENS_DISABLE?.trim().toLowerCase();
     return !!value && !["0", "false", "off", "no"].includes(value);
 }
 function needsTranscript(config, stdin) {
@@ -88,7 +88,7 @@ export async function main() {
         });
     }
     catch (error) {
-        console.log("[claude-hud] Error:", error instanceof Error ? error.message : "Unknown error");
+        console.log("[context-lens] Error:", error instanceof Error ? error.message : "Unknown error");
     }
 }
 const isSamePath = (a, b) => {

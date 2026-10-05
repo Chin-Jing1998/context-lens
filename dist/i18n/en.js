@@ -34,7 +34,7 @@ export const en = {
     "format.relativeTime": "{value} ago",
     "format.elapsed": "{value}% elapsed",
     // Init
-    "init.initializing": "[claude-hud] Initializing...",
-    "init.macosNote": "[claude-hud] Note: On macOS, you may need to restart Claude Code for the HUD to appear.",
+    "init.initializing": "[context-lens] Initializing...",
+    "init.macosNote": "[context-lens] Note: On macOS, you may need to restart Claude Code for the HUD to appear.",
 };
 //# sourceMappingURL=en.js.map

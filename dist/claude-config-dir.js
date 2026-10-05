@@ -24,6 +24,6 @@ export function getClaudeConfigJsonPath(homeDir) {
     return path.join(getClaudeConfigDir(homeDir), '.claude.json');
 }
 export function getHudPluginDir(homeDir) {
-    return path.join(getClaudeConfigDir(homeDir), 'plugins', 'claude-hud');
+    return path.join(getClaudeConfigDir(homeDir), 'plugins', 'context-lens');
 }
 //# sourceMappingURL=claude-config-dir.js.map

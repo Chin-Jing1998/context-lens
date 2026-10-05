@@ -34,7 +34,7 @@ export const zhHans = {
     "format.relativeTime": "{value} 前",
     "format.elapsed": "已过 {value}%",
     // Init
-    "init.initializing": "[claude-hud] 正在初始化...",
-    "init.macosNote": "[claude-hud] 注意：在 macOS 上，您可能需要重启 Claude Code 才能显示 HUD。",
+    "init.initializing": "[context-lens] 正在初始化...",
+    "init.macosNote": "[context-lens] 注意：在 macOS 上，您可能需要重启 Claude Code 才能显示 HUD。",
 };
 //# sourceMappingURL=zh-Hans.js.map
