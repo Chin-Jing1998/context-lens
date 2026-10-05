@@ -15,8 +15,8 @@ function restoreEnvVar(name, value) {
 }
 
 test('countConfigs honors project and global config locations', async () => {
-  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-home-'));
-  const projectDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-project-'));
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'context-lens-home-'));
+  const projectDir = await mkdtemp(path.join(tmpdir(), 'context-lens-project-'));
   const originalHome = process.env.HOME;
   process.env.HOME = homeDir;
 
@@ -59,7 +59,7 @@ test('countConfigs honors project and global config locations', async () => {
 });
 
 test('countConfigs uses CLAUDE_CONFIG_DIR and its in-dir .claude.json for user scope', async () => {
-  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-home-'));
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'context-lens-home-'));
   const customConfigDir = path.join(homeDir, '.claude-2');
   const originalHome = process.env.HOME;
   const originalConfigDir = process.env.CLAUDE_CONFIG_DIR;
@@ -108,7 +108,7 @@ test('countConfigs uses CLAUDE_CONFIG_DIR and its in-dir .claude.json for user s
 });
 
 test('countConfigs still counts project .claude when cwd is home and CLAUDE_CONFIG_DIR points elsewhere', async () => {
-  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-home-'));
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'context-lens-home-'));
   const customConfigDir = path.join(homeDir, '.claude-2');
   const originalHome = process.env.HOME;
   const originalConfigDir = process.env.CLAUDE_CONFIG_DIR;
@@ -149,7 +149,7 @@ test('countConfigs still counts project .claude when cwd is home and CLAUDE_CONF
 });
 
 test('countConfigs avoids home cwd double-counting across counters and keeps CLAUDE.local.md', async () => {
-  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-home-'));
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'context-lens-home-'));
   const originalHome = process.env.HOME;
   process.env.HOME = homeDir;
 
@@ -182,7 +182,7 @@ test('countConfigs avoids home cwd double-counting across counters and keeps CLA
 });
 
 test('countConfigs excludes disabled user-scope MCPs', async () => {
-  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-home-'));
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'context-lens-home-'));
   const originalHome = process.env.HOME;
   process.env.HOME = homeDir;
 
@@ -210,8 +210,8 @@ test('countConfigs excludes disabled user-scope MCPs', async () => {
 });
 
 test('countConfigs excludes disabled project .mcp.json servers', async () => {
-  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-home-'));
-  const projectDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-project-'));
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'context-lens-home-'));
+  const projectDir = await mkdtemp(path.join(tmpdir(), 'context-lens-project-'));
   const originalHome = process.env.HOME;
   process.env.HOME = homeDir;
 
@@ -242,7 +242,7 @@ test('countConfigs excludes disabled project .mcp.json servers', async () => {
 });
 
 test('countConfigs handles all MCPs disabled', async () => {
-  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-home-'));
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'context-lens-home-'));
   const originalHome = process.env.HOME;
   process.env.HOME = homeDir;
 
@@ -270,7 +270,7 @@ test('countConfigs handles all MCPs disabled', async () => {
 });
 
 test('countConfigs tolerates rule directory read errors', async () => {
-  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-home-'));
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'context-lens-home-'));
   const originalHome = process.env.HOME;
   process.env.HOME = homeDir;
 
@@ -289,9 +289,9 @@ test('countConfigs tolerates rule directory read errors', async () => {
 });
 
 test('countConfigs follows symlinked rule files and directories safely', async () => {
-  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-home-'));
-  const projectDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-project-'));
-  const sharedDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-rules-'));
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'context-lens-home-'));
+  const projectDir = await mkdtemp(path.join(tmpdir(), 'context-lens-project-'));
+  const sharedDir = await mkdtemp(path.join(tmpdir(), 'context-lens-rules-'));
   const originalHome = process.env.HOME;
   process.env.HOME = homeDir;
 
@@ -320,9 +320,9 @@ test('countConfigs follows symlinked rule files and directories safely', async (
 });
 
 test('countConfigs skips dangling links, cycles, and duplicate symlink targets', async () => {
-  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-home-'));
-  const projectDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-project-'));
-  const sharedDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-rules-'));
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'context-lens-home-'));
+  const projectDir = await mkdtemp(path.join(tmpdir(), 'context-lens-project-'));
+  const sharedDir = await mkdtemp(path.join(tmpdir(), 'context-lens-rules-'));
   const originalHome = process.env.HOME;
   process.env.HOME = homeDir;
 
@@ -346,7 +346,7 @@ test('countConfigs skips dangling links, cycles, and duplicate symlink targets',
 });
 
 test('countConfigs ignores non-string values in disabledMcpServers', async () => {
-  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-home-'));
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'context-lens-home-'));
   const originalHome = process.env.HOME;
   process.env.HOME = homeDir;
 
@@ -374,8 +374,8 @@ test('countConfigs ignores non-string values in disabledMcpServers', async () =>
 });
 
 test('countConfigs counts same-named servers in different scopes separately', async () => {
-  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-home-'));
-  const projectDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-project-'));
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'context-lens-home-'));
+  const projectDir = await mkdtemp(path.join(tmpdir(), 'context-lens-project-'));
   const originalHome = process.env.HOME;
   process.env.HOME = homeDir;
 
@@ -408,7 +408,7 @@ test('countConfigs counts same-named servers in different scopes separately', as
 });
 
 test('countConfigs uses case-sensitive matching for disabled servers', async () => {
-  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-home-'));
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'context-lens-home-'));
   const originalHome = process.env.HOME;
   process.env.HOME = homeDir;
 
@@ -438,10 +438,10 @@ test('countConfigs uses case-sensitive matching for disabled servers', async () 
 
 // Regression test for GitHub Issue #3:
 // "MCP count showing 5 when user has 6, still showing 5 when all disabled"
-// https://github.com/jarrodwatts/claude-hud/issues/3
+// https://github.com/Chin-Jing1998/context-lens/issues/3
 
 test('Issue #3: MCP count updates correctly when servers are disabled', async () => {
-  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-home-'));
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'context-lens-home-'));
   const originalHome = process.env.HOME;
   process.env.HOME = homeDir;
 
@@ -514,5 +514,5 @@ test('Issue #3: MCP count updates correctly when servers are disabled', async ()
 // === Config cache tests ===
 
 async function getConfigCacheDir(configDir) {
-  return path.join(configDir, 'plugins', 'claude-hud', 'config-cache');
+  return path.join(configDir, 'plugins', 'context-lens', 'config-cache');
 }

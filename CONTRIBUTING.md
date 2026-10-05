@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for contributing to Claude HUD. This repo is small and fast-moving, so we optimize for clarity and quick review.
+Thanks for contributing to Context Lens. This repo is small and fast-moving, so we optimize for clarity and quick review.
 
 ## Scope
 
@@ -8,7 +8,7 @@ The default HUD stays a two-line local statusline. New display stays opt-in unle
 
 We will not take:
 
-- `extra-cmd` in `config.json`, or raw multiline extra-cmd output. The command stays on argv behind `CLAUDE_HUD_ALLOW_EXTRA_CMD`.
+- `extra-cmd` in `config.json`, or raw multiline extra-cmd output. The command stays on argv behind `CONTEXT_LENS_ALLOW_EXTRA_CMD`.
 - Per-window `timeFormat` knobs. Use `display.timeFormat`.
 - Per-metric color slots beyond the existing `colors.*` keys.
 - Timer-based fade for Skills or MCP. Use `showTools`, `showSkills`, and `showMcp`.

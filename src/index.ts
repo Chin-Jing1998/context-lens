@@ -20,9 +20,9 @@ import type { StdinData, TranscriptData } from "./types.js";
 const EMPTY_TRANSCRIPT: TranscriptData = { tools: [], skills: [], mcpServers: [], mcpErrors: [], agents: [], todos: [] };
 const NO_COUNTS: ConfigCounts = { claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 };
 
-// CLAUDE_HUD_DISABLE=1 blanks the HUD for one session while keeping the statusLine setting.
+// CONTEXT_LENS_DISABLE=1 blanks the HUD for one session while keeping the statusLine setting.
 export function isHudDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  const value = env.CLAUDE_HUD_DISABLE?.trim().toLowerCase();
+  const value = env.CONTEXT_LENS_DISABLE?.trim().toLowerCase();
   return !!value && !["0", "false", "off", "no"].includes(value);
 }
 
@@ -98,7 +98,7 @@ export async function main(): Promise<void> {
       authInfo: display.showAuth || display.showAuthUser ? readAuthInfo() : null,
     });
   } catch (error) {
-    console.log("[claude-hud] Error:", error instanceof Error ? error.message : "Unknown error");
+    console.log("[context-lens] Error:", error instanceof Error ? error.message : "Unknown error");
   }
 }
 

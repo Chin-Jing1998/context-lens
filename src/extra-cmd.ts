@@ -10,7 +10,7 @@ const TIMEOUT_MS = 3000;
 
 // --extra-cmd runs an arbitrary shell command, so it needs an explicit opt-in in the environment.
 export function isExtraCmdAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
-  return ['1', 'true', 'yes', 'on'].includes(env.CLAUDE_HUD_ALLOW_EXTRA_CMD?.trim().toLowerCase() ?? '');
+  return ['1', 'true', 'yes', 'on'].includes(env.CONTEXT_LENS_ALLOW_EXTRA_CMD?.trim().toLowerCase() ?? '');
 }
 
 // Accepts `--extra-cmd "cmd"` and `--extra-cmd="cmd"`; the first occurrence wins.
@@ -18,7 +18,7 @@ export function parseExtraCmdArg(argv: string[] = process.argv, env: NodeJS.Proc
   const index = argv.findIndex((arg) => arg === '--extra-cmd' || arg.startsWith('--extra-cmd='));
   if (index === -1) return null;
   if (!isExtraCmdAllowed(env)) {
-    debug('--extra-cmd ignored because CLAUDE_HUD_ALLOW_EXTRA_CMD is not enabled');
+    debug('--extra-cmd ignored because CONTEXT_LENS_ALLOW_EXTRA_CMD is not enabled');
     return null;
   }
   const arg = argv[index];

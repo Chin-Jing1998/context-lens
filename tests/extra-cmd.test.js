@@ -2,15 +2,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseExtraCmdArg, runExtraCmd, isExtraCmdAllowed } from '../dist/extra-cmd.js';
 
-const ALLOWED = { CLAUDE_HUD_ALLOW_EXTRA_CMD: '1' };
+const ALLOWED = { CONTEXT_LENS_ALLOW_EXTRA_CMD: '1' };
 const argv = (...args) => ['node', 'index.js', ...args];
 
 test('--extra-cmd needs an explicit opt-in', () => {
   for (const value of ['1', 'true', 'YES', ' on ']) {
-    assert.equal(isExtraCmdAllowed({ CLAUDE_HUD_ALLOW_EXTRA_CMD: value }), true, value);
+    assert.equal(isExtraCmdAllowed({ CONTEXT_LENS_ALLOW_EXTRA_CMD: value }), true, value);
   }
   for (const value of [undefined, '', '0', 'false', 'enabled']) {
-    assert.equal(isExtraCmdAllowed({ CLAUDE_HUD_ALLOW_EXTRA_CMD: value }), false, String(value));
+    assert.equal(isExtraCmdAllowed({ CONTEXT_LENS_ALLOW_EXTRA_CMD: value }), false, String(value));
   }
   assert.equal(parseExtraCmdArg(argv('--extra-cmd', 'echo hi'), {}), null);
   assert.equal(parseExtraCmdArg(argv('--extra-cmd=echo hi'), {}), null);

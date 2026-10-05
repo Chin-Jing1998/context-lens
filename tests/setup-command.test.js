@@ -25,7 +25,7 @@ const run = (file, args, { configDir, cwd, columns } = {}) => spawnSync(process.
 });
 
 async function fakeInstall(configDir, version) {
-  const dist = path.join(configDir, 'plugins', 'cache', 'market', 'claude-hud', version, 'dist');
+  const dist = path.join(configDir, 'plugins', 'cache', 'market', 'context-lens', version, 'dist');
   await mkdir(dist, { recursive: true });
   await writeFile(path.join(dist, '..', 'package.json'), '{"type":"module"}');
   await writeFile(
@@ -38,7 +38,7 @@ test('launcher runs the newest installed version and pads COLUMNS', async () => 
   await withConfigDir(async (configDir) => {
     await fakeInstall(configDir, '0.9.0');
     await fakeInstall(configDir, '0.10.0');
-    await mkdir(path.join(configDir, 'plugins', 'cache', 'market', 'claude-hud', '0.11.0'), { recursive: true });
+    await mkdir(path.join(configDir, 'plugins', 'cache', 'market', 'context-lens', '0.11.0'), { recursive: true });
 
     const result = run(launcher, [], { configDir, columns: '120' });
     assert.equal(result.status, 0, result.stderr);
@@ -73,7 +73,7 @@ test('setup install writes the statusLine and keeps other settings', async () =>
     assert.equal(result.status, 0, result.stderr);
     const report = JSON.parse(result.stdout);
     const settings = JSON.parse(await readFile(settingsPath, 'utf8'));
-    const installedLauncher = path.join(configDir, 'plugins', 'claude-hud', 'statusline.mjs');
+    const installedLauncher = path.join(configDir, 'plugins', 'context-lens', 'statusline.mjs');
 
     assert.equal(settings.model, 'opus');
     assert.deepEqual(settings.statusLine, {
@@ -89,18 +89,18 @@ test('setup install writes the statusLine and keeps other settings', async () =>
   });
 });
 
-test('setup reinstall keeps the existing claude-hud statusLine keys', async () => {
+test('setup reinstall keeps the existing context-lens statusLine keys', async () => {
   await withConfigDir(async (configDir) => {
     const settingsPath = path.join(configDir, 'settings.json');
     await writeFile(settingsPath, JSON.stringify({
-      statusLine: { type: 'command', command: 'old claude-hud command', refreshInterval: 10 },
+      statusLine: { type: 'command', command: 'old context-lens command', refreshInterval: 10 },
     }));
 
     const result = run(setupScript, ['install', '--shell', 'posix'], { configDir });
     assert.equal(result.status, 0, result.stderr);
     const settings = JSON.parse(await readFile(settingsPath, 'utf8'));
     assert.equal(settings.statusLine.refreshInterval, 10);
-    assert.notEqual(settings.statusLine.command, 'old claude-hud command');
+    assert.notEqual(settings.statusLine.command, 'old context-lens command');
   });
 });
 
@@ -138,10 +138,10 @@ test('Windows shells launch through cmd.exe', async () => {
     assert.equal(gitBash.status, 0, gitBash.stderr);
     assert.equal(
       JSON.parse(gitBash.stdout).command,
-      'exec "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/claude-hud/statusline.cmd"',
+      'exec "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/context-lens/statusline.cmd"',
     );
     assert.equal(
-      await readFile(path.join(configDir, 'plugins', 'claude-hud', 'statusline.cmd'), 'utf8'),
+      await readFile(path.join(configDir, 'plugins', 'context-lens', 'statusline.cmd'), 'utf8'),
       `@echo off\r\n"${process.execPath}" "%~dp0statusline.mjs"\r\n`,
     );
 

@@ -1,7 +1,7 @@
 {
-  "name": "claude-hud",
+  "name": "context-lens",
   "version": "0.10.0",
-  "description": "Real-time statusline HUD for Claude Code",
+  "description": "Context and usage HUD maintained by Chin-Jing1998, derived from Claude HUD",
   "type": "module",
   "main": "dist/index.js",
   "files": [
@@ -35,5 +35,19 @@
     "@types/node": "^26.6.2",
     "c8": "^11.0.0",
     "typescript": "^7.0.2"
+  },
+  "contributors": [
+    {
+      "name": "Chin-Jing1998",
+      "url": "https://github.com/Chin-Jing1998"
+    }
+  ],
+  "homepage": "https://github.com/Chin-Jing1998/context-lens",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Chin-Jing1998/context-lens.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Chin-Jing1998/context-lens/issues"
   }
 }

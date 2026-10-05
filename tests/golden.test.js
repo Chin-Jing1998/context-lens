@@ -52,7 +52,7 @@ async function runCase(spec) {
     await mkdir(path.dirname(transcript), { recursive: true });
     await copyFile(path.join(goldenDir, spec.transcript ?? 'transcript.jsonl'), transcript);
     if (spec.config) {
-      const pluginDir = path.join(configDir, 'plugins', 'claude-hud');
+      const pluginDir = path.join(configDir, 'plugins', 'context-lens');
       await mkdir(pluginDir, { recursive: true });
       await writeFile(path.join(pluginDir, 'config.json'), JSON.stringify(spec.config));
     }

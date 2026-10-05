@@ -315,7 +315,7 @@ export function getConfigPath(): string {
 // Lives outside plugins/, which users often symlink across several CLAUDE_CONFIG_DIRs,
 // so it stays per-directory and can override the shared config.
 export function getConfigOverridePath(): string {
-  return path.join(getClaudeConfigDir(os.homedir()), 'claude-hud.json');
+  return path.join(getClaudeConfigDir(os.homedir()), 'context-lens.json');
 }
 
 // A rule maps a raw user value to a valid one, or to the fallback (the default).

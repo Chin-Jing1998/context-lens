@@ -129,7 +129,7 @@ test('Windows tree termination falls back to the exact child when SystemRoot is 
 });
 
 test('runGit returns stdout and rejects on failure', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-git-runner-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-git-runner-'));
   try {
     assert.match(await runGit(dir, ['--version'], 10_000), /^git version /);
     await assert.rejects(runGit(dir, ['rev-parse', 'HEAD'], 10_000), (err) => !(err instanceof GitTimeoutError));
@@ -141,7 +141,7 @@ test('runGit returns stdout and rejects on failure', async () => {
 
 test('the git worker relays stdout, exit status, and times out by disconnecting', async () => {
   const git = absoluteGit();
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-git-worker-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-git-worker-'));
   try {
     assert.match(await runGitInWorker(git, dir, ['--version'], 10_000), /^git version /);
     await assert.rejects(runGitInWorker(git, dir, ['rev-parse', 'HEAD'], 10_000), /exited with code/);

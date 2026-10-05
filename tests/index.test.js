@@ -25,10 +25,10 @@ async function runCli(input, env = {}) {
 
 test('isHudDisabled treats any value but an explicit negative as disabled', () => {
   for (const value of ['1', 'true', 'TRUE', 'yes', 'on', ' 1 ']) {
-    assert.equal(isHudDisabled({ CLAUDE_HUD_DISABLE: value }), true, value);
+    assert.equal(isHudDisabled({ CONTEXT_LENS_DISABLE: value }), true, value);
   }
   for (const value of [undefined, '', ' ', '0', 'false', 'OFF', 'no']) {
-    assert.equal(isHudDisabled({ CLAUDE_HUD_DISABLE: value }), false, String(value));
+    assert.equal(isHudDisabled({ CONTEXT_LENS_DISABLE: value }), false, String(value));
   }
 });
 
@@ -40,12 +40,12 @@ test('the CLI renders stdin, stays silent when disabled, and reports bad input',
   assert.match(rendered.stdout, /\[Opus\]/);
   assert.match(rendered.stdout, /12%/);
 
-  const disabled = await runCli(stdin, { CLAUDE_HUD_DISABLE: '1' });
+  const disabled = await runCli(stdin, { CONTEXT_LENS_DISABLE: '1' });
   assert.equal(disabled.stdout, '');
 
   // No input is how setup checks that the command starts.
   const empty = await runCli('');
-  assert.match(empty.stdout, /\[claude-hud\] Initializing/);
+  assert.match(empty.stdout, /\[context-lens\] Initializing/);
 });
 
 test('formatSessionDuration formats Claude Code session time', () => {

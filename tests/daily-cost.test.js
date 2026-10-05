@@ -35,7 +35,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 beforeEach(async () => {
   delete process.env.CLAUDE_CONFIG_DIR;
-  homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-daily-'));
+  homeDir = await mkdtemp(path.join(tmpdir(), 'context-lens-daily-'));
 });
 
 afterEach(async () => {

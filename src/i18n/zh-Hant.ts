@@ -39,7 +39,7 @@ export const zhHant: Messages = {
   "format.elapsed": "已過 {value}%",
 
   // Init
-  "init.initializing": "[claude-hud] 正在初始化...",
+  "init.initializing": "[context-lens] 正在初始化...",
   "init.macosNote":
-    "[claude-hud] 注意：在 macOS 上，您可能需要重新啟動 Claude Code 才能顯示 HUD。",
+    "[context-lens] 注意：在 macOS 上，您可能需要重新啟動 Claude Code 才能顯示 HUD。",
 };

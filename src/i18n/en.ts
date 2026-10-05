@@ -39,7 +39,7 @@ export const en: Messages = {
   "format.elapsed": "{value}% elapsed",
 
   // Init
-  "init.initializing": "[claude-hud] Initializing...",
+  "init.initializing": "[context-lens] Initializing...",
   "init.macosNote":
-    "[claude-hud] Note: On macOS, you may need to restart Claude Code for the HUD to appear.",
+    "[context-lens] Note: On macOS, you may need to restart Claude Code for the HUD to appear.",
 };

@@ -1,11 +1,15 @@
-# Claude HUD
+# Context Lens
+
+由 [Chin-Jing1998](https://github.com/Chin-Jing1998) 维护，派生自 [jarrodwatts/claude-hud](https://github.com/jarrodwatts/claude-hud)，保留原 MIT 许可和完整 Git 历史。参见[上游同步说明](UPSTREAM.md)与[多端功能实施计划](docs/IMPLEMENTATION_PLAN.md)。
+
+**当前状态：**已完成 Claude Code HUD 的独立改名；新增分类占用、自定义价格、Codex 支持及桌面面板尚未实现。
 
 一个 Claude Code 插件，常驻在输入框下方，实时显示上下文用量、使用率限制、正在运行的工具、子代理以及待办进度。
 
-[![License](https://img.shields.io/github/license/jarrodwatts/claude-hud?v=2)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/jarrodwatts/claude-hud)](https://github.com/jarrodwatts/claude-hud/stargazers)
+[![License](https://img.shields.io/github/license/Chin-Jing1998/context-lens?v=2)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/Chin-Jing1998/context-lens)](https://github.com/Chin-Jing1998/context-lens/stargazers)
 
-![Claude HUD 运行效果](claude-hud-preview-5-2.png)
+![Context Lens 运行效果](context-lens-preview-5-2.png)
 
 > 🌐 [English](README.md) | 中文文档
 
@@ -14,30 +18,30 @@
 在 Claude Code 中运行：
 
 ```
-/plugin marketplace add jarrodwatts/claude-hud
-/plugin install claude-hud
+/plugin marketplace add Chin-Jing1998/context-lens
+/plugin install context-lens
 /reload-plugins
-/claude-hud:setup
+/context-lens:setup
 ```
 
-`/claude-hud:setup` 会把状态栏指向 HUD。Claude Code 会自动重新加载设置，HUD 会立即出现。想要自定义，直接告诉 Claude，或运行 `/claude-hud:configure`。
+`/context-lens:setup` 会把状态栏指向 HUD。Claude Code 会自动重新加载设置，HUD 会立即出现。想要自定义，直接告诉 Claude，或运行 `/context-lens:configure`。
 
 <details>
 <summary><strong>更喜欢用终端？</strong></summary>
 
 ```bash
-claude plugin marketplace add jarrodwatts/claude-hud
-claude plugin install claude-hud@claude-hud
+claude plugin marketplace add Chin-Jing1998/context-lens
+claude plugin install context-lens@context-lens
 ```
 
-然后在会话中运行 `/reload-plugins` 和 `/claude-hud:setup`。
+然后在会话中运行 `/reload-plugins` 和 `/context-lens:setup`。
 
 </details>
 
 <details>
 <summary><strong>Windows：setup 提示找不到 JavaScript 运行时</strong></summary>
 
-安装 Node.js LTS（`winget install OpenJS.NodeJS.LTS`），重启 shell，然后再次运行 `/claude-hud:setup`。
+安装 Node.js LTS（`winget install OpenJS.NodeJS.LTS`），重启 shell，然后再次运行 `/context-lens:setup`。
 
 </details>
 
@@ -53,7 +57,7 @@ Context █████░░░░░ 45% │ Usage ██░░░░░░░
 - **第 1 行**：模型、检测到时的提供商标签（`Bedrock`、`Vertex`、`MiniMax`）、项目路径和 git 分支。
 - **第 2 行**：上下文用量（随占用依次变为绿、黄、红）以及订阅用户的使用率限制。
 
-可选行，通过 `/claude-hud:configure` 开启：
+可选行，通过 `/context-lens:configure` 开启：
 
 ```
 ◐ Edit: auth.ts | ✓ Read ×3 | ✓ Grep ×2        ← 工具
@@ -63,19 +67,19 @@ Context █████░░░░░ 45% │ Usage ██░░░░░░░
 
 ## 工作原理
 
-Claude HUD 是一个[状态栏](https://code.claude.com/docs/en/statusline)命令。Claude Code 通过 stdin 传入会话数据（模型、上下文窗口、费用、使用率限制、prompt cache）并显示它的输出。部分可选元素（例如工具、子代理和待办行）还会读取会话 transcript。不需要单独的窗口或 tmux，任何终端都能用。
+Context Lens 是一个[状态栏](https://code.claude.com/docs/en/statusline)命令。Claude Code 通过 stdin 传入会话数据（模型、上下文窗口、费用、使用率限制、prompt cache）并显示它的输出。部分可选元素（例如工具、子代理和待办行）还会读取会话 transcript。不需要单独的窗口或 tmux，任何终端都能用。
 
 ## 配置
 
 ```
-/claude-hud:configure
+/context-lens:configure
 ```
 
 引导流程涵盖布局、活动行、会话信息、使用率、git、语言和自定义行。保存前会预览改动，并保留它没有询问的所有设置。
 
-其他设置位于 `~/.claude/plugins/claude-hud/config.json`（或 `$CLAUDE_CONFIG_DIR` 下）。无效值会回退为默认值。
+其他设置位于 `~/.claude/plugins/context-lens/config.json`（或 `$CLAUDE_CONFIG_DIR` 下）。无效值会回退为默认值。
 
-如果多个 `CLAUDE_CONFIG_DIR` 共用同一个 `plugins/` 目录，可以把各目录专属的设置放进 `$CLAUDE_CONFIG_DIR/claude-hud.json`。它的结构相同，只需写要改的键，加载时叠加在共享配置之上：
+如果多个 `CLAUDE_CONFIG_DIR` 共用同一个 `plugins/` 目录，可以把各目录专属的设置放进 `$CLAUDE_CONFIG_DIR/context-lens.json`。它的结构相同，只需写要改的键，加载时叠加在共享配置之上：
 
 ```json
 { "display": { "customLine": "Work Team" } }
@@ -252,20 +256,20 @@ Claude Code 会在每条消息、`/compact`、权限或 vim 模式变化、使�
 ### 临时关闭
 
 ```bash
-CLAUDE_HUD_DISABLE=1 claude
+CONTEXT_LENS_DISABLE=1 claude
 ```
 
 除 `0`、`false`、`off`、`no` 之外的任何值都会在该会话中清空 HUD，无需修改 `settings.json`。
 
 ## 安全
 
-Claude HUD 只在本地运行。它不发起网络请求，从不读取凭据，也不调用未公开的 API。它读取 Claude Code 的 stdin、会话 transcript、Claude 配置文件以及当前目录的 git 或 jj 元数据。它唯一写入的是 `~/.claude/plugins/claude-hud` 下的少量状态文件（输出速度和费用账本），并使用私有权限。
+Context Lens 只在本地运行。它不发起网络请求，从不读取凭据，也不调用未公开的 API。它读取 Claude Code 的 stdin、会话 transcript、Claude 配置文件以及当前目录的 git 或 jj 元数据。它唯一写入的是 `~/.claude/plugins/context-lens` 下的少量状态文件（输出速度和费用账本），并使用私有权限。
 
-`--extra-cmd` 会在每次刷新时运行一条 shell 命令，并把输出显示在第一行。除非 HUD 的环境中设置了 `CLAUDE_HUD_ALLOW_EXTRA_CMD=1`，否则它会被忽略。请把它视为任意代码执行，切勿使用来源不可信的命令。
+`--extra-cmd` 会在每次刷新时运行一条 shell 命令，并把输出显示在第一行。除非 HUD 的环境中设置了 `CONTEXT_LENS_ALLOW_EXTRA_CMD=1`，否则它会被忽略。请把它视为任意代码执行，切勿使用来源不可信的命令。
 
 ## 故障排查
 
-**HUD 没有出现。** 发送一条消息，状态栏会在交互之后渲染。确认 shell 中没有设置 `CLAUDE_HUD_DISABLE`。如果 Node 或 Bun 的路径变了（例如 nvm 或 mise 升级之后），重新运行 `/claude-hud:setup`。
+**HUD 没有出现。** 发送一条消息，状态栏会在交互之后渲染。确认 shell 中没有设置 `CONTEXT_LENS_DISABLE`。如果 Node 或 Bun 的路径变了（例如 nvm 或 mise 升级之后），重新运行 `/context-lens:setup`。
 
 **配置没有生效。** 检查 JSON 是否有语法错误：无效文件会回退为默认值。确认取值在范围内，选项表中列出了各项范围。
 
@@ -284,8 +288,8 @@ Claude HUD 只在本地运行。它不发起网络请求，从不读取凭据，
 ## 开发
 
 ```bash
-git clone https://github.com/jarrodwatts/claude-hud
-cd claude-hud
+git clone https://github.com/Chin-Jing1998/context-lens
+cd context-lens
 npm ci && npm test
 ```
 
@@ -297,4 +301,4 @@ MIT，参见 [LICENSE](LICENSE)。
 
 ## Star 历史
 
-[![Star History Chart](https://api.star-history.com/svg?repos=jarrodwatts/claude-hud&type=Date)](https://star-history.com/#jarrodwatts/claude-hud&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=Chin-Jing1998/context-lens&type=Date)](https://star-history.com/#Chin-Jing1998/context-lens&Date)

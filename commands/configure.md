@@ -3,14 +3,14 @@ description: Configure HUD display options (layout, language, presets, display e
 allowed-tools: Read, Write, AskUserQuestion
 ---
 
-# Configure Claude HUD
+# Configure Context Lens
 
 ## Read the current config
 
 The config directory is `$CLAUDE_CONFIG_DIR` when set, otherwise `~/.claude`. Read these files if they exist:
 
-1. `plugins/claude-hud/config.json`: the base config. This command writes only this file.
-2. `claude-hud.json` in the config directory: a manual per-directory override. It uses the same shape and its values win. Never write or delete it.
+1. `plugins/context-lens/config.json`: the base config. This command writes only this file.
+2. `context-lens.json` in the config directory: a manual per-directory override. It uses the same shape and its values win. Never write or delete it.
 
 The effective config is the base with the override layered on top: nested objects merge key by key, and arrays and scalars are replaced. Missing keys use the defaults in the README's configuration table. Use the effective values when describing the current state.
 
@@ -66,12 +66,12 @@ Compute the changed keys by comparing against the effective config.
 
 - If nothing changed, say "No changes needed - config unchanged." and stop.
 - Otherwise show each changed key as `key: old → new`.
-- If a changed key is also set in `claude-hud.json`, warn that the override still wins and show the effective value.
+- If a changed key is also set in `context-lens.json`, warn that the override still wins and show the effective value.
 
 Then ask "Save these changes?"
 
 ## Write
 
-Write `plugins/claude-hud/config.json`, creating directories as needed. Start from the existing base file and change only the selected keys. Keep every other key exactly as it was, including settings this command doesn't ask about, such as `colors`, thresholds, `elementOrder`, `mergeGroups`, and `display.externalUsage*`. Write valid JSON with 2-space indentation.
+Write `plugins/context-lens/config.json`, creating directories as needed. Start from the existing base file and change only the selected keys. Keep every other key exactly as it was, including settings this command doesn't ask about, such as `colors`, thresholds, `elementOrder`, `mergeGroups`, and `display.externalUsage*`. Write valid JSON with 2-space indentation.
 
 Then say: "Configuration saved! The HUD picks it up on its next refresh." Mention that the README documents every other option.

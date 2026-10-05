@@ -54,7 +54,7 @@ const rich = merge(typical, {
   output_style: { name: 'Explanatory' },
   workspace: {
     git_worktree: 'feat-auth',
-    repo: { host: 'github.com', owner: 'jarrodwatts', name: 'claude-hud' },
+    repo: { host: 'github.com', owner: 'Chin-Jing1998', name: 'context-lens' },
   },
   prompt_cache: {
     warm: true,
@@ -65,7 +65,7 @@ const rich = merge(typical, {
     misses: 1,
     hit_ratio: 0.91,
   },
-  pr: { number: 1234, url: 'https://github.com/jarrodwatts/claude-hud/pull/1234', review_state: 'pending' },
+  pr: { number: 1234, url: 'https://github.com/Chin-Jing1998/context-lens/pull/1234', review_state: 'pending' },
 });
 
 const stdin = {

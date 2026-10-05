@@ -1,4 +1,4 @@
-// Installs the claude-hud statusLine. Run under the runtime the status line
+// Installs the context-lens statusLine. Run under the runtime the status line
 // should use (node, or bun on macOS/Linux):
 //   <runtime> setup.mjs inspect --shell posix|gitbash|powershell
 //   <runtime> setup.mjs install --shell posix|gitbash|powershell
@@ -22,7 +22,7 @@ function buildCommand(shell, launcher) {
   if (shell === 'gitbash') {
     // Launch through cmd.exe: Git Bash creates native children suspended, so a
     // killed statusLine shell would otherwise strand a node.exe (#747).
-    return 'exec "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/claude-hud/statusline.cmd"';
+    return 'exec "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/context-lens/statusline.cmd"';
   }
   if (shell === 'powershell') {
     const cmd = path.win32.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe');
@@ -66,13 +66,13 @@ function main(argv) {
     throw new Error('usage: setup.mjs inspect|install --shell posix|gitbash|powershell');
   }
 
-  const hudDir = path.join(configDir(), 'plugins', 'claude-hud');
+  const hudDir = path.join(configDir(), 'plugins', 'context-lens');
   const launcher = path.join(hudDir, 'statusline.mjs');
   const settingsPath = path.join(configDir(), 'settings.json');
   const settings = readSettings(settingsPath);
   const command = buildCommand(shell, launcher);
   const existing = typeof settings.statusLine?.command === 'string' ? settings.statusLine.command : '';
-  const existingKind = existing === '' ? 'none' : existing.includes('claude-hud') ? 'claude-hud' : 'other';
+  const existingKind = existing === '' ? 'none' : existing.includes('context-lens') ? 'context-lens' : 'other';
   const report = { settingsPath, command, existing: existingKind, existingPreview: existing ? redact(existing) : '' };
   if (action === 'inspect') return report;
 
@@ -91,7 +91,7 @@ function main(argv) {
     fs.writeFileSync(report.previousCommandPath, existing, { mode: 0o600 });
   }
 
-  const statusLine = { ...(existingKind === 'claude-hud' ? settings.statusLine : {}), type: 'command', command };
+  const statusLine = { ...(existingKind === 'context-lens' ? settings.statusLine : {}), type: 'command', command };
   // Write the real file (settings.json is often a dotfiles symlink) and keep its permissions.
   const target = fs.existsSync(settingsPath) ? fs.realpathSync(settingsPath) : settingsPath;
   const mode = fs.existsSync(target) ? fs.statSync(target).mode & 0o777 : 0o600;
@@ -105,6 +105,6 @@ function main(argv) {
 try {
   process.stdout.write(`${JSON.stringify(main(process.argv.slice(2)), null, 2)}\n`);
 } catch (error) {
-  process.stderr.write(`claude-hud setup: ${error instanceof Error ? error.message : error}\n`);
+  process.stderr.write(`context-lens setup: ${error instanceof Error ? error.message : error}\n`);
   process.exit(1);
 }

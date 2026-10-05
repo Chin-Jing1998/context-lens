@@ -57,3 +57,8 @@ temp/
 # Lock files (keep package-lock.json for npm)
 yarn.lock
 bun.lock
+
+# Local code-navigation indexes and research archives
+.codegraph/
+.serena/
+web-archive/

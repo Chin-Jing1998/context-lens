@@ -9,7 +9,7 @@ import { getGitStatus, parseNumstat, parseStatus } from '../dist/git.js';
 const IDENTITY = ['-c', 'user.name=Test', '-c', 'user.email=test@test.com', '-c', 'commit.gpgsign=false'];
 
 async function withRepo(fn, { commit = true } = {}) {
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-git-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-git-'));
   const git = (...args) => execFileSync('git', [...IDENTITY, ...args], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
   const write = (name, content) => writeFile(path.join(dir, name), content);
   try {
@@ -32,7 +32,7 @@ function mergeConflict(git) {
 
 test('getGitStatus returns null without a cwd or outside a repo', async () => {
   assert.equal(await getGitStatus(undefined), null);
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-nogit-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-nogit-'));
   try {
     assert.equal(await getGitStatus(dir), null);
   } finally {

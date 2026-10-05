@@ -1,11 +1,15 @@
-# Claude HUD
+# Context Lens
+
+Maintained by [Chin-Jing1998](https://github.com/Chin-Jing1998), based on [jarrodwatts/claude-hud](https://github.com/jarrodwatts/claude-hud). The original MIT license and Git history are retained. See [upstream synchronization](UPSTREAM.md) and the [multi-client implementation plan](docs/IMPLEMENTATION_PLAN.md).
+
+**Current status:** the renamed Claude Code HUD is available. The additional context breakdown, custom pricing, Codex support, and desktop dashboards are planned, not implemented yet.
 
 A Claude Code plugin that shows what's happening: context usage, rate limits, active tools, running agents, and todo progress, always visible below your input.
 
-[![License](https://img.shields.io/github/license/jarrodwatts/claude-hud?v=2)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/jarrodwatts/claude-hud)](https://github.com/jarrodwatts/claude-hud/stargazers)
+[![License](https://img.shields.io/github/license/Chin-Jing1998/context-lens?v=2)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/Chin-Jing1998/context-lens)](https://github.com/Chin-Jing1998/context-lens/stargazers)
 
-![Claude HUD in action](claude-hud-preview-5-2.png)
+![Context Lens in action](context-lens-preview-5-2.png)
 
 > 🌐 English | [中文文档](README.zh.md)
 
@@ -14,30 +18,30 @@ A Claude Code plugin that shows what's happening: context usage, rate limits, ac
 Inside Claude Code, run:
 
 ```
-/plugin marketplace add jarrodwatts/claude-hud
-/plugin install claude-hud
+/plugin marketplace add Chin-Jing1998/context-lens
+/plugin install context-lens
 /reload-plugins
-/claude-hud:setup
+/context-lens:setup
 ```
 
-`/claude-hud:setup` points your status line at the HUD. Claude Code reloads settings on its own, so the HUD appears right away. To customize it, ask Claude or run `/claude-hud:configure`.
+`/context-lens:setup` points your status line at the HUD. Claude Code reloads settings on its own, so the HUD appears right away. To customize it, ask Claude or run `/context-lens:configure`.
 
 <details>
 <summary><strong>Prefer the terminal?</strong></summary>
 
 ```bash
-claude plugin marketplace add jarrodwatts/claude-hud
-claude plugin install claude-hud@claude-hud
+claude plugin marketplace add Chin-Jing1998/context-lens
+claude plugin install context-lens@context-lens
 ```
 
-Then run `/reload-plugins` and `/claude-hud:setup` inside a session.
+Then run `/reload-plugins` and `/context-lens:setup` inside a session.
 
 </details>
 
 <details>
 <summary><strong>Windows: setup says no JavaScript runtime was found</strong></summary>
 
-Install Node.js LTS (`winget install OpenJS.NodeJS.LTS`), restart your shell, and run `/claude-hud:setup` again.
+Install Node.js LTS (`winget install OpenJS.NodeJS.LTS`), restart your shell, and run `/context-lens:setup` again.
 
 </details>
 
@@ -53,7 +57,7 @@ Context █████░░░░░ 45% │ Usage ██░░░░░░░
 - **Line 1**: model, a provider label when one is detected (`Bedrock`, `Vertex`, `MiniMax`), project path, and git branch.
 - **Line 2**: context used (green, then yellow, then red as it fills) and your subscriber rate limits.
 
-Optional lines, which you turn on with `/claude-hud:configure`:
+Optional lines, which you turn on with `/context-lens:configure`:
 
 ```
 ◐ Edit: auth.ts | ✓ Read ×3 | ✓ Grep ×2        ← tools
@@ -63,19 +67,19 @@ Optional lines, which you turn on with `/claude-hud:configure`:
 
 ## How It Works
 
-Claude HUD is a [status line](https://code.claude.com/docs/en/statusline) command. Claude Code runs it with session data on stdin (model, context window, cost, rate limits, prompt cache) and shows what it prints. Some optional elements, such as the tools, agents, and todos lines, also read the session transcript. It needs no separate window or tmux and works in any terminal.
+Context Lens is a [status line](https://code.claude.com/docs/en/statusline) command. Claude Code runs it with session data on stdin (model, context window, cost, rate limits, prompt cache) and shows what it prints. Some optional elements, such as the tools, agents, and todos lines, also read the session transcript. It needs no separate window or tmux and works in any terminal.
 
 ## Configuration
 
 ```
-/claude-hud:configure
+/context-lens:configure
 ```
 
 The guided flow covers layout, activity lines, session info, usage, git, language, and a custom line. It previews the changes before saving and keeps every setting it doesn't ask about.
 
-Everything else lives in `~/.claude/plugins/claude-hud/config.json` (or under `$CLAUDE_CONFIG_DIR`). Invalid values fall back to their defaults.
+Everything else lives in `~/.claude/plugins/context-lens/config.json` (or under `$CLAUDE_CONFIG_DIR`). Invalid values fall back to their defaults.
 
-If several `CLAUDE_CONFIG_DIR`s share one `plugins/` directory, put per-directory settings in `$CLAUDE_CONFIG_DIR/claude-hud.json`. It uses the same shape, only needs the keys it changes, and is layered on top of the shared config:
+If several `CLAUDE_CONFIG_DIR`s share one `plugins/` directory, put per-directory settings in `$CLAUDE_CONFIG_DIR/context-lens.json`. It uses the same shape, only needs the keys it changes, and is layered on top of the shared config:
 
 ```json
 { "display": { "customLine": "Work Team" } }
@@ -252,20 +256,20 @@ Claude Code re-runs the status line after each message, `/compact`, a permission
 ### Turning It Off for a Session
 
 ```bash
-CLAUDE_HUD_DISABLE=1 claude
+CONTEXT_LENS_DISABLE=1 claude
 ```
 
 Any value other than `0`, `false`, `off`, or `no` blanks the HUD for that session without touching `settings.json`.
 
 ## Security
 
-Claude HUD is local-only. It makes no network requests, never reads credentials, and calls no undocumented APIs. It reads Claude Code's stdin, the session transcript, Claude configuration files, and git or jj metadata for the current directory. Its only writes are small state files (output speed and the cost ledger) under `~/.claude/plugins/claude-hud`, with private permissions.
+Context Lens is local-only. It makes no network requests, never reads credentials, and calls no undocumented APIs. It reads Claude Code's stdin, the session transcript, Claude configuration files, and git or jj metadata for the current directory. Its only writes are small state files (output speed and the cost ledger) under `~/.claude/plugins/context-lens`, with private permissions.
 
-`--extra-cmd` runs a shell command on every refresh and puts its output on the first line. It is ignored unless `CLAUDE_HUD_ALLOW_EXTRA_CMD=1` is set in the HUD's environment. Treat it as arbitrary code execution and never use a command from an untrusted source.
+`--extra-cmd` runs a shell command on every refresh and puts its output on the first line. It is ignored unless `CONTEXT_LENS_ALLOW_EXTRA_CMD=1` is set in the HUD's environment. Treat it as arbitrary code execution and never use a command from an untrusted source.
 
 ## Troubleshooting
 
-**The HUD doesn't appear.** Send a message, because the status line renders after an interaction. Check that `CLAUDE_HUD_DISABLE` isn't set in your shell. Run `/claude-hud:setup` again if your Node or Bun path changed, for example after an nvm or mise upgrade.
+**The HUD doesn't appear.** Send a message, because the status line renders after an interaction. Check that `CONTEXT_LENS_DISABLE` isn't set in your shell. Run `/context-lens:setup` again if your Node or Bun path changed, for example after an nvm or mise upgrade.
 
 **Config isn't applying.** Check the JSON for syntax errors: an invalid file falls back to the defaults. Check that values are in range; the options table lists them.
 
@@ -284,8 +288,8 @@ Claude HUD is local-only. It makes no network requests, never reads credentials,
 ## Development
 
 ```bash
-git clone https://github.com/jarrodwatts/claude-hud
-cd claude-hud
+git clone https://github.com/Chin-Jing1998/context-lens
+cd context-lens
 npm ci && npm test
 ```
 
@@ -297,4 +301,4 @@ MIT. See [LICENSE](LICENSE).
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=jarrodwatts/claude-hud&type=Date)](https://star-history.com/#jarrodwatts/claude-hud&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=Chin-Jing1998/context-lens&type=Date)](https://star-history.com/#Chin-Jing1998/context-lens&Date)

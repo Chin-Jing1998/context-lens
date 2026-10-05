@@ -1,8 +1,7 @@
 {
-  "name": "claude-hud",
+  "name": "context-lens",
   "owner": {
-    "name": "Jarrod Watts",
-    "email": "jarrodwattsyt@gmail.com"
+    "name": "Chin-Jing1998"
   },
   "metadata": {
     "description": "Real-time statusline HUD for Claude Code - context health, tool activity, agent tracking, and todo progress",
@@ -10,11 +9,19 @@
   },
   "plugins": [
     {
-      "name": "claude-hud",
+      "name": "context-lens",
       "source": "./",
       "description": "Real-time statusline showing context usage, active tools, running agents, and todo progress. Always visible below your input, zero config required.",
       "category": "monitoring",
-      "tags": ["hud", "statusline", "monitoring", "context", "tools", "agents", "todos"]
+      "tags": [
+        "hud",
+        "statusline",
+        "monitoring",
+        "context",
+        "tools",
+        "agents",
+        "todos"
+      ]
     }
   ]
 }

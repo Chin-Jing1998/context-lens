@@ -22,7 +22,7 @@ test('isJjRepo returns false when cwd is undefined', () => {
 });
 
 test('isJjRepo returns false for a non-jj directory', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-nojj-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-nojj-'));
   try {
     assert.equal(isJjRepo(dir), false);
   } finally {
@@ -36,7 +36,7 @@ test('getJjStatus returns null when cwd is undefined', async () => {
 });
 
 test('getJjStatus returns null for a non-jj directory', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-nojj-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-nojj-'));
   try {
     const result = await getJjStatus(dir);
     assert.equal(result, null);
@@ -46,7 +46,7 @@ test('getJjStatus returns null for a non-jj directory', async () => {
 });
 
 test('getJjStatus uses a fixed read-only bounded invocation', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-jj-runner-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-jj-runner-'));
   let invocation;
   try {
     const result = await getJjStatus(dir, async (file, args, options) => {
@@ -78,7 +78,7 @@ test('getJjStatus uses a fixed read-only bounded invocation', async () => {
 });
 
 test('getJjStatus strictly validates field count and boolean flags', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-jj-parse-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-jj-parse-'));
   try {
     for (const stdout of [
       'change\x1fmain\x1f0',
@@ -98,7 +98,7 @@ test('getJjStatus strictly validates field count and boolean flags', async () =>
 });
 
 test('getJjStatus preserves commas and separates local bookmarks safely', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-jj-bookmarks-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-jj-bookmarks-'));
   try {
     const result = await getJjStatus(
       dir,
@@ -112,7 +112,7 @@ test('getJjStatus preserves commas and separates local bookmarks safely', async 
 });
 
 test('getJjStatus sanitizes terminal controls and caps the chosen label', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-jj-label-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-jj-label-'));
   try {
     const unsafe = `safe\x1b]8;;https://evil.example\x07link\x1b]8;;\x07\u202E${'x'.repeat(100)}`;
     const result = await getJjStatus(
@@ -130,7 +130,7 @@ test('getJjStatus sanitizes terminal controls and caps the chosen label', async 
 });
 
 test('isJjRepo resolves the cwd before walking', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-jj-realpath-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-jj-realpath-'));
   const link = `${dir}-link`;
   try {
     await mkdir(path.join(dir, '.jj'));
@@ -143,8 +143,8 @@ test('isJjRepo resolves the cwd before walking', async () => {
 });
 
 test('isJjRepo rejects a symlinked .jj marker', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-jj-symlink-'));
-  const markerTarget = await mkdtemp(path.join(tmpdir(), 'claude-hud-jj-marker-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-jj-symlink-'));
+  const markerTarget = await mkdtemp(path.join(tmpdir(), 'context-lens-jj-marker-'));
   try {
     await symlink(markerTarget, path.join(dir, '.jj'), 'dir');
     assert.equal(isJjRepo(dir), false);
@@ -155,7 +155,7 @@ test('isJjRepo rejects a symlinked .jj marker', async () => {
 });
 
 test('isJjRepo stops at a nearer .git marker', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-jj-boundary-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-jj-boundary-'));
   const nested = path.join(dir, 'nested');
   const deep = path.join(nested, 'deep');
   try {
@@ -169,7 +169,7 @@ test('isJjRepo stops at a nearer .git marker', async () => {
 });
 
 test('isJjRepo prefers a same-directory .jj marker over .git', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-jj-colocated-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-jj-colocated-'));
   try {
     await mkdir(path.join(dir, '.jj'));
     await mkdir(path.join(dir, '.git'));
@@ -180,7 +180,7 @@ test('isJjRepo prefers a same-directory .jj marker over .git', async () => {
 });
 
 test('isJjRepo and getJjStatus detect a real jj repo', { skip: skipReason }, async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-jj-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-jj-'));
   try {
     execFileSync('jj', ['git', 'init'], { cwd: dir, stdio: 'ignore' });
 
@@ -197,7 +197,7 @@ test('isJjRepo and getJjStatus detect a real jj repo', { skip: skipReason }, asy
 });
 
 test('getJjStatus reports isDirty after an uncommitted change', { skip: skipReason }, async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-jj-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-jj-'));
   try {
     execFileSync('jj', ['git', 'init'], { cwd: dir, stdio: 'ignore' });
     await writeFile(path.join(dir, 'a.txt'), 'hello');
@@ -210,7 +210,7 @@ test('getJjStatus reports isDirty after an uncommitted change', { skip: skipReas
 });
 
 test('getJjStatus reports the bookmark name at @ when one exists', { skip: skipReason }, async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-jj-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-jj-'));
   try {
     execFileSync('jj', ['git', 'init'], { cwd: dir, stdio: 'ignore' });
     execFileSync('jj', ['bookmark', 'create', 'mybookmark', '-r', '@'], { cwd: dir, stdio: 'ignore' });
@@ -223,7 +223,7 @@ test('getJjStatus reports the bookmark name at @ when one exists', { skip: skipR
 });
 
 test('isJjRepo detects a jj repo from a nested subdirectory', { skip: skipReason }, async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-jj-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-jj-'));
   try {
     execFileSync('jj', ['git', 'init'], { cwd: dir, stdio: 'ignore' });
     const nested = path.join(dir, 'a', 'b', 'c');
@@ -236,7 +236,7 @@ test('isJjRepo detects a jj repo from a nested subdirectory', { skip: skipReason
 });
 
 test('getJjStatus detects a genuine conflict', { skip: skipReason }, async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-jj-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-jj-'));
   try {
     execFileSync('jj', ['git', 'init'], { cwd: dir, stdio: 'ignore' });
     await writeFile(path.join(dir, 'f.txt'), 'original\n');

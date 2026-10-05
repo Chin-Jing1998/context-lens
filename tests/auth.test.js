@@ -79,7 +79,7 @@ test('deriveAuthInfo strips ANSI sequences and control characters from values', 
 });
 
 test('readAuthInfo honors CLAUDE_CONFIG_DIR and handles unreadable profiles', async () => {
-  const tempDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-auth-test-'));
+  const tempDir = await mkdtemp(path.join(tmpdir(), 'context-lens-auth-test-'));
   const configDir = path.join(tempDir, 'profile');
   const originalConfigDir = process.env.CLAUDE_CONFIG_DIR;
   const originalApiKey = process.env.ANTHROPIC_API_KEY;
@@ -106,7 +106,7 @@ test('readAuthInfo honors CLAUDE_CONFIG_DIR and handles unreadable profiles', as
 });
 
 test('readAuthInfo reports an API key without requiring an oauth profile', async () => {
-  const tempDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-auth-key-test-'));
+  const tempDir = await mkdtemp(path.join(tmpdir(), 'context-lens-auth-key-test-'));
   const originalConfigDir = process.env.CLAUDE_CONFIG_DIR;
   const originalApiKey = process.env.ANTHROPIC_API_KEY;
 

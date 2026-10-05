@@ -9,7 +9,7 @@ import { getUsageFromStdin } from '../dist/stdin.js';
 import { getUsageFromExternalSnapshot, resolveUsage, writeExternalUsageSnapshot } from '../dist/external-usage.js';
 
 async function withTempFile(content) {
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-external-usage-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-external-usage-'));
   const filePath = path.join(dir, 'usage.json');
   await writeFile(filePath, content, 'utf8');
   return {
@@ -91,7 +91,7 @@ test('getUsageFromExternalSnapshot ignores relative read paths', () => {
 });
 
 test('writeExternalUsageSnapshot writes stdin rate limits to the configured path', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-external-usage-write-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-external-usage-write-'));
   const filePath = path.join(dir, 'usage.json');
   const now = Date.UTC(2026, 3, 20, 12, 0, 0);
   const usage = getUsageFromStdin({
@@ -125,7 +125,7 @@ test('writeExternalUsageSnapshot writes stdin rate limits to the configured path
 });
 
 test('writeExternalUsageSnapshot skips identical snapshots within the throttle window', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-external-usage-write-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-external-usage-write-'));
   const filePath = path.join(dir, 'usage.json');
   const config = makeWriteConfig(filePath);
   const usage = makeUsage();
@@ -163,7 +163,7 @@ test('writeExternalUsageSnapshot never touches the filesystem for an unusable pa
 });
 
 test('writeExternalUsageSnapshot does not create missing parent directories', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-external-usage-write-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-external-usage-write-'));
   const missingDir = path.join(dir, 'missing');
   const filePath = path.join(missingDir, 'usage.json');
 
@@ -179,7 +179,7 @@ test('writeExternalUsageSnapshot does not create missing parent directories', as
 });
 
 test('writeExternalUsageSnapshot removes temp files when atomic rename fails', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-external-usage-write-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-external-usage-write-'));
   const filePath = path.join(dir, 'usage.json');
   const deps = {
     chmodSync: fs.chmodSync,
@@ -205,7 +205,7 @@ test('writeExternalUsageSnapshot removes temp files when atomic rename fails', a
 });
 
 test('writeExternalUsageSnapshot emits only supported snapshot keys', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-external-usage-write-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-external-usage-write-'));
   const filePath = path.join(dir, 'usage.json');
   const usage = getUsageFromStdin({
     rate_limits: {
@@ -228,7 +228,7 @@ test('writeExternalUsageSnapshot emits only supported snapshot keys', async () =
 });
 
 test('writeExternalUsageSnapshot output can be read by getUsageFromExternalSnapshot', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-external-usage-write-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'context-lens-external-usage-write-'));
   const filePath = path.join(dir, 'usage.json');
   const now = Date.UTC(2026, 3, 20, 12, 0, 0);
 

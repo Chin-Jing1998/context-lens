@@ -36,7 +36,7 @@ function booleanPaths(node, prefix = '') {
 
 async function withConfigDir(fn) {
   const original = process.env.CLAUDE_CONFIG_DIR;
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'claude-hud-config-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'context-lens-config-'));
   process.env.CLAUDE_CONFIG_DIR = dir;
   try {
     return await fn(dir);
@@ -158,23 +158,23 @@ test('display text options are sanitized and capped', () => {
 });
 
 test('external usage paths trim, expand ~ and ${VAR} once, and leave unset variables', () => {
-  process.env.CLAUDE_HUD_TEST_A = '/opt/claude-hud';
-  process.env.CLAUDE_HUD_TEST_B = '${CLAUDE_HUD_TEST_A}';
-  delete process.env.CLAUDE_HUD_TEST_MISSING;
+  process.env.CONTEXT_LENS_TEST_A = '/opt/context-lens';
+  process.env.CONTEXT_LENS_TEST_B = '${CONTEXT_LENS_TEST_A}';
+  delete process.env.CONTEXT_LENS_TEST_MISSING;
   try {
     const { display } = mergeConfig({
-      display: { externalUsagePath: ' ~/usage.json ', externalUsageWritePath: '${CLAUDE_HUD_TEST_A}/${CLAUDE_HUD_TEST_B}' },
+      display: { externalUsagePath: ' ~/usage.json ', externalUsageWritePath: '${CONTEXT_LENS_TEST_A}/${CONTEXT_LENS_TEST_B}' },
     });
     assert.equal(display.externalUsagePath, path.join(os.homedir(), 'usage.json'));
-    assert.equal(display.externalUsageWritePath, '/opt/claude-hud/${CLAUDE_HUD_TEST_A}');
+    assert.equal(display.externalUsageWritePath, '/opt/context-lens/${CONTEXT_LENS_TEST_A}');
     assert.equal(
-      mergeConfig({ display: { externalUsagePath: '${CLAUDE_HUD_TEST_MISSING}/u.json' } }).display.externalUsagePath,
-      '${CLAUDE_HUD_TEST_MISSING}/u.json',
+      mergeConfig({ display: { externalUsagePath: '${CONTEXT_LENS_TEST_MISSING}/u.json' } }).display.externalUsagePath,
+      '${CONTEXT_LENS_TEST_MISSING}/u.json',
     );
     assert.equal(mergeConfig({ display: { externalUsagePath: 123 } }).display.externalUsagePath, '');
   } finally {
-    delete process.env.CLAUDE_HUD_TEST_A;
-    delete process.env.CLAUDE_HUD_TEST_B;
+    delete process.env.CONTEXT_LENS_TEST_A;
+    delete process.env.CONTEXT_LENS_TEST_B;
   }
 });
 
@@ -253,24 +253,24 @@ test('legacy layout keys migrate unless lineLayout is set', () => {
 
 test('config paths follow CLAUDE_CONFIG_DIR, with the override outside plugins/', async () => {
   await withConfigDir(async (dir) => {
-    assert.equal(getConfigPath(), path.join(dir, 'plugins', 'claude-hud', 'config.json'));
-    assert.equal(getConfigOverridePath(), path.join(dir, 'claude-hud.json'));
+    assert.equal(getConfigPath(), path.join(dir, 'plugins', 'context-lens', 'config.json'));
+    assert.equal(getConfigOverridePath(), path.join(dir, 'context-lens.json'));
   });
   const original = process.env.CLAUDE_CONFIG_DIR;
   delete process.env.CLAUDE_CONFIG_DIR;
   try {
-    assert.equal(getConfigPath(), path.join(os.homedir(), '.claude', 'plugins', 'claude-hud', 'config.json'));
-    assert.equal(getConfigOverridePath(), path.join(os.homedir(), '.claude', 'claude-hud.json'));
+    assert.equal(getConfigPath(), path.join(os.homedir(), '.claude', 'plugins', 'context-lens', 'config.json'));
+    assert.equal(getConfigOverridePath(), path.join(os.homedir(), '.claude', 'context-lens.json'));
   } finally {
     if (original !== undefined) process.env.CLAUDE_CONFIG_DIR = original;
   }
 });
 
-test('loadConfig layers claude-hud.json over the shared config', async () => {
+test('loadConfig layers context-lens.json over the shared config', async () => {
   await withConfigDir(async (dir) => {
     assert.deepEqual(await loadConfig(), DEFAULT_CONFIG);
 
-    await writeJson(path.join(dir, 'claude-hud.json'), { display: { customLine: 'Override only' } });
+    await writeJson(path.join(dir, 'context-lens.json'), { display: { customLine: 'Override only' } });
     assert.equal((await loadConfig()).display.customLine, 'Override only');
 
     await writeJson(getConfigPath(), {
@@ -278,7 +278,7 @@ test('loadConfig layers claude-hud.json over the shared config', async () => {
       elementOrder: ['project', 'context'],
       display: { customLine: 'shared', showSpeed: true },
     });
-    await writeJson(path.join(dir, 'claude-hud.json'), { elementOrder: ['project'], display: { customLine: 'Work' } });
+    await writeJson(path.join(dir, 'context-lens.json'), { elementOrder: ['project'], display: { customLine: 'Work' } });
     const config = await loadConfig();
     assert.equal(config.display.customLine, 'Work');
     assert.equal(config.display.showSpeed, true, 'sibling keys survive');
@@ -289,7 +289,7 @@ test('loadConfig layers claude-hud.json over the shared config', async () => {
 
 test('loadConfig ignores malformed, unsafe, oversized, and symlinked files', async (t) => {
   await withConfigDir(async (dir) => {
-    const overridePath = path.join(dir, 'claude-hud.json');
+    const overridePath = path.join(dir, 'context-lens.json');
     await writeJson(getConfigPath(), { display: { customLine: 'shared' } });
 
     let nested = { display: { customLine: 'poison' } };
@@ -320,17 +320,17 @@ test('loadConfig ignores malformed, unsafe, oversized, and symlinked files', asy
 
 test('loadConfig keeps overrides isolated when config directories share plugins/', async (t) => {
   const original = process.env.CLAUDE_CONFIG_DIR;
-  const root = await mkdtemp(path.join(os.tmpdir(), 'claude-hud-shared-plugins-'));
+  const root = await mkdtemp(path.join(os.tmpdir(), 'context-lens-shared-plugins-'));
   try {
     const sharedPlugins = path.join(root, 'shared', 'plugins');
-    await writeJson(path.join(sharedPlugins, 'claude-hud', 'config.json'), { lineLayout: 'compact' });
+    await writeJson(path.join(sharedPlugins, 'context-lens', 'config.json'), { lineLayout: 'compact' });
     const linkType = process.platform === 'win32' ? 'junction' : 'dir';
     const configs = {};
     for (const name of ['work', 'personal']) {
       const dir = path.join(root, name);
       await mkdir(dir, { recursive: true });
       if (!(await trySymlink(t, sharedPlugins, path.join(dir, 'plugins'), linkType))) return;
-      await writeJson(path.join(dir, 'claude-hud.json'), { display: { customLine: name } });
+      await writeJson(path.join(dir, 'context-lens.json'), { display: { customLine: name } });
       process.env.CLAUDE_CONFIG_DIR = dir;
       configs[name] = await loadConfig();
     }
