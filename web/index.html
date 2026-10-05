@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Context Lens</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+<main>
+  <header><div><p class="eyebrow">LOCAL SESSION MONITOR</p><h1>Context Lens</h1></div><span id="connection" role="status">连接中</span></header>
+  <section class="toolbar" aria-label="会话与显示设置">
+    <div class="session-field"><label for="session">会话</label><select id="session"><option value="">选择 Claude / Codex 会话</option></select></div>
+    <button id="refresh" type="button">刷新列表</button>
+    <label class="auto-field"><input id="automatic" type="checkbox">自动定位会话</label>
+    <div><label for="view">占比口径</label><select id="view"><option value="budget">Autocompact 预算</option><option value="model">模型窗口</option></select></div>
+    <div><label for="theme">主题</label><select id="theme"><option value="auto">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
+  </section>
+  <p id="active-status" class="muted" role="status">可手动固定会话；桌面应用按运行进程定位活跃会话。</p>
+  <p id="empty" class="empty" role="status">选择一个会话以查看本机统计。新会话创建后可刷新列表。</p>
+  <div id="dashboard" hidden>
+    <p id="session-meta" class="muted path"></p>
+    <section class="context-panel" aria-label="上下文窗口">
+      <details open><summary><span>Context window</span><strong id="context-total">—</strong></summary>
+        <div id="segments" class="segments" role="img" aria-label="上下文分类占用"></div>
+        <p id="budget-source" class="muted"></p>
+        <table class="breakdown"><caption class="sr-only">上下文分类、token 数量和占比</caption><thead class="sr-only"><tr><th>分类</th><th>Tokens</th><th>占比</th></tr></thead><tbody id="category-rows"></tbody></table>
+      </details>
+    </section>
+    <section aria-labelledby="usage-title"><div class="section-heading"><h2 id="usage-title">累计用量</h2><span id="cache-status" class="badge">主会话缓存：未知</span></div>
+      <p class="muted">输入含缓存读取与写入；推理输出包含在输出中。缓存命中率按 token 加权。</p>
+      <div class="table-scroll"><table class="usage"><thead><tr><th>范围</th><th>输入 tokens</th><th>输出 tokens</th><th>缓存写入</th><th>缓存读取</th><th>读取次数</th><th>命中率</th></tr></thead><tbody id="usage-rows"></tbody></table></div>
+      <p id="cache-detail" class="muted"></p>
+    </section>
+    <section class="cost-strip" aria-label="会话费用"><div><span class="muted">自定义费用估算</span><strong id="cost">未配置</strong></div><div><span class="muted">客户端报告费用</span><strong id="native-cost">未报告</strong></div><p id="cost-note" class="muted"></p></section>
+    <details id="warnings"><summary>数据来源与限制 <span id="warning-count"></span></summary><ul id="warning-list"></ul></details>
+    <p id="updated" class="muted updated"></p>
+  </div>
+  <details class="price-panel"><summary>设置自定义价格 <span class="muted">每百万 tokens</span></summary>
+    <p class="muted">按每次请求的实际模型计费。留空表示未配置，0 表示免费；“*”可设置所有未单独定价模型的默认价格。</p>
+    <form id="prices">
+      <div class="price-top"><div><label for="currency">币种</label><input id="currency" value="USD" maxlength="3" pattern="[A-Z]{3}" required></div><button type="button" id="add-price">添加模型</button></div>
+      <div class="table-scroll"><table class="price-table"><thead><tr><th>模型 ID</th><th>输入</th><th>输出</th><th>缓存读取</th><th>缓存写入</th><th>写入 5 分钟</th><th>写入 1 小时</th><th>操作</th></tr></thead><tbody id="price-rows"></tbody></table></div>
+      <div class="form-actions"><button type="submit" class="primary">保存并重新计算</button><span id="save-status" role="status"></span></div>
+    </form>
+  </details>
+  <footer>仅连接本机 · 不传输对话正文 · <span>未知值保留为“—”，估算值显示“≈”</span></footer>
+</main><script type="module" src="/app.js"></script>
+</body></html>

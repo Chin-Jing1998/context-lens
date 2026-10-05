@@ -2,7 +2,9 @@
 
 由 [Chin-Jing1998](https://github.com/Chin-Jing1998) 维护，派生自 [jarrodwatts/claude-hud](https://github.com/jarrodwatts/claude-hud)，保留原 MIT 许可和完整 Git 历史。参见[上游同步说明](UPSTREAM.md)与[多端功能实施计划](docs/IMPLEMENTATION_PLAN.md)。
 
-**当前状态：**已完成 Claude Code HUD 的独立改名；新增分类占用、自定义价格、Codex 支持及桌面面板尚未实现。
+**当前状态：**已实现上下文预算与分类、Claude／Codex 累计用量、自定义价格、本地面板和独立 macOS 悬浮球。Claude CLI 使用原生状态栏，Codex CLI 保留官方程序及原生指标。详细安装与数据边界见[使用说明](docs/USAGE.md)。
+
+安装悬浮球：依次运行 `npm ci`、`npm run build`、`node scripts/context-lens.mjs desktop --install`。应用自带运行环境，监听桌面端与终端的激活事件，并跟随唯一可确认的运行中会话；多会话不明确时提示选择。Claude 完整状态栏通过 `display.showLens` 启用。
 
 一个 Claude Code 插件，常驻在输入框下方，实时显示上下文用量、使用率限制、正在运行的工具、子代理以及待办进度。
 

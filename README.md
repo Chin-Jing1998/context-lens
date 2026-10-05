@@ -2,7 +2,9 @@
 
 Maintained by [Chin-Jing1998](https://github.com/Chin-Jing1998), based on [jarrodwatts/claude-hud](https://github.com/jarrodwatts/claude-hud). The original MIT license and Git history are retained. See [upstream synchronization](UPSTREAM.md) and the [multi-client implementation plan](docs/IMPLEMENTATION_PLAN.md).
 
-**Current status:** the renamed Claude Code HUD is available. The additional context breakdown, custom pricing, Codex support, and desktop dashboards are planned, not implemented yet.
+**Current status:** context budgets and category breakdowns, cumulative Claude/Codex usage, custom prices, a local dashboard, and an independent macOS floating app are implemented. Claude keeps its native status line; Codex keeps the official CLI and native indicators. See [setup and data limitations](docs/USAGE.md).
+
+For the floating app, run `npm ci`, `npm run build`, then `node scripts/context-lens.mjs desktop --install`. The app bundles its runtime and follows a uniquely identified live session when Claude, Codex, or a terminal becomes active. Ambiguous sessions require explicit selection. The full Claude status line is opt-in with `display.showLens`.
 
 A Claude Code plugin that shows what's happening: context usage, rate limits, active tools, running agents, and todo progress, always visible below your input.
 

@@ -4,6 +4,7 @@
   "description": "Context and usage HUD maintained by Chin-Jing1998, derived from Claude HUD",
   "type": "module",
   "main": "dist/index.js",
+  "bin": { "context-lens": "scripts/context-lens.mjs" },
   "files": [
     "dist/",
     "src/",
@@ -11,6 +12,11 @@
     "scripts/clean-dist.mjs",
     "scripts/setup.mjs",
     "scripts/statusline.mjs",
+    "scripts/context-lens.mjs",
+    "scripts/build-desktop.mjs",
+    "desktop/ContextLens.swift",
+    "web/",
+    "docs/",
     ".claude-plugin/"
   ],
   "scripts": {
