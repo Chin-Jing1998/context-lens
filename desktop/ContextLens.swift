@@ -79,6 +79,7 @@ func clampedOrigin(_ point: NSPoint, size: NSSize, screen: NSRect) -> NSPoint {
     private var backend: Process?
     private var timer: Timer?
     private var terminationSignal: DispatchSourceSignal?
+    private var keyMonitor: Any?
     private var loading = false
     private var automatic = UserDefaults.standard.object(forKey: "automatic") as? Bool ?? true
     private var targetClient: String?
@@ -90,6 +91,10 @@ func clampedOrigin(_ point: NSPoint, size: NSSize, screen: NSRect) -> NSPoint {
     func applicationDidFinishLaunching(_ notification: Notification) {
         if !validSession(selection) { selection = "" }
         makeWindows()
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53, self?.panel.isVisible == true { self?.panel.orderOut(nil); return nil }
+            return event
+        }
         signal(SIGTERM, SIG_IGN)
         terminationSignal = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
         terminationSignal?.setEventHandler { NSApp.terminate(nil) }; terminationSignal?.resume()
