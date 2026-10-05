@@ -41,6 +41,16 @@ git push origin codex/hud-multi-client
 
 GitHub 的 Fork 关系提供上游对照与 Sync fork 入口；当改名或功能提交与上游冲突时，使用上述本地合并流程处理。此仓库不配置定时自动合并。
 
+主分支推送会运行 CI 与构建。首次启用 Fork 的 Actions 后，或需要重新验证某次同步时，也可手动运行：
+
+```bash
+gh workflow run ci.yml --ref main
+gh workflow run build-dist.yml --ref main
+gh run list --branch main
+```
+
+等待 CI 和 Build dist 成功后，执行 `git pull --ff-only origin main`，接收构建工作流生成的 `dist/` 提交。
+
 ## 重新克隆
 
 ```bash
