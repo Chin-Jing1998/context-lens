@@ -145,28 +145,37 @@ export function resolveCodexSettings(args: {
   const file = path.join(root, 'config.toml');
   const base = optional(file, warnings, true);
   let data = { ...base };
-  let source = file;
+  const sources: Record<string, string> = {};
+  const apply = (values: Record<string, unknown>, source: string) => {
+    for (const key of ['model_auto_compact_token_limit', 'model_auto_compact_token_limit_scope', 'model_context_window'])
+      if (Object.hasOwn(values, key)) { data[key] = values[key]; sources[key] = source; }
+  };
+  apply(base, file);
   const profile = args.launch?.profile ?? base.profile;
   if (typeof profile === 'string' && /^[\w.-]+$/.test(profile)) {
-    data = { ...data, ...record(record(base.profiles)[profile]), ...optional(path.join(root, `${profile}.config.toml`), warnings, true) };
-    source += ` (profile ${profile})`;
+    apply(record(record(base.profiles)[profile]), `${file}: profiles.${profile}`);
+    const profileFile = path.join(root, `${profile}.config.toml`);
+    apply(optional(profileFile, warnings, true), profileFile);
   }
   const ancestors: string[] = [];
-  for (let dir = path.resolve(args.cwd); ; dir = path.dirname(dir)) { ancestors.unshift(dir); if (path.dirname(dir) === dir) break; }
+  if (args.cwd) for (let dir = path.resolve(args.cwd); ; dir = path.dirname(dir)) { ancestors.unshift(dir); if (path.dirname(dir) === dir) break; }
   let trusted = false;
   for (const dir of ancestors) {
     const trust = record(record(base.projects)[dir]).trust_level;
     if (trust) trusted = trust === 'trusted';
     if (!trusted) continue;
     const local = path.join(dir, '.codex', 'config.toml');
-    if (fs.existsSync(local)) { data = { ...data, ...optional(local, warnings, true) }; source = local; }
+    if (fs.existsSync(local)) apply(optional(local, warnings, true), local);
   }
-  if (args.launch?.overrides && Object.keys(args.launch.overrides).length) { data = { ...data, ...args.launch.overrides }; source = 'Codex launch -c overrides'; }
-  if (args.runtime && Object.keys(args.runtime).length) { data = { ...data, ...args.runtime }; source = 'Codex session runtime metadata'; }
+  if (args.launch?.overrides) apply(args.launch.overrides, 'Codex launch -c overrides');
+  if (args.runtime) apply(args.runtime, 'Codex session runtime metadata');
   const capacity = tokenNumber(args.capacity) ?? tokenNumber(data.model_context_window);
-  const limit = tokenNumber(data.model_auto_compact_token_limit);
+  const rawLimit = tokenNumber(data.model_auto_compact_token_limit);
+  const limit = rawLimit !== null && rawLimit > 0 ? rawLimit : null;
   if (limit === null) warnings.push('Runtime auto-compaction default is not recorded; showing the reported model window as an estimate');
   if (!args.launch) warnings.push('Saved Codex settings; launch/profile overrides may differ from this running session');
-  return { capacity, warnings, budget: { tokens: limit !== null && limit > 0 ? limit : capacity,
-    source, accuracy: limit === null ? 'estimated' : 'configured', scope: data.model_auto_compact_token_limit_scope === 'body_after_prefix' ? 'body_after_prefix' : 'total' } };
+  return { capacity, warnings, budget: { tokens: limit ?? capacity,
+    source: limit === null ? 'Reported model window; auto-compaction threshold unavailable' : sources.model_auto_compact_token_limit,
+    accuracy: limit === null ? 'estimated' : sources.model_auto_compact_token_limit === 'Codex session runtime metadata' ? 'reported' : 'configured',
+    scope: data.model_auto_compact_token_limit_scope === 'body_after_prefix' ? 'body_after_prefix' : 'total' } };
 }

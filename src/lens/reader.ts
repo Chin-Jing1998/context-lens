@@ -50,12 +50,30 @@ export async function parseEvents(info: SessionInfo, events: AsyncIterable<unkno
   let legacy: RequestUsage | undefined;
   let legacyBaseline: RequestUsage | undefined;
   let modernTotal: RequestUsage | undefined;
+  const seen = new Set<string>();
+  let lastContextId = '';
   for await (const value of events) {
     const entry = record(value);
     const at = timestamp(entry.timestamp, info.updatedAt);
     if (info.client === 'claude') {
       if (entry.type === 'system' && entry.subtype === 'compact_boundary') {
         result.used = null; result.at = at; result.categories = {}; result.buffer = undefined; result.compacted = true;
+      }
+      if (entry.type === 'system' && entry.subtype === 'local_command' && record(entry.commandRun).command === 'context') {
+        const diagnostic = record(entry.contextUsage);
+        if (tokenNumber(diagnostic.total_tokens) !== null && Array.isArray(diagnostic.categories)) {
+          result.categories = {}; result.buffer = undefined;
+          result.used = diagnostic.total_tokens; result.capacity = tokenNumber(diagnostic.raw_max_tokens);
+          result.at = at; result.compacted = false; model = display(diagnostic.model) || model;
+          for (const item of diagnostic.categories) {
+            const category = CATEGORIES.find(([id, label]) => label.toLowerCase() === String(item?.name).toLowerCase()
+              || (id === 'messages' && item?.name === 'Messages'));
+            if (!category || tokenNumber(item.tokens) === null) continue;
+            const measurement: Measurement = { tokens: item.tokens, accuracy: 'reported', source: 'Claude /context structured contextUsage', at };
+            if (category[0] === 'buffer') result.buffer = { ...measurement, placement: 'inside' };
+            else if (!['free', 'unclassified'].includes(category[0])) result.categories[category[0]] = measurement;
+          }
+        }
       }
       if (entry.type === 'user') {
         const diagnostic = contextDiagnostic(record(entry.message).content, at);
@@ -71,11 +89,13 @@ export async function parseEvents(info: SessionInfo, events: AsyncIterable<unkno
       const id = display(message.id || entry.requestId, 200);
       if (!id) { result.complete = false; result.warnings.push('Assistant usage without a response ID was excluded from deduplicated totals'); continue; }
       const nextModel = display(message.model) || model;
-      if (model && nextModel !== model) result.categories = {};
-      model = nextModel;
-      const row = normalizeUsage('claude', record(message.usage), `claude:${id}`, model, at);
+      const row = normalizeUsage('claude', record(message.usage), `claude:${id}`, nextModel, at);
       result.requests.push(row);
-      if (entry.isSidechain !== true || info.parentId) { result.used = row.input; result.at = at; result.compacted = false; }
+      if ((!seen.has(id) || (lastContextId === id && !result.compacted)) && (entry.isSidechain !== true || info.parentId)) {
+        if (model && nextModel !== model) { result.categories = {}; result.capacity = null; result.buffer = undefined; }
+        model = nextModel; result.used = row.input; result.at = at; result.compacted = false; lastContextId = id;
+      }
+      seen.add(id);
       result.info.cwd = display(entry.cwd, 4096) || result.info.cwd;
     } else {
       const payload = record(entry.payload);
@@ -114,8 +134,15 @@ export async function parseEvents(info: SessionInfo, events: AsyncIterable<unkno
         const id = display(payload.response_id, 200);
         if (!id) { result.complete = false; continue; }
         const row = normalizeUsage('codex', record(payload.usage), `codex:${id}`, display(payload.model) || model, at);
-        result.requests.push(row); result.used = row.input + row.output; result.at = at; result.compacted = false;
-        if (payload.thread_token_usage) modernTotal = normalizeUsage('codex', payload.thread_token_usage, 'cumulative', '', at);
+        result.requests.push(row);
+        if (!seen.has(id) || (lastContextId === id && !result.compacted)) {
+          result.used = row.input + row.output; result.at = at; result.compacted = false; lastContextId = id;
+        }
+        seen.add(id);
+        if (payload.thread_token_usage) {
+          const total = normalizeUsage('codex', payload.thread_token_usage, 'cumulative', '', at);
+          modernTotal = mergeRequests([...(modernTotal ? [modernTotal] : []), total])[0];
+        }
       }
       if (entry.type === 'event_msg' && payload.type === 'token_count' && payload.info) {
         const usage = record(payload.info);

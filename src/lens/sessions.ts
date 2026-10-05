@@ -46,14 +46,16 @@ export function discoverSessions(roots: { claude?: string; codex?: string } = {}
         } finally { fs.closeSync(fd); }
         const entries = prefix.split('\n').flatMap(line => { try { return [JSON.parse(line)]; } catch { return []; } });
         const meta = client === 'codex' ? record(entries.find(e => e?.type === 'session_meta')?.payload)
-          : record(entries.find(e => e?.cwd || e?.sessionId));
+          : record(entries.find(e => typeof e?.cwd === 'string') ?? entries.find(e => e?.sessionId));
         const base = path.basename(file, '.jsonl');
         const id = client === 'codex' ? meta.id || /([0-9a-f]{8}-[0-9a-f-]{27})$/i.exec(base)?.[1] : base;
         if (!validId(id)) continue;
         const parentId = client === 'claude' && path.basename(path.dirname(file)) === 'subagents'
           ? path.basename(path.dirname(path.dirname(file)))
           : record(record(record(meta.source).subagent).thread_spawn).parent_thread_id;
-        files.push({ id, client, file, cwd: typeof meta.cwd === 'string' ? sanitizeDisplayText(meta.cwd) : '',
+        const uniqueId = client === 'claude' && validId(parentId) ? `${parentId}_${id}` : id;
+        if (!validId(uniqueId)) continue;
+        files.push({ id: uniqueId, client, file, cwd: typeof meta.cwd === 'string' ? sanitizeDisplayText(meta.cwd) : '',
           model: '', updatedAt: stat.mtime.toISOString(), size: stat.size, mtimeMs: stat.mtimeMs,
           ...(validId(parentId) ? { parentId } : {}) });
       } catch { /* A session being rotated or removed is absent from this scan. */ }
@@ -62,9 +64,9 @@ export function discoverSessions(roots: { claude?: string; codex?: string } = {}
   return files.sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
 
-export interface LiveClaude { stdin: StdinData; at: string; launch?: LaunchSettings; environment: Record<string, string> }
+export interface LiveClaude { stdin: StdinData; at: string; launch?: LaunchSettings; hudWindow?: number; environment: Record<string, string> }
 const envKeys = ['CLAUDE_CODE_AUTO_COMPACT_WINDOW', 'DISABLE_AUTO_COMPACT', 'DISABLE_COMPACT'];
-export function captureClaude(stdin: StdinData, launch?: LaunchSettings): void {
+export function captureClaude(stdin: StdinData, launch?: LaunchSettings, hudWindow?: number): void {
   if (!validId(stdin.session_id)) return;
   // Persist only counters and identifiers; never prompts, tool schemas, or credentials.
   const c = record(stdin.context_window); const u = record(c.current_usage); const pc = record(stdin.prompt_cache);
@@ -82,7 +84,8 @@ export function captureClaude(stdin: StdinData, launch?: LaunchSettings): void {
   };
   const environment: Record<string, string> = {};
   for (const key of envKeys) if (process.env[key] !== undefined) environment[key] = process.env[key]!;
-  atomicJson(dataPath('live', { client: 'claude', id: stdin.session_id }), { stdin: clean, at: new Date().toISOString(), launch, environment });
+  atomicJson(dataPath('live', { client: 'claude', id: stdin.session_id }), { stdin: clean, at: new Date().toISOString(), launch, environment,
+    ...(typeof hudWindow === 'number' && tokenNumber(hudWindow) && hudWindow > 0 ? { hudWindow } : {}) });
 }
 
 export function readLiveClaude(session: SessionInfo): LiveClaude | null {

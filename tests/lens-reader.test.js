@@ -13,6 +13,18 @@ test('Claude replay is deduplicated and a compaction clears stale context and ca
   assert.equal(after.used, null);
   assert.deepEqual(after.categories, {});
   assert.equal(after.requests.length, 1);
+  assert.equal((await parseEvents(info, [...events, { type: 'system', subtype: 'compact_boundary' }, assistant('a')])).used, null);
+});
+test('Claude desktop structured /context data supplies exact categories, capacity and inside reserve without reading tool definitions', async () => {
+  const x = await parseEvents(info, [{ type: 'system', subtype: 'local_command', commandRun: { command: 'context' }, contextUsage: {
+    model: 'claude-opus-5-5', total_tokens: 80591, raw_max_tokens: 256000,
+    categories: [{ name: 'MCP tools', tokens: 44808, kind: 'used' }, { name: 'MCP server instructions', tokens: 621, kind: 'used' },
+      { name: 'Autocompact buffer', tokens: 33000, kind: 'buffer' }, { name: 'Free space', tokens: 142409, kind: 'free' }],
+  } }]);
+  assert.equal(x.used, 80591); assert.equal(x.capacity, 256000); assert.equal(x.info.model, 'claude-opus-5-5');
+  assert.equal(x.categories.mcpTools.tokens, 44808); assert.equal(x.categories.mcpInstructions.tokens, 621);
+  assert.equal(x.categories.free, undefined); assert.equal(x.buffer.placement, 'inside'); assert.equal(x.buffer.tokens, 33000);
+  assert.equal(x.requests.length, 0, '/context diagnostics are not billable requests');
 });
 test('Codex request IDs exclude another thread, ignore legacy totals when modern totals exist, and do not recount reasoning', async () => {
   const u = { input_tokens: 1000, cached_input_tokens: 600, output_tokens: 100, reasoning_output_tokens: 70 };
@@ -27,6 +39,9 @@ test('Codex request IDs exclude another thread, ignore legacy totals when modern
   assert.equal(x.used, 1100);
   assert.equal(x.cumulative.input, 1000);
   assert.equal(x.capacity, 200000);
+  const compacted = await parseEvents({ ...info, client: 'codex' }, [record, { type: 'compacted', payload: {} }, record]);
+  assert.equal(compacted.used, null, 'replayed old response cannot restore pre-compaction context');
+  assert.equal(compacted.requests.length, 1);
 });
 test('only explicitly loaded Codex text is estimated, tool/skill installation inventories are ignored', async () => {
   const x = await parseEvents({ ...info, client: 'codex' }, [

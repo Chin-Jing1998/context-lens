@@ -20,19 +20,19 @@ export function buildContext(args: {
   const modelTokens = tokenNumber(args.capacity);
   const budget = { ...args.budget };
   if (budget.tokens !== null && modelTokens && budget.tokens > modelTokens) budget.tokens = modelTokens;
-  if (budget.disabled) budget.tokens = modelTokens;
+  if (budget.disabled) { budget.tokens = modelTokens; budget.scope = 'total'; }
   const denominator = view === 'model' ? modelTokens : budget.tokens;
   let usedTokens = tokenNumber(args.used);
   const warnings: string[] = [];
   const categories = { ...args.categories };
   if (view === 'budget' && budget.scope === 'body_after_prefix') {
+    // Full-context categories cannot be attributed to the body without a boundary map.
+    for (const key of Object.keys(categories) as Category[]) delete categories[key];
     if (tokenNumber(budget.prefixTokens) === null) {
       usedTokens = null;
       warnings.push('body_after_prefix: compaction prefix is unavailable');
     } else {
       usedTokens = usedTokens === null ? null : Math.max(0, usedTokens - budget.prefixTokens!);
-      // Full-context categories cannot be attributed to the body without a boundary map.
-      for (const key of Object.keys(categories) as Category[]) delete categories[key];
       warnings.push('Body view: category boundaries are unavailable');
     }
   }
@@ -42,7 +42,7 @@ export function buildContext(args: {
     categories.unclassified = { tokens: Math.max(0, usedTokens - known), accuracy: 'derived', source: 'Reported total minus known categories' };
   }
   let buffer = args.buffer;
-  if (!buffer && modelTokens && budget.tokens !== null && !budget.disabled) {
+  if (!buffer && modelTokens && budget.tokens !== null && budget.scope === 'total' && !budget.disabled && ['reported', 'configured'].includes(budget.accuracy)) {
     buffer = { tokens: Math.max(0, modelTokens - budget.tokens), accuracy: 'derived', source: 'Model window minus configured compaction budget (outside budget)', placement: 'outside' };
   }
   if (budget.disabled) buffer = { tokens: 0, accuracy: 'configured', source: 'Auto-compaction disabled', placement: 'inside' };

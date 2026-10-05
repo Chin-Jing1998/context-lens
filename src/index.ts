@@ -110,7 +110,7 @@ export async function main(): Promise<void> {
         const { SessionCollector } = await import('./lens/snapshot.js');
         const { renderLensLines } = await import('./lens/terminal.js');
         const { statSync } = await import('node:fs');
-        captureClaude(stdin, launch);
+        captureClaude(stdin, launch, display.autoCompactWindow ?? undefined);
         const stat = statSync(stdin.transcript_path);
         const snapshot = await new SessionCollector().snapshot({ client: 'claude', id: stdin.session_id,
           cwd: stdin.cwd || '', model: stdin.model?.id || '', updatedAt: stat.mtime.toISOString(),

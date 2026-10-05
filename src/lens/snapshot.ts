@@ -22,7 +22,7 @@ export class SessionCollector {
   private files: SessionFile[] = [];
   private scanned = 0;
   // ponytail: reread only changed logs; use incremental byte offsets if large active logs become slow.
-  private parsed = new Map<string, { stamp: string; data: ParsedSession }>();
+  private parsed = new Map<string, { stamp: string; size: number; data: ParsedSession }>();
   constructor(private roots?: { claude?: string; codex?: string }) {}
 
   list(refresh = false): SessionFile[] {
@@ -40,9 +40,9 @@ export class SessionCollector {
       const saved = checkpoint(data.info, data.requests, data.cumulative);
       data.requests = saved.requests; data.cumulative = saved.cumulative;
     } catch { data.warnings.push('Token checkpoint unavailable; displaying readable log history'); }
-    if (old && stat.size < file.size) data.warnings.push('Log was truncated; retained deduplicated token checkpoint');
+    if (old && stat.size < old.size) data.warnings.push('Log was truncated; retained deduplicated token checkpoint');
     if (this.parsed.size >= 32 && !this.parsed.has(file.file)) this.parsed.delete(this.parsed.keys().next().value!);
-    this.parsed.set(file.file, { stamp, data });
+    this.parsed.set(file.file, { stamp, size: stat.size, data });
     return data;
   }
 
@@ -96,6 +96,9 @@ export class SessionCollector {
         env: live?.environment ?? {}, launch: options.launch ?? live?.launch })
       : resolveCodexSettings({ cwd: main.info.cwd, capacity, launch: options.launch, runtime: main.runtime });
     warnings.push(...settings.warnings);
+    if (live?.hudWindow && tokenNumber(live.hudWindow)) settings.budget = {
+      ...settings.budget, tokens: live.hudWindow, accuracy: 'configured', source: 'Context Lens display.autoCompactWindow (manual HUD override)',
+    };
     if (file.client === 'claude' && !live) warnings.push('Enable display.showLens in the Claude statusline to capture live window size and cache validity');
     const context = buildContext({ used, capacity: settings.capacity, budget: settings.budget,
       categories: main.categories, buffer: main.buffer, view: options.view, at });

@@ -20,10 +20,12 @@ test('unknown buffer, compaction, prefix scope, overrun and category conflicts s
   const x = buildContext({ used: 80000, capacity: null, budget });
   assert.equal(x.segments.find(s => s.id === 'free').tokens, null);
   assert.equal(buildContext({ used: null, capacity: 256000, budget }).percent, null);
+  assert.equal(buildContext({ used: 80000, capacity: 256000, budget: { ...budget, tokens: 256000, accuracy: 'estimated' } }).segments.find(s => s.id === 'free').tokens, null);
   assert.equal(buildContext({ used: 250000, capacity: 256000, budget }).percent, 125);
   assert.equal(buildContext({ used: 80000, capacity: 256000, budget: { ...budget, scope: 'body_after_prefix' } }).percent, null);
   const y = buildContext({ used: 10000, capacity: 256000, budget, categories: { mcpTools: category } });
   assert.match(y.warnings.join(), /conflict/);
   assert.equal(y.segments[0].tokens, 20000);
   assert.equal(buildContext({ used: 128000, capacity: 256000, budget: { ...budget, disabled: true } }).percent, 50);
+  assert.equal(buildContext({ used: 128000, capacity: 256000, budget: { ...budget, disabled: true, scope: 'body_after_prefix' } }).percent, 50);
 });
