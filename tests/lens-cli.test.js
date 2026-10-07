@@ -26,5 +26,9 @@ test('standalone Claude setup preserves other settings, backs them up, and enabl
     assert.equal(settings.autoCompactWindow, 120000); assert.ok(settings.statusLine.command.includes(entry));
     assert.equal(JSON.parse(readFileSync(report.backupPath, 'utf8')).statusLine.command, 'old-hud');
     assert.equal(JSON.parse(readFileSync(path.join(dir, 'context-lens.json'), 'utf8')).display.showLens, true);
+    assert.equal(JSON.parse(readFileSync(path.join(dir, 'context-lens.json'), 'utf8')).display.showTerminal, true);
+    execFileSync(process.execPath, ['scripts/setup.mjs', 'install', '--shell', 'posix', '--entry', entry], { env: { ...process.env, CLAUDE_CONFIG_DIR: dir } });
+    const silent = JSON.parse(readFileSync(path.join(dir, 'context-lens.json'), 'utf8'));
+    assert.equal(silent.display.showTerminal, false); assert.equal(silent.display.showLens, false);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

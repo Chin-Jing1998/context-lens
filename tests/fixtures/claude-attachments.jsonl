@@ -1,0 +1,7 @@
+{"type":"attachment","uuid":"model-a","attachment":{"type":"model","identity":{"modelId":"m"}}}
+{"type":"attachment","uuid":"prompt-a","attachment":{"type":"prompt_snapshot","systemPrompt":["hello"],"tools":[{"name":"Read","description":"Read a test file","schema":{"type":"object","properties":{"path":{"type":"string"}}}}]}}
+{"type":"attachment","uuid":"files-a","attachment":{"type":"instructions","files":[{"path":"/fixture/CLAUDE.md","type":"Project","content":"hello"}]}}
+{"type":"attachment","uuid":"skills-a","attachment":{"type":"skill_listing","isInitial":true,"content":"hello","names":["fixture-skill"]}}
+{"type":"attachment","uuid":"mcp-a","attachment":{"type":"mcp_instructions_delta","addedNames":["fixture"],"addedBlocks":["hello"],"removedNames":[]}}
+{"type":"attachment","uuid":"tools-a","attachment":{"type":"deferred_tools_record","entries":[{"name":"mcp__fixture__lookup","description":"Look up fixture data","input_schema":{"type":"object","properties":{}},"defer_loading":true}]}}
+{"type":"assistant","uuid":"response-a","message":{"id":"r-a","model":"m","usage":{"input_tokens":100,"cache_read_input_tokens":300,"cache_creation_input_tokens":20,"output_tokens":10}}}

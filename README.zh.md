@@ -2,11 +2,13 @@
 
 由 [Chin-Jing1998](https://github.com/Chin-Jing1998) 维护，派生自 [jarrodwatts/claude-hud](https://github.com/jarrodwatts/claude-hud)，保留原 MIT 许可和完整 Git 历史。参见[上游同步说明](UPSTREAM.md)与[多端功能实施计划](docs/IMPLEMENTATION_PLAN.md)。
 
-**当前状态：**已实现上下文预算与分类、Claude／Codex 累计用量、自定义价格、本地面板和独立 macOS 悬浮球。Claude CLI 使用原生状态栏，Codex CLI 保留官方程序及原生指标。详细安装与数据边界见[使用说明](docs/USAGE.md)。
+**当前状态：**提供 macOS 与 Windows 桌面应用、九套固定主题、七个统计环形岛、会话明细和 GitHub 更新检测。统计覆盖上下文分类、累计用量、模型费用、命令行、技能、MCP 和运行时间。Context Lens 默认在 CLI 静默采集；客户端自身提示及指标保持原状。安装说明见[桌面应用](docs/DESKTOP.md)。
 
-安装悬浮球：依次运行 `npm ci`、`npm run build`、`node scripts/context-lens.mjs desktop --install`。应用自带运行环境，监听桌面端与终端的激活事件，并跟随唯一可确认的运行中会话；多会话不明确时提示选择。Claude 完整状态栏通过 `display.showLens` 启用。
+安装悬浮球：依次运行 `npm ci`、`npm run build`、`node scripts/context-lens.mjs desktop --install`。应用自带运行环境，监听桌面端与终端的激活事件，并跟随唯一可确认的运行中会话；会话无法唯一对应时显示等待状态。终端显示须显式设置 `display.showTerminal: true`；另设 `display.showLens: true` 可启用完整兼容 HUD。
 
-一个 Claude Code 插件，常驻在输入框下方，实时显示上下文用量、使用率限制、正在运行的工具、子代理以及待办进度。
+Windows 10 及以上的 64 位系统从 [GitHub Releases](https://github.com/Chin-Jing1998/context-lens/releases/latest) 下载安装版或便携版 exe。设置中的“关于更新”查询同一仓库的正式版本。
+
+本地上下文与用量监测工具，提供悬浮桌面应用和可选的 Claude Code 终端 HUD。
 
 [![License](https://img.shields.io/github/license/Chin-Jing1998/context-lens?v=2)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/Chin-Jing1998/context-lens)](https://github.com/Chin-Jing1998/context-lens/stargazers)
@@ -26,7 +28,7 @@
 /context-lens:setup
 ```
 
-`/context-lens:setup` 会把状态栏指向 HUD。Claude Code 会自动重新加载设置，HUD 会立即出现。想要自定义，直接告诉 Claude，或运行 `/context-lens:configure`。
+`/context-lens:setup` 安装静默采集入口。Claude Code 后续刷新时更新悬浮球数据，默认不输出自定义状态栏。想要自定义，直接告诉 Claude，或运行 `/context-lens:configure`。
 
 <details>
 <summary><strong>更喜欢用终端？</strong></summary>
@@ -49,7 +51,7 @@ claude plugin install context-lens@context-lens
 
 ## 显示效果
 
-默认显示两行：
+显式设置 `display.showTerminal: true` 后，基础 HUD 显示两行：
 
 ```
 [Opus] │ my-project git:(main*)
@@ -114,6 +116,7 @@ Context Lens 是一个[状态栏](https://code.claude.com/docs/en/statusline)命
 | `jjStatus.enabled` | boolean | false | 显式启用 jj（Jujutsu）状态。启用后若找到真实的 `.jj` 目录，该仓库将显示 jj 而不是 git，二者不会同时运行 |
 | `jjStatus.showDirty` | boolean | true | 当 jj 工作副本提交与其父提交不同时显示 `*` |
 | `jjStatus.showConflicts` | boolean | true | 当 jj 工作副本提交包含未解决冲突时显示 `!conflict` |
+| `display.showTerminal` | boolean | false | 终端 HUD 总开关；关闭时初始化及异常均静默，Claude 实时采集独立运行。 |
 | `display.showModel` | boolean | true | 显示模型名称 `[Opus]` |
 | `display.showProject` | boolean | true | 显示项目路径 |
 | `display.modelSource` | `stdin` \| `auto` \| `transcript` | `stdin` | 控制模型名称来源。`stdin` 保持默认行为；`auto` 仅在 transcript 返回非 Claude 模型时切换，用于检测代理路由；`transcript` 始终使用 API 响应中的模型。Transcript 模型值会清理终端转义字符并截断为 80 个字符 |
@@ -125,6 +128,7 @@ Context Lens 是一个[状态栏](https://code.claude.com/docs/en/statusline)命
 | `display.addedDirsLayout` | `inline` \| `line` | `inline` | `inline` 将目录放在项目名称旁边，每个目录带 `+name` 前缀；`line` 在单独的 `Added dirs: name1, name2` 行渲染（无 `+` 前缀，逗号分隔） |
 | `display.showContextBar` | boolean | true | 显示可视化上下文进度条 `████░░░░░░` |
 | `display.contextValue` | `percent` \| `tokens` \| `remaining` \| `both` | `percent` | 上下文显示格式（`45%`、`45k/200k`、剩余 `55%` 或 `45% (45k/200k)`） |
+| `display.compactContextFormat` | `full` \| `minimal` | `minimal` | compact 布局中的上下文值格式：`full` 遵循 `contextValue`；`minimal` 始终只显示百分比 |
 | `display.autoCompactWindow` | number \| `null` | `null` | 设为正数（如 `200000`）时，按此自动压缩窗口而不是完整模型上下文窗口计算上下文百分比，以匹配 `/context`。留空或 `null` 保持默认全窗口行为 |
 | `display.showConfigCounts` | boolean | false | 显示 CLAUDE.md、rules、MCPs、hooks 数量 |
 | `display.environmentThreshold` | number | 0 | 配置计数总和达到此值前隐藏（0 = 始终显示） |
@@ -136,6 +140,7 @@ Context Lens 是一个[状态栏](https://code.claude.com/docs/en/statusline)命
 | `display.showDuration` | boolean | false | 显示会话已运行的时长，例如 `⏱️ 5m` |
 | `display.showSpeed` | boolean | false | 显示最近一次响应的输出 Token 速度 `out: 42.1 tok/s` |
 | `display.showUsage` | boolean | true | 显示 Claude 订阅用户的使用率限制（可用时） |
+| `display.usageDetailMode` | `always` \| `threshold` \| `never` | `threshold` | 显示用量重置倒计时的时机：始终显示、仅在达到 `usageThreshold` 时显示或从不显示 |
 | `display.usageValue` | `percent` \| `remaining` | `percent` | 使用率显示格式（已使用 `25%`，或剩余 `75%`） |
 | `display.usageBarEnabled` | boolean | true | 将使用率显示为可视化进度条而非文本 |
 | `display.usageCompact` | boolean | false | 以较短的文本形式显示使用率，如 `5h: 25% (1h 30m)`；优先于 `display.usageBarEnabled` |
@@ -151,6 +156,7 @@ Context Lens 是一个[状态栏](https://code.claude.com/docs/en/statusline)命
 | `display.externalUsageWritePath` | string | `""` | 可选的绝对 `.json` 路径，父目录必须已存在。支持开头的 `~` 和 `${VAR}`。当 stdin `rate_limits` 存在时，ClaudeHUD 会写入私有权限快照供其他本地工具读取。相对路径、非 json 文件和缺失父目录会被忽略 |
 | `display.externalUsageFreshnessMs` | number | `300000` | 外部使用率快照允许的最长存活时间，超时后会被忽略 |
 | `display.showTokenBreakdown` | boolean | true | 在高上下文时（85%+）显示 Token 详情 |
+| `display.contextDetailMode` | `always` \| `warning` \| `critical` \| `never` | `critical` | Token 明细的显示时机：始终显示、达到警告阈值、仅在严重阈值显示或从不显示 |
 | `display.contextWarningThreshold` | 0-100 | 70 | 上下文进度条变为警告色的百分比 |
 | `display.contextCriticalThreshold` | 0-100 | 85 | 上下文进度条变为严重色并显示 token 明细的百分比 |
 | `display.showTools` | boolean | false | 显示工具活动行 |
@@ -163,7 +169,8 @@ Context Lens 是一个[状态栏](https://code.claude.com/docs/en/statusline)命
 | `display.showTodos` | boolean | false | 显示待办进度行 |
 | `display.showSessionName` | boolean | false | 显示会话名称：`/rename` 设置的名称，或 Claude Code 生成的标题 |
 | `display.showSessionTokens` | boolean | false | 显示本会话累计的 token 总量，例如 `Tokens 262k (in: 6k, out: 2k, cache: 254k)` |
-| `display.showLens` | boolean | false | 显示完整分类、主会话及子代理累计统计、自定义费用，并采集 Claude 实时计数供本地桌面面板读取。 |
+| `display.defaultHideSessionTokens` | boolean | true | 即使 `showSessionTokens` 为 true 也隐藏 session token 摘要行；设为 `false` 以显示 |
+| `display.showLens` | boolean | false | showTerminal 开启时显示完整分类、主会话及子代理累计和费用；实时采集独立运行。 |
 | `display.showAuth` | boolean | false | 在第一行末尾显示当前登录的认证方式（订阅计划），例如 `Claude Max 20x`。来自 `~/.claude.json`（或覆盖配置目录时的 `$CLAUDE_CONFIG_DIR/.claude.json`）的 `oauthAccount`；无 OAuth 但设置了 `ANTHROPIC_API_KEY` 时显示 `API Key` |
 | `display.showAuthUser` | boolean | false | 在认证方式旁显示已登录账号（邮箱本地部分，回退到资料显示名） |
 | `display.authUserLength` | number | `8` | 账号名截断前的最大字符数，超出以 `…` 截断。`0` 显示全名 |
@@ -172,6 +179,8 @@ Context Lens 是一个[状态栏](https://code.claude.com/docs/en/statusline)命
 | `display.showSessionStartDate` | boolean | false | 显示 transcript 会话开始时间戳 |
 | `display.showLastResponseAt` | boolean | false | 显示最后一次 assistant 响应写入的时间距现在多久 |
 | `display.showCompactions` | boolean | false | 显示本会话已发生的上下文压缩次数（手动 `/compact` 或自动压缩），从 transcript 的 `compact_boundary` 记录计数，例如 `压缩次数: 2`。第一次压缩前不显示 |
+| `display.showCompactionsOnlyWhenPresent` | boolean | true | 压缩次数为零时隐藏压缩指示器 |
+| `display.showGitFilesInCompact` | boolean | false | 在 compact 布局中显示最近变更的 git 文件行（expanded 布局始终显示） |
 | `display.showEffortLevel` | boolean | false | 在模型徽章中显示当前推理力度。Ultracode 渲染为 `ultracode(xhigh)`，从会话 transcript 检测，因此能跟踪运行时的 `/effort` 变更 |
 | `display.effortFormat` | `full` \| `symbol` \| `text` | `full` | `showEffortLevel` 开启时的渲染方式：符号加级别文本（`◑ high`）、仅符号（`◑`）、或仅级别文本（`high`）。`symbol` 下 Ultracode 仍保持完整的 `◕ ultracode(xhigh)`，以免丢失标记；没有已知符号的级别回退到级别文本 |
 | `display.showClaudeCodeVersion` | boolean | false | 显示当前运行的 Claude Code 版本，如 `CC v2.1.81` |
@@ -266,7 +275,7 @@ CONTEXT_LENS_DISABLE=1 claude
 
 ## 安全
 
-Context Lens 只在本地运行。它不发起网络请求，从不读取凭据，也不调用未公开的 API。它读取 Claude Code 的 stdin、会话 transcript、Claude 配置文件以及当前目录的 git 或 jj 元数据。它唯一写入的是 `~/.claude/plugins/context-lens` 下的少量状态文件（输出速度和费用账本），并使用私有权限。
+会话处理在本地进行。桌面服务从 OpenAI 和 Anthropic 下载公开价目表，不发送对话正文或凭据。Context Lens 读取本机客户端计数、会话记录、配置和进程归属信息，并以私有权限保存配置、价格缓存与用量账本。用户自定义价格与自动更新的官方价格分别保存。
 
 `--extra-cmd` 会在每次刷新时运行一条 shell 命令，并把输出显示在第一行。除非 HUD 的环境中设置了 `CONTEXT_LENS_ALLOW_EXTRA_CMD=1`，否则它会被忽略。请把它视为任意代码执行，切勿使用来源不可信的命令。
 

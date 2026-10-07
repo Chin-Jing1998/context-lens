@@ -10,9 +10,9 @@ import { tokenNumber } from './context.js';
 import type { SessionInfo, RequestUsage } from './types.js';
 import type { StdinData } from '../types.js';
 
-export interface SessionFile extends SessionInfo { file: string; size: number; mtimeMs: number }
+export interface SessionFile extends SessionInfo { file: string; size: number; mtimeMs: number; lastUserAt?: number }
 export const validId = (id: unknown): id is string => typeof id === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(id);
-export const sessionKey = (s: Pick<SessionInfo, 'client' | 'id'>): string => `${s.client}:${s.id}`;
+export const sessionKey = (s: { client: string; id: string }): string => `${s.client}:${s.id}`;
 export const dataPath = (kind: string, s: Pick<SessionInfo, 'client' | 'id'>): string => {
   if (!validId(s.id) || !['claude', 'codex'].includes(s.client)) throw new Error('Invalid session identifier');
   return path.join(lensHome(), kind, `${s.client}-${s.id}.json`);
@@ -29,22 +29,68 @@ function* logFiles(dir: string, depth = 0): Generator<string> {
   }
 }
 
+const records = (text: string): any[] => text.split('\n').flatMap(line => { try { return [JSON.parse(line)]; } catch { return []; } });
+const titleText = (value: unknown): string => typeof value === 'string' ? sanitizeDisplayText(value).replace(/\s+/g, ' ').trim().slice(0, 200) : '';
+const discoveryCache = new Map<string, { stamp: string; value: SessionFile; fallbackTitle: string }>();
+
+/** Read only explicit user activity; file modification times also include background output. */
+export function lastUserActivity(entries: any[], client: 'claude' | 'codex'): number | undefined {
+  let latest = 0;
+  for (const event of entries) {
+    const content = event?.message?.content;
+    const human = client === 'codex' ? event?.type === 'event_msg' && event.payload?.type === 'user_message'
+      : event?.type === 'user' && !event.isMeta && !event.isSidechain && (typeof content === 'string'
+        || Array.isArray(content) && content.some(part => part?.type === 'text'));
+    if (!human) continue;
+    const at = Date.parse(event.timestamp);
+    if (Number.isFinite(at) && at > 0 && at <= Date.now() + 60000) latest = Math.max(latest, at);
+  }
+  return latest || undefined;
+}
+
+function codexTitles(root: string): Map<string, string> {
+  const titles = new Map<string, string>();
+  try {
+    const file = path.join(path.dirname(root), 'session_index.jsonl');
+    if (fs.statSync(file).size > 8 * 1024 * 1024) return titles;
+    for (const entry of records(fs.readFileSync(file, 'utf8'))) {
+      const title = titleText(entry?.thread_name);
+      if (validId(entry?.id) && title) titles.set(entry.id, title);
+    }
+  } catch { /* Older clients can omit the title index. */ }
+  return titles;
+}
+
 export function discoverSessions(roots: { claude?: string; codex?: string } = {}): SessionFile[] {
   const files: SessionFile[] = [];
   const claude = roots.claude ?? path.join(getClaudeConfigDir(os.homedir()), 'projects');
   const codex = roots.codex ?? path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'sessions');
+  const titles = codexTitles(codex);
   for (const [client, root] of [['claude', claude], ['codex', codex]] as const) {
     for (const file of logFiles(root)) {
       try {
         const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
-        let stat: fs.Stats; let prefix: string;
+        let stat: fs.Stats; let prefix: string; let tail = ''; let stamp = '';
         try {
           stat = fs.fstatSync(fd);
           if (!stat.isFile()) continue;
+          stamp = `${client}:${stat.ino}:${stat.size}:${stat.mtimeMs}`;
+          const cached = discoveryCache.get(file);
+          if (cached?.stamp === stamp) {
+            files.push({ ...cached.value, title: client === 'codex' ? titles.get(cached.value.id) || cached.fallbackTitle || '未命名对话' : cached.value.title });
+            continue;
+          }
           const buf = Buffer.alloc(Math.min(stat.size, 128 * 1024));
           const bytes = fs.readSync(fd, buf, 0, buf.length, 0); prefix = buf.subarray(0, bytes).toString('utf8');
+          if (stat.size > buf.length) {
+            const end = Buffer.alloc(Math.min(stat.size - buf.length, 512 * 1024));
+            const start = stat.size - end.length;
+            const read = fs.readSync(fd, end, 0, end.length, start);
+            tail = end.subarray(0, read).toString('utf8');
+            if (start > buf.length) tail = tail.slice(tail.indexOf('\n') + 1);
+          }
         } finally { fs.closeSync(fd); }
-        const entries = prefix.split('\n').flatMap(line => { try { return [JSON.parse(line)]; } catch { return []; } });
+        const entries = records(prefix + '\n' + tail);
         const meta = client === 'codex' ? record(entries.find(e => e?.type === 'session_meta')?.payload)
           : record(entries.find(e => typeof e?.cwd === 'string') ?? entries.find(e => e?.sessionId));
         const base = path.basename(file, '.jsonl');
@@ -55,9 +101,15 @@ export function discoverSessions(roots: { claude?: string; codex?: string } = {}
           : record(record(record(meta.source).subagent).thread_spawn).parent_thread_id;
         const uniqueId = client === 'claude' && validId(parentId) ? `${parentId}_${id}` : id;
         if (!validId(uniqueId)) continue;
-        files.push({ id: uniqueId, client, file, cwd: typeof meta.cwd === 'string' ? sanitizeDisplayText(meta.cwd) : '',
+        const title = client === 'codex' ? titles.get(id) || titleText(meta.title)
+          : titleText(entries.filter(e => e?.type === 'custom-title' && (!e.sessionId || e.sessionId === id)).at(-1)?.customTitle);
+        const value: SessionFile = { id: uniqueId, client, file, cwd: typeof meta.cwd === 'string' ? sanitizeDisplayText(meta.cwd) : '',
           model: '', updatedAt: stat.mtime.toISOString(), size: stat.size, mtimeMs: stat.mtimeMs,
-          ...(validId(parentId) ? { parentId } : {}) });
+          title: title || '未命名对话', lastUserAt: lastUserActivity(entries, client),
+          ...(validId(parentId) ? { parentId } : {}) };
+        if (discoveryCache.size >= 1000) discoveryCache.delete(discoveryCache.keys().next().value!);
+        discoveryCache.set(file, { stamp, value, fallbackTitle: titleText(meta.title) });
+        files.push(value);
       } catch { /* A session being rotated or removed is absent from this scan. */ }
     }
   }
@@ -125,6 +177,7 @@ export function checkpoint(session: SessionInfo, rows: RequestUsage[], cumulativ
       if (fs.statSync(file).size < 32 * 1024 * 1024) {
         const value = JSON.parse(fs.readFileSync(file, 'utf8'));
         if (Array.isArray(value.requests)) prior = value.requests.filter((r: any) => r && typeof r.id === 'string' && typeof r.model === 'string'
+          && (session.client !== 'claude' || r.model !== '<synthetic>')
           && TOKEN_KEYS.every(key => tokenNumber(r[key]) !== null));
         if (value.cumulative && TOKEN_KEYS.every(key => tokenNumber(value.cumulative[key]) !== null)) previousTotal = value.cumulative;
       }

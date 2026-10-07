@@ -27,6 +27,9 @@ const HOUR_CYCLES = ['auto', 'h11', 'h12', 'h23', 'h24'] as const;
 const CUSTOM_LINE_POSITIONS = ['first', 'last'] as const;
 const ADDED_DIRS_LAYOUTS = ['inline', 'line'] as const;
 const COLOR_NAMES = ['dim', 'red', 'green', 'yellow', 'magenta', 'cyan', 'brightBlue', 'brightMagenta'] as const;
+const CONTEXT_DETAIL_MODES = ['always', 'warning', 'critical', 'never'] as const;
+const USAGE_DETAIL_MODES = ['always', 'threshold', 'never'] as const;
+const COMPACT_CONTEXT_FORMATS = ['full', 'minimal'] as const;
 
 const ELEMENTS = [
   'project',
@@ -73,6 +76,9 @@ export type AddedDirsLayout = typeof ADDED_DIRS_LAYOUTS[number];
 export type HudColorName = typeof COLOR_NAMES[number];
 export type HudElement = typeof ELEMENTS[number];
 export type FirstLineSegment = typeof FIRST_LINE_SEGMENTS[number];
+export type ContextDetailMode = typeof CONTEXT_DETAIL_MODES[number];
+export type UsageDetailMode = typeof USAGE_DETAIL_MODES[number];
+export type CompactContextFormat = typeof COMPACT_CONTEXT_FORMATS[number];
 
 /** A named preset, a 256-color index (0-255), or a #rrggbb hex string. */
 export type HudColorValue = HudColorName | number | string;
@@ -123,6 +129,7 @@ export interface HudConfig {
     showConflicts: boolean;
   };
   display: {
+    showTerminal: boolean;
     showModel: boolean;
     showProject: boolean;
     showAddedDirs: boolean;
@@ -195,6 +202,12 @@ export interface HudConfig {
     showAdvisor: boolean;
     advisorOverride: string;
     autoCompactWindow: number | null;
+    contextDetailMode: ContextDetailMode;
+    usageDetailMode: UsageDetailMode;
+    compactContextFormat: CompactContextFormat;
+    showGitFilesInCompact: boolean;
+    defaultHideSessionTokens: boolean;
+    showCompactionsOnlyWhenPresent: boolean;
   };
   colors: HudColorOverrides;
 }
@@ -265,6 +278,7 @@ export const DEFAULT_CONFIG: HudConfig = {
     showCacheHitRate: false,
     showSessionTokens: false,
     showLens: false,
+    showTerminal: false,
     showOutputStyle: false,
     showSessionStartDate: false,
     showLastResponseAt: false,
@@ -292,6 +306,12 @@ export const DEFAULT_CONFIG: HudConfig = {
     showAdvisor: false,
     advisorOverride: '',
     autoCompactWindow: null,
+    contextDetailMode: 'critical',
+    usageDetailMode: 'threshold',
+    compactContextFormat: 'minimal',
+    showGitFilesInCompact: false,
+    defaultHideSessionTokens: true,
+    showCompactionsOnlyWhenPresent: true,
   },
   colors: {
     context: 'green',
@@ -424,6 +444,9 @@ const RULES: Record<string, Rule> = {
   'display.hourCycle': oneOf(HOUR_CYCLES),
   'display.advisorOverride': text(80),
   'display.autoCompactWindow': (value) => (Number.isInteger(value) && (value as number) > 0 ? value : null),
+  'display.contextDetailMode': oneOf(CONTEXT_DETAIL_MODES),
+  'display.usageDetailMode': oneOf(USAGE_DETAIL_MODES),
+  'display.compactContextFormat': oneOf(COMPACT_CONTEXT_FORMATS),
   'colors.barFilled': barChar,
   'colors.barEmpty': barChar,
   'colors.*': color,

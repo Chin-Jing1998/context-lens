@@ -24,6 +24,9 @@ const HOUR_CYCLES = ['auto', 'h11', 'h12', 'h23', 'h24'];
 const CUSTOM_LINE_POSITIONS = ['first', 'last'];
 const ADDED_DIRS_LAYOUTS = ['inline', 'line'];
 const COLOR_NAMES = ['dim', 'red', 'green', 'yellow', 'magenta', 'cyan', 'brightBlue', 'brightMagenta'];
+const CONTEXT_DETAIL_MODES = ['always', 'warning', 'critical', 'never'];
+const USAGE_DETAIL_MODES = ['always', 'threshold', 'never'];
+const COMPACT_CONTEXT_FORMATS = ['full', 'minimal'];
 const ELEMENTS = [
     'project',
     'addedDirs',
@@ -122,6 +125,8 @@ export const DEFAULT_CONFIG = {
         showPromptCache: false,
         showCacheHitRate: false,
         showSessionTokens: false,
+        showLens: false,
+        showTerminal: false,
         showOutputStyle: false,
         showSessionStartDate: false,
         showLastResponseAt: false,
@@ -149,6 +154,12 @@ export const DEFAULT_CONFIG = {
         showAdvisor: false,
         advisorOverride: '',
         autoCompactWindow: null,
+        contextDetailMode: 'critical',
+        usageDetailMode: 'threshold',
+        compactContextFormat: 'minimal',
+        showGitFilesInCompact: false,
+        defaultHideSessionTokens: true,
+        showCompactionsOnlyWhenPresent: true,
     },
     colors: {
         context: 'green',
@@ -264,6 +275,9 @@ const RULES = {
     'display.hourCycle': oneOf(HOUR_CYCLES),
     'display.advisorOverride': text(80),
     'display.autoCompactWindow': (value) => (Number.isInteger(value) && value > 0 ? value : null),
+    'display.contextDetailMode': oneOf(CONTEXT_DETAIL_MODES),
+    'display.usageDetailMode': oneOf(USAGE_DETAIL_MODES),
+    'display.compactContextFormat': oneOf(COMPACT_CONTEXT_FORMATS),
     'colors.barFilled': barChar,
     'colors.barEmpty': barChar,
     'colors.*': color,

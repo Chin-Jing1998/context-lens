@@ -2,11 +2,13 @@
 
 Maintained by [Chin-Jing1998](https://github.com/Chin-Jing1998), based on [jarrodwatts/claude-hud](https://github.com/jarrodwatts/claude-hud). The original MIT license and Git history are retained. See [upstream synchronization](UPSTREAM.md) and the [multi-client implementation plan](docs/IMPLEMENTATION_PLAN.md).
 
-**Current status:** context budgets and category breakdowns, cumulative Claude/Codex usage, custom prices, a local dashboard, and an independent macOS floating app are implemented. Claude keeps its native status line; Codex keeps the official CLI and native indicators. See [setup and data limitations](docs/USAGE.md).
+**Current status:** macOS and Windows desktop apps with nine fixed themes, seven statistics islands, session details and GitHub update checks. Statistics cover context, cumulative usage, model costs, commands, skills, MCP and session runtime. Context Lens is silent in the CLI by default; client-native prompts and indicators remain available. See [desktop setup](docs/DESKTOP.md).
 
-For the floating app, run `npm ci`, `npm run build`, then `node scripts/context-lens.mjs desktop --install`. The app bundles its runtime and follows a uniquely identified live session when Claude, Codex, or a terminal becomes active. Ambiguous sessions require explicit selection. The full Claude status line is opt-in with `display.showLens`.
+For the floating app, run `npm ci`, `npm run build`, then `node scripts/context-lens.mjs desktop --install`. The app bundles its runtime and follows a uniquely identified live session when Claude, Codex, or a terminal becomes active. Unresolved sessions show a waiting state. Terminal output requires `display.showTerminal: true`; `display.showLens: true` additionally enables the full legacy HUD.
 
-A Claude Code plugin that shows what's happening: context usage, rate limits, active tools, running agents, and todo progress, always visible below your input.
+For 64-bit Windows 10 and later, download the setup or portable exe from [GitHub Releases](https://github.com/Chin-Jing1998/context-lens/releases/latest). “About updates” checks stable releases from that same repository.
+
+A local context and usage monitor with a floating desktop app and an optional Claude Code terminal HUD.
 
 [![License](https://img.shields.io/github/license/Chin-Jing1998/context-lens?v=2)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/Chin-Jing1998/context-lens)](https://github.com/Chin-Jing1998/context-lens/stargazers)
@@ -26,7 +28,7 @@ Inside Claude Code, run:
 /context-lens:setup
 ```
 
-`/context-lens:setup` points your status line at the HUD. Claude Code reloads settings on its own, so the HUD appears right away. To customize it, ask Claude or run `/context-lens:configure`.
+`/context-lens:setup` installs the silent live-data collector for the floating app. Claude Code updates the floating app data on subsequent status-line refreshes; no custom terminal HUD is printed by default. To customize it, ask Claude or run `/context-lens:configure`.
 
 <details>
 <summary><strong>Prefer the terminal?</strong></summary>
@@ -49,7 +51,7 @@ Install Node.js LTS (`winget install OpenJS.NodeJS.LTS`), restart your shell, an
 
 ## What You See
 
-The default is two lines:
+With `display.showTerminal: true`, the basic HUD uses two lines:
 
 ```
 [Opus] │ my-project git:(main*)
@@ -114,6 +116,7 @@ Labels are available in English (the default), Simplified Chinese (`zh-Hans`, al
 | `jjStatus.enabled` | boolean | false | Opt in to jj (Jujutsu) status. When enabled and a real `.jj` directory is found, jj is used instead of git for that repo — never both |
 | `jjStatus.showDirty` | boolean | true | Show `*` when the working-copy commit differs from its parent |
 | `jjStatus.showConflicts` | boolean | true | Show a `!conflict` marker when the working-copy commit has an unresolved conflict |
+| `display.showTerminal` | boolean | false | Enable terminal HUD output. Live Claude counters are captured independently; false also suppresses initialization and error output. |
 | `display.showModel` | boolean | true | Show model name `[Opus]` |
 | `display.showProject` | boolean | true | Show the project path |
 | `display.modelSource` | `stdin` \| `auto` \| `transcript` | `stdin` | Controls which source the model name comes from. `stdin` preserves the default behavior and always uses what Claude Code reports. `auto` opts into proxy redirect detection by using transcript models only for non-Claude models. `transcript` always uses the model from the API response. Transcript model values are terminal-sanitized and capped at 80 characters |
@@ -125,6 +128,7 @@ Labels are available in English (the default), Simplified Chinese (`zh-Hans`, al
 | `display.addedDirsLayout` | `inline` \| `line` | `inline` | `inline` puts dirs next to the project name with a `+name` prefix per dir; `line` renders them on a separate `Added dirs: name1, name2` line (no `+` prefix, comma-separated) |
 | `display.showContextBar` | boolean | true | Show visual context bar `████░░░░░░` |
 | `display.contextValue` | `percent` \| `tokens` \| `remaining` \| `both` | `percent` | Context display format (`45%`, `45k/200k`, `55%` remaining, or `45% (45k/200k)`) |
+| `display.compactContextFormat` | `full` \| `minimal` | `minimal` | Context value format in compact layout: `full` respects `contextValue`; `minimal` always shows only a percentage |
 | `display.autoCompactWindow` | number \| `null` | `null` | When set to a positive number such as `200000`, compute the context percentage against this auto-compact window instead of the full model context window, matching the `/context` figure. Leave unset or `null` to preserve default full-window behavior. |
 | `display.showConfigCounts` | boolean | false | Show CLAUDE.md, rules, MCPs, hooks counts |
 | `display.environmentThreshold` | number | 0 | Hide the config counts until their total reaches this number (0 = always show) |
@@ -136,6 +140,7 @@ Labels are available in English (the default), Simplified Chinese (`zh-Hans`, al
 | `display.showDuration` | boolean | false | Show how long the session has been running, e.g. `⏱️ 5m` |
 | `display.showSpeed` | boolean | false | Show the latest response's output speed `out: 42.1 tok/s` |
 | `display.showUsage` | boolean | true | Show Claude subscriber usage limits when available |
+| `display.usageDetailMode` | `always` \| `threshold` \| `never` | `threshold` | When to show the usage reset countdown: always, only when the window reaches the `usageThreshold`, or never |
 | `display.usageValue` | `percent` \| `remaining` | `percent` | Usage display format (`25%` used, or `75%` remaining) |
 | `display.usageBarEnabled` | boolean | true | Display usage as visual bar instead of text |
 | `display.usageCompact` | boolean | false | Display usage in a shorter text form such as `5h: 25% (1h 30m)`; takes precedence over `display.usageBarEnabled` |
@@ -151,6 +156,7 @@ Labels are available in English (the default), Simplified Chinese (`zh-Hans`, al
 | `display.externalUsageWritePath` | string | `""` | Optional absolute `.json` path in an existing directory. A leading `~` and `${VAR}` are expanded. When stdin `rate_limits` exists, ClaudeHUD writes a private snapshot for other local tools. Relative paths, non-json files, and missing parent directories are ignored |
 | `display.externalUsageFreshnessMs` | number | `300000` | Maximum allowed age for the external usage snapshot before it is ignored |
 | `display.showTokenBreakdown` | boolean | true | Show token details at high context (85%+) |
+| `display.contextDetailMode` | `always` \| `warning` \| `critical` \| `never` | `critical` | When to show the token breakdown: always, at the warning threshold, only at the critical threshold, or never |
 | `display.contextWarningThreshold` | 0-100 | 70 | Context percentage at which the context bar turns the warning colour |
 | `display.contextCriticalThreshold` | 0-100 | 85 | Context percentage at which the context bar turns the critical colour and shows the token breakdown |
 | `display.showTools` | boolean | false | Show tools activity line |
@@ -163,7 +169,8 @@ Labels are available in English (the default), Simplified Chinese (`zh-Hans`, al
 | `display.showTodos` | boolean | false | Show todos progress line |
 | `display.showSessionName` | boolean | false | Show the session name: the `/rename` name, or the title Claude Code generated |
 | `display.showSessionTokens` | boolean | false | Show the session's cumulative token totals, e.g. `Tokens 262k (in: 6k, out: 2k, cache: 254k)` |
-| `display.showLens` | boolean | false | Show the complete Context Lens breakdown, main/agent totals and custom costs; capture live Claude counters for the local desktop panel. |
+| `display.defaultHideSessionTokens` | boolean | true | Hide the session token summary even when `showSessionTokens` is true; set to `false` to show it |
+| `display.showLens` | boolean | false | Show the complete Context Lens breakdown, main/agent totals and custom costs when showTerminal is true. Live capture is independent of this setting. |
 | `display.showAuth` | boolean | false | Show the auth method (subscription plan) of the current login as its own segment at the end of the first line, e.g. `Claude Max 20x`. Derived from the `oauthAccount` block in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json` when the config directory is overridden); shows `API Key` when there is no OAuth login but `ANTHROPIC_API_KEY` is set |
 | `display.showAuthUser` | boolean | false | Show the logged-in account (email local part, falling back to profile display name) next to the auth method |
 | `display.authUserLength` | number | `8` | Maximum characters of the account name to display before truncating with `…`. `0` shows the full name |
@@ -172,6 +179,8 @@ Labels are available in English (the default), Simplified Chinese (`zh-Hans`, al
 | `display.showSessionStartDate` | boolean | false | Show the transcript session start timestamp |
 | `display.showLastResponseAt` | boolean | false | Show how long ago the last assistant response was written |
 | `display.showCompactions` | boolean | false | Show how many context compactions (manual `/compact` or auto) have occurred this session, counted from transcript `compact_boundary` entries, e.g. `Compactions: 2`. Hidden until the first compaction |
+| `display.showCompactionsOnlyWhenPresent` | boolean | true | Hide the compactions indicator when the compaction count is zero |
+| `display.showGitFilesInCompact` | boolean | false | Show the recently-changed git files line in the compact layout (always shown in expanded) |
 | `display.showEffortLevel` | boolean | false | Show the current reasoning effort in the model badge. Ultracode renders as `ultracode(xhigh)`, detected from the session transcript so it tracks `/effort` changes made at runtime |
 | `display.effortFormat` | `full` \| `symbol` \| `text` | `full` | How the effort renders when `display.showEffortLevel` is on: symbol and level text (`◑ high`), symbol only (`◑`), or level text only (`high`). Ultracode keeps the full `◕ ultracode(xhigh)` form under `symbol` so the marker is not lost, and levels without a known symbol fall back to the level text |
 | `display.showClaudeCodeVersion` | boolean | false | Show the running Claude Code version, e.g. `CC v2.1.81` |
@@ -266,7 +275,7 @@ Any value other than `0`, `false`, `off`, or `no` blanks the HUD for that sessio
 
 ## Security
 
-Context Lens is local-only. It makes no network requests, never reads credentials, and calls no undocumented APIs. It reads Claude Code's stdin, the session transcript, Claude configuration files, and git or jj metadata for the current directory. Its only writes are small state files (output speed and the cost ledger) under `~/.claude/plugins/context-lens`, with private permissions.
+Session processing stays local. The desktop service downloads public price tables from OpenAI and Anthropic; it sends no conversation content or credentials. Context Lens reads local client counters, transcripts, configuration and process ownership metadata, and writes private configuration, price caches and usage ledgers. Custom model prices remain separate from the automatically updated official prices.
 
 `--extra-cmd` runs a shell command on every refresh and puts its output on the first line. It is ignored unless `CONTEXT_LENS_ALLOW_EXTRA_CMD=1` is set in the HUD's environment. Treat it as arbitrary code execution and never use a command from an untrusted source.
 

@@ -11,6 +11,7 @@ import {
   modelBadge, projectParts, sessionNamePart, sessionTokensSummary, speedPart, versionPart, type Part,
 } from './parts.js';
 import { usageParts } from './usage.js';
+import { gitFilesLine } from './vcs.js';
 
 const ACTIVITY: ActivityElement[] = ['tools', 'skills', 'mcp', 'agents', 'todos'];
 
@@ -33,8 +34,12 @@ function sessionLine(f: Frame): string {
   add(versionPart(f), 'version');
   configCountParts(f).forEach((part) => add(part));
   (usageParts(f, 'compact') ?? []).forEach((part) => add(part));
-  if (f.config?.display?.showSessionTokens) add(sessionTokensSummary(f, `${t('format.tok')}:`));
-  add(compactionsPart(f));
+  const display = f.config?.display;
+  const hideTokens = display?.defaultHideSessionTokens ?? false;
+  if (display?.showSessionTokens && !hideTokens) add(sessionTokensSummary(f, `${t('format.tok')}:`));
+  const showOnlyWhenPresent = display?.showCompactionsOnlyWhenPresent ?? true;
+  const compactionText = compactionsPart(f);
+  if (compactionText && (!showOnlyWhenPresent || (f.transcript?.compactionCount ?? 0) > 0)) add(compactionText);
   add(advisorPart(f), 'advisor');
   add(durationPart(f), 'duration');
   add(sessionTimeLine(f));
@@ -54,6 +59,14 @@ export function compactLines(f: Frame): string[] {
   const header = sessionLine(f);
   const activity = ACTIVITY.map((element) => activityLine(f, element)).filter((line): line is string => !!line);
   const lines = [header];
+
+  // 条件性添加 git 文件行（新配置项控制，默认不显示）
+  const display = f.config?.display;
+  if (display?.showGitFilesInCompact) {
+    const gitFiles = gitFilesLine(f);
+    if (gitFiles) lines.push(gitFiles);
+  }
+
   if (f.config?.showSeparators && activity.length > 0) {
     const widest = Math.max(visibleWidth(header), 20);
     lines.push(separatorLine(f.width ? Math.min(widest, f.width) : widest));

@@ -55,19 +55,29 @@ export async function resolveVcsStatus(
 export async function main(): Promise<void> {
   if (isHudDisabled()) return;
 
+  let showTerminal = false;
   try {
-    const stdin = await readStdin();
     const config = await loadConfig();
+    showTerminal = config.display.showTerminal;
+    const stdin = await readStdin();
     setLanguage(config.language);
 
     if (!stdin) {
       // Setup runs the command without input to check that it starts.
-      console.log(t("init.initializing"));
-      if (process.platform === "darwin") console.log(t("init.macosNote"));
+      if (showTerminal) {
+        console.log(t("init.initializing"));
+        if (process.platform === "darwin") console.log(t("init.macosNote"));
+      }
       return;
     }
 
     const display = config.display;
+    const { claudeLaunchSettings, captureClaude } = await import('./lens/sessions.js');
+    const launch = claudeLaunchSettings();
+    // The statusline is also a silent live-data bridge for the floating app.
+    try { captureClaude(stdin, launch, display.autoCompactWindow ?? undefined); } catch { /* The panel reports missing live data. */ }
+    if (!showTerminal) return;
+
     const now = Date.now();
     const extraCmd = parseExtraCmdArg();
     const [transcript, gitStatus, extraLabel, memoryUsage] = await Promise.all([
@@ -83,8 +93,6 @@ export async function main(): Promise<void> {
     }
     const usageData = display.showUsage ? resolveUsage(config, stdinUsage, now) : null;
 
-    const { claudeLaunchSettings } = await import('./lens/sessions.js');
-    const launch = claudeLaunchSettings();
     const budget = resolveClaudeSettings({ cwd: stdin.workspace?.project_dir || stdin.cwd || process.cwd(),
       model: stdin.model?.id || '', capacity: stdin.context_window?.context_window_size ?? null, launch });
 
@@ -106,11 +114,9 @@ export async function main(): Promise<void> {
     });
     if (display.showLens && stdin.session_id && stdin.transcript_path) {
       try {
-        const { captureClaude } = await import('./lens/sessions.js');
         const { SessionCollector } = await import('./lens/snapshot.js');
         const { renderLensLines } = await import('./lens/terminal.js');
         const { statSync } = await import('node:fs');
-        captureClaude(stdin, launch, display.autoCompactWindow ?? undefined);
         const stat = statSync(stdin.transcript_path);
         const snapshot = await new SessionCollector().snapshot({ client: 'claude', id: stdin.session_id,
           cwd: stdin.cwd || '', model: stdin.model?.id || '', updatedAt: stat.mtime.toISOString(),
@@ -119,7 +125,7 @@ export async function main(): Promise<void> {
       } catch { console.log('[context-lens] Extended metrics unavailable; check transcript access and configuration.'); }
     }
   } catch (error) {
-    console.log("[context-lens] Error:", error instanceof Error ? error.message : "Unknown error");
+    if (showTerminal) console.log("[context-lens] Error:", error instanceof Error ? error.message : "Unknown error");
   }
 }
 

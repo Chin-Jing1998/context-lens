@@ -1,7 +1,7 @@
 {
   "name": "context-lens",
   "description": "Real-time statusline HUD for Claude Code - context health, tool activity, agent tracking, and todo progress",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "author": {
     "name": "Chin-Jing1998",
     "url": "https://github.com/Chin-Jing1998"

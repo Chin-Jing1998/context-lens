@@ -51,10 +51,10 @@ async function runCase(spec) {
     await mkdir(project, { recursive: true });
     await mkdir(path.dirname(transcript), { recursive: true });
     await copyFile(path.join(goldenDir, spec.transcript ?? 'transcript.jsonl'), transcript);
-    if (spec.config) {
+    { // Legacy layout cases explicitly opt in; the silent default is covered by index.test.js.
       const pluginDir = path.join(configDir, 'plugins', 'context-lens');
       await mkdir(pluginDir, { recursive: true });
-      await writeFile(path.join(pluginDir, 'config.json'), JSON.stringify(spec.config));
+      await writeFile(path.join(pluginDir, 'config.json'), JSON.stringify({ ...spec.config, display: { showTerminal: true, ...spec.config?.display } }));
     }
 
     const env = {

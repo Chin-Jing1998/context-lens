@@ -1,5 +1,6 @@
 import type { CacheState, Client, CostEstimate, LensConfig, RequestUsage, Tokens, Totals } from './types.js';
 import { tokenNumber } from './context.js';
+import { officialPrice, readOfficialPrices, type PriceCatalog } from './pricing.js';
 
 export const ZERO_TOKENS: Tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite5m: 0, cacheWrite1h: 0, reasoning: 0 };
 export const TOKEN_KEYS = Object.keys(ZERO_TOKENS) as (keyof Tokens)[];
@@ -10,6 +11,8 @@ export function normalizeUsage(client: Client, raw: any, id: string, model: stri
   const cacheWrite = n(raw.cache_creation_input_tokens ?? raw.cache_write_input_tokens);
   const input = n(raw.input_tokens) + (client === 'claude' ? cacheRead + cacheWrite : 0);
   return { id, model, at, input, output: n(raw.output_tokens), cacheRead, cacheWrite,
+    ...(typeof (raw.speed === 'fast' ? raw.speed : raw.service_tier) === 'string'
+      ? { serviceTier: raw.speed === 'fast' ? raw.speed : raw.service_tier } : {}),
     cacheWrite5m: n(raw.cache_creation?.ephemeral_5m_input_tokens), cacheWrite1h: n(raw.cache_creation?.ephemeral_1h_input_tokens),
     reasoning: n(raw.reasoning_output_tokens ?? raw.output_tokens_details?.thinking_tokens),
     complete: tokenNumber(raw.input_tokens) !== null && tokenNumber(raw.output_tokens) !== null
@@ -25,6 +28,9 @@ export function mergeRequests(rows: RequestUsage[]): RequestUsage[] {
     if (!old) byId.set(row.id, { ...row });
     else {
       const merged = { ...row, complete: old.complete || row.complete, model: row.model || old.model };
+      const dated = [old, row].filter(v => v.timestampKnown !== false && Number.isFinite(Date.parse(v.at))).sort((a, b) => a.at.localeCompare(b.at));
+      if (dated.length) { merged.at = dated[0].at; merged.timestampKnown = true; }
+      if (!merged.serviceTier && old.serviceTier) merged.serviceTier = old.serviceTier;
       for (const key of TOKEN_KEYS) merged[key] = Math.max(old[key], row[key]);
       byId.set(row.id, merged);
     }
@@ -53,12 +59,21 @@ export function addTotals(a: Totals, b: Totals): Totals {
   return result;
 }
 
-export function estimateCost(rows: RequestUsage[], config: LensConfig, complete = true): CostEstimate {
+export function estimateCost(rows: RequestUsage[], config: LensConfig, complete = true, prices?: PriceCatalog): CostEstimate {
   let amount = 0;
   let priced = false;
   const unpriced = new Set<string>();
+  const catalog = config.currency === 'USD' ? prices ?? readOfficialPrices() : undefined;
+  const pricing = new Map<string, NonNullable<CostEstimate['pricing']>[number]>();
   for (const row of mergeRequests(rows)) {
-    const rates = Object.hasOwn(config.prices, row.model) ? config.prices[row.model] : config.prices['*'];
+    const custom = Object.hasOwn(config.prices, row.model) ? config.prices[row.model] : config.prices['*'];
+    const official = !custom && catalog ? officialPrice(row, catalog) : undefined;
+    const rates = custom ?? official?.rates;
+    if (rates) {
+      const detail = { model: row.model, source: custom ? 'User configured price' : official!.source,
+        ...(official ? { checkedAt: official.checkedAt } : {}), tier: custom ? 'custom' : official!.tier };
+      pricing.set(row.model + ':' + detail.tier, detail);
+    }
     const components = [
       [Math.max(0, row.input - row.cacheRead - row.cacheWrite), rates?.input],
       [row.output, rates?.output], [row.cacheRead, rates?.cacheRead],
@@ -73,7 +88,7 @@ export function estimateCost(rows: RequestUsage[], config: LensConfig, complete 
       else { amount += tokens * rate / 1_000_000; priced = true; }
     }
   }
-  return { amount: priced ? amount : null, currency: config.currency, complete: complete && priced, unpricedModels: [...unpriced] };
+  return { amount: priced ? amount : null, currency: config.currency, complete: complete && priced, unpricedModels: [...unpriced], pricing: [...pricing.values()] };
 }
 
 export function cacheState(promptCache: any, now: number, at?: string): CacheState {

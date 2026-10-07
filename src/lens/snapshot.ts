@@ -4,6 +4,10 @@ import { readSession, type ParsedSession } from './reader.js';
 import { discoverSessions, checkpoint, readLiveClaude, sessionKey, type SessionFile, type LiveClaude } from './sessions.js';
 import { readPrices, resolveClaudeSettings, resolveCodexSettings, type LaunchSettings } from './settings.js';
 import { addTotals, cacheState, estimateCost, sumRequests, TOKEN_KEYS } from './usage.js';
+import { summarizeActivity, type ActivityLog } from './activity.js';
+import { sessionTiming } from './timing.js';
+import { summarizeDetails } from './claude-details.js';
+import { buildSessionDetails, type DetailQuery, type DetailSource } from './session-details.js';
 import type { HudSnapshot, LensConfig, RequestUsage, Totals } from './types.js';
 
 function totals(parsed: ParsedSession, requests: RequestUsage[]): Totals {
@@ -34,13 +38,25 @@ export class SessionCollector {
     const stat = fs.statSync(file.file);
     const stamp = `${stat.ino}:${stat.size}:${stat.mtimeMs}`;
     const old = this.parsed.get(file.file);
-    if (old?.stamp === stamp) return old.data;
+    if (old?.stamp === stamp) { old.data.info.title = file.title; return old.data; }
     const data = await readSession(file.file, file);
     try {
+      const observed = new Set(data.requests.map(row => row.id));
       const saved = checkpoint(data.info, data.requests, data.cumulative);
       data.requests = saved.requests; data.cumulative = saved.cumulative;
+      if (saved.requests.some(row => !observed.has(row.id))) {
+        if (data.activity) data.activity.complete = false;
+        if (data.timing) data.timing.complete = false;
+        if (data.details) data.details.complete = false;
+        data.warnings.push('Older request counters were retained; detailed event history is incomplete');
+      }
     } catch { data.warnings.push('Token checkpoint unavailable; displaying readable log history'); }
-    if (old && stat.size < old.size) data.warnings.push('Log was truncated; retained deduplicated token checkpoint');
+    if (old && stat.size < old.size) {
+      data.warnings.push('Log was truncated; retained deduplicated token checkpoint');
+      if (data.activity) data.activity.complete = false;
+      if (data.timing) data.timing.complete = false;
+      if (data.details) data.details.complete = false;
+    }
     if (this.parsed.size >= 32 && !this.parsed.has(file.file)) this.parsed.delete(this.parsed.keys().next().value!);
     this.parsed.set(file.file, { stamp, size: stat.size, data });
     return data;
@@ -52,6 +68,27 @@ export class SessionCollector {
     return this.snapshot(file, options);
   }
 
+  async details(key: string, query: DetailQuery = {}) {
+    const files = this.list(), file = files.find(value => sessionKey(value) === key);
+    if (!file) throw new Error('Session not found; refresh the session list');
+    const selected = [file], ids = new Set([file.id]);
+    for (let depth = 0; depth < 20; depth++) {
+      let added = false;
+      for (const child of files) if (child.client === file.client && child.parentId && ids.has(child.parentId) && !ids.has(child.id)) {
+        selected.push(child); ids.add(child.id); added = true;
+      }
+      if (!added) break;
+    }
+    const sources: DetailSource[] = [], unavailable: string[] = [];
+    for (const current of selected) {
+      try { sources.push({ file: current, parsed: await this.read(current) }); }
+      catch (error) { if (current === file) throw error; unavailable.push(current.id); }
+    }
+    let prices: LensConfig;
+    try { prices = readPrices(); } catch { prices = { currency: 'USD', prices: {} }; }
+    return buildSessionDetails(key, sources, prices, query, unavailable);
+  }
+
   async snapshot(file: SessionFile, options: { view?: 'budget' | 'model'; launch?: LaunchSettings; live?: LiveClaude } = {}): Promise<HudSnapshot> {
     const main = await this.read(file);
     const warnings = [...main.warnings];
@@ -60,6 +97,7 @@ export class SessionCollector {
     const requests = [...main.requests];
     let agentTotals = sumRequests([]);
     let agentCount = 0;
+    const agentActivity: ActivityLog[] = [];
     const descendants = new Set([file.id]);
     for (let depth = 0; depth < 20; depth++) {
       let added = false;
@@ -68,13 +106,14 @@ export class SessionCollector {
         descendants.add(child.id); added = true; agentCount++;
         try {
           const parsed = await this.read(child);
+          if (parsed.activity) agentActivity.push(parsed.activity);
           const own = parsed.requests.filter(row => !ids.has(row.id));
           for (const row of own) ids.add(row.id);
           requests.push(...own);
           // Cumulative fallbacks are used only when no response IDs are available: inherited IDs have already been removed.
           agentTotals = addTotals(agentTotals, totals(own.length === parsed.requests.length ? parsed : { ...parsed, cumulative: undefined }, own));
           warnings.push(...parsed.warnings.map(w => `Agent ${child.id}: ${w}`));
-        } catch { agentTotals.complete = false; warnings.push(`Agent ${child.id}: log unavailable`); }
+        } catch { agentTotals.complete = false; agentActivity.push({ calls: [], complete: false }); warnings.push(`Agent ${child.id}: log unavailable`); }
       }
       if (!added) break;
     }
@@ -88,6 +127,7 @@ export class SessionCollector {
       const u = live.stdin.context_window?.current_usage;
       used = u && tokenNumber(u.input_tokens) !== null
         ? u.input_tokens! + (tokenNumber(u.cache_read_input_tokens) ?? 0) + (tokenNumber(u.cache_creation_input_tokens) ?? 0) : null;
+      if (used === 0) used = null;
       at = live.at;
     }
     if (live) capacity = tokenNumber(live.stdin.context_window?.context_window_size) ?? capacity;
@@ -99,9 +139,10 @@ export class SessionCollector {
     if (live?.hudWindow && tokenNumber(live.hudWindow)) settings.budget = {
       ...settings.budget, tokens: live.hudWindow, accuracy: 'configured', source: 'Context Lens display.autoCompactWindow (manual HUD override)',
     };
-    if (file.client === 'claude' && !live) warnings.push('Enable display.showLens in the Claude statusline to capture live window size and cache validity');
+    if (file.client === 'claude' && !live) warnings.push('Claude live counters are unavailable; install the Context Lens silent statusline collector and wait for a client refresh');
     const context = buildContext({ used, capacity: settings.capacity, budget: settings.budget,
       categories: main.categories, buffer: main.buffer, view: options.view, at });
+    if (main.messageBreakdown?.length) context.messageBreakdown = main.messageBreakdown;
     let prices: LensConfig;
     try { prices = readPrices(); } catch { prices = { currency: 'USD', prices: {} }; warnings.push('Price configuration is invalid; no custom price was applied'); }
     const all = addTotals(mainTotals, agentTotals);
@@ -110,6 +151,9 @@ export class SessionCollector {
     return {
       session: main.info, context, totals: { main: mainTotals, agents: agentTotals, all, agentCount },
       cache: cacheState(fresh ? live.stdin.prompt_cache : undefined, now, live?.at),
+      activity: main.activity ? summarizeActivity(main.activity, agentActivity) : undefined,
+      timing: main.timing ? sessionTiming(main.timing, now) : undefined,
+      insights: main.details ? summarizeDetails(main.details) : undefined,
       cost: estimateCost(requests, prices, all.complete), nativeCostUsd: typeof nativeCost === 'number' && nativeCost >= 0 ? nativeCost : null,
       warnings: [...new Set([...warnings, ...context.warnings])], capturedAt: new Date(now).toISOString(),
     };

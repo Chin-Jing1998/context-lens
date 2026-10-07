@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Context Lens is a Claude Code plugin: a [status line](https://code.claude.com/docs/en/statusline) command that prints a two-line HUD (model, project, git, context, usage), plus opt-in lines for tools, agents, todos, and more.
+Context Lens provides a floating desktop app. Its Claude Code status-line command captures live counters silently by default. `display.showTerminal: true` enables the optional legacy HUD.
 
 ## Commands
 
@@ -22,7 +22,7 @@ Claude Code runs the command after each message, `/compact`, a mode change, a ra
 
 ## Invariants
 
-- The default HUD is two lines. New display is opt-in; see the scope section of CONTRIBUTING.md.
+- CLI output defaults to silent while live counters continue to update. The optional basic HUD is two lines when `display.showTerminal` is true.
 - Text from stdin, the transcript, git, or config is untrusted terminal input. Sanitize it (`utils/sanitize.ts`) before it's printed.
 - Rendering is pure: the clock and terminal width are sampled once in `renderLines`.
 - `tests/golden.test.js` pins end-to-end output. An output change must show up as a reviewed diff to `tests/golden/expected.txt`.

@@ -72,10 +72,12 @@ function main(argv) {
   const launcher = directEntry || path.join(hudDir, 'statusline.mjs');
   const settingsPath = path.join(configDir(), 'settings.json');
   const settings = readSettings(settingsPath);
+  const lensPath = path.join(configDir(), 'context-lens.json');
+  const lens = readSettings(lensPath);
   const command = buildCommand(shell, launcher);
   const existing = typeof settings.statusLine?.command === 'string' ? settings.statusLine.command : '';
-  const existingKind = existing === '' ? 'none' : existing.includes('context-lens') ? 'context-lens' : 'other';
-  const report = { settingsPath, command, existing: existingKind, existingPreview: existing ? redact(existing) : '' };
+  const existingKind = existing === '' ? 'none' : /context[- ]lens/i.test(existing) ? 'context-lens' : 'other';
+  const report = { settingsPath, command, existing: existingKind, existingPreview: existing ? redact(existing) : '', showTerminal: rest.includes('--lens') };
   if (action === 'inspect') return report;
 
   fs.mkdirSync(hudDir, { recursive: true });
@@ -101,13 +103,15 @@ function main(argv) {
   fs.writeFileSync(temp, `${JSON.stringify({ ...settings, statusLine }, null, 2)}\n`, { mode });
   fs.chmodSync(temp, mode);
   fs.renameSync(temp, target);
-  if (rest.includes('--lens')) {
-    const lensPath = path.join(configDir(), 'context-lens.json');
-    const lens = readSettings(lensPath);
+  {
     if (fs.existsSync(lensPath)) { report.lensBackupPath = `${lensPath}.bak.${Date.now()}`; fs.copyFileSync(lensPath, report.lensBackupPath); }
-    const lensTemp = `${lensPath}.${process.pid}.tmp`;
-    fs.writeFileSync(lensTemp, JSON.stringify({ ...lens, display: { ...lens.display, showLens: true } }, null, 2) + '\n', { mode: 0o600 });
-    fs.renameSync(lensTemp, lensPath); report.lensConfigPath = lensPath;
+    const lensTarget = fs.existsSync(lensPath) ? fs.realpathSync(lensPath) : lensPath;
+    const lensMode = fs.existsSync(lensTarget) ? fs.statSync(lensTarget).mode & 0o777 : 0o600;
+    const lensTemp = `${lensTarget}.${process.pid}.tmp`;
+    const terminal = rest.includes('--lens');
+    fs.writeFileSync(lensTemp, JSON.stringify({ ...lens, display: { ...lens.display, showTerminal: terminal, showLens: terminal } }, null, 2) + '\n', { mode: lensMode });
+    fs.chmodSync(lensTemp, lensMode);
+    fs.renameSync(lensTemp, lensTarget); report.lensConfigPath = lensPath;
   }
   return report;
 }

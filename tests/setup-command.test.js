@@ -76,6 +76,8 @@ test('setup install writes the statusLine and keeps other settings', async () =>
     const installedLauncher = path.join(configDir, 'plugins', 'context-lens', 'statusline.mjs');
 
     assert.equal(settings.model, 'opus');
+    const lens = JSON.parse(await readFile(report.lensConfigPath, 'utf8'));
+    assert.equal(lens.display.showTerminal, false); assert.equal(lens.display.showLens, false);
     assert.deepEqual(settings.statusLine, {
       type: 'command',
       command: `'${process.execPath}' '${installedLauncher}'`,
@@ -93,7 +95,7 @@ test('setup reinstall keeps the existing context-lens statusLine keys', async ()
   await withConfigDir(async (configDir) => {
     const settingsPath = path.join(configDir, 'settings.json');
     await writeFile(settingsPath, JSON.stringify({
-      statusLine: { type: 'command', command: 'old context-lens command', refreshInterval: 10 },
+      statusLine: { type: 'command', command: '/Applications/Context Lens.app/runtime/node', refreshInterval: 10 },
     }));
 
     const result = run(setupScript, ['install', '--shell', 'posix'], { configDir });

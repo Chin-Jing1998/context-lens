@@ -156,6 +156,7 @@ export interface TranscriptData {
     lastAssistantModel?: string;
 }
 export interface RenderContext {
+    contextBudget?: number | null;
     stdin: StdinData;
     transcript: TranscriptData;
     claudeMdCount: number;

@@ -34,6 +34,7 @@ test("CLI renders expected output for a basic transcript", async (t) => {
   const expected = readFileSync(expectedPath, "utf8").trimEnd();
 
   const homeDir = await mkdtemp(path.join(tmpdir(), "context-lens-home-"));
+  await writeHudConfig(homeDir, {});
   // Use a fixed 3-level path for deterministic test output
   const projectDir = path.join(homeDir, "dev", "apps", "my-project");
   await import("node:fs/promises").then((fs) =>
@@ -79,6 +80,7 @@ test("CLI renders added_dirs basenames on the project line", async (t) => {
     new URL("./fixtures/transcript-render.jsonl", import.meta.url),
   );
   const homeDir = await mkdtemp(path.join(tmpdir(), "context-lens-home-"));
+  await writeHudConfig(homeDir, {});
   const projectDir = path.join(homeDir, "dev", "apps", "my-project");
   const addedDirA = path.join(homeDir, "dev", "apps", "lib-foo");
   const addedDirB = path.join(homeDir, "dev", "apps", "some-other-repo");
@@ -132,6 +134,7 @@ test("CLI omits added dirs section when array is empty", async (t) => {
     new URL("./fixtures/transcript-render.jsonl", import.meta.url),
   );
   const homeDir = await mkdtemp(path.join(tmpdir(), "context-lens-home-"));
+  await writeHudConfig(homeDir, {});
   const projectDir = path.join(homeDir, "dev", "apps", "my-project");
   await import("node:fs/promises").then((fs) =>
     fs.mkdir(projectDir, { recursive: true }),
@@ -170,6 +173,7 @@ test("CLI tolerates added_dirs: null without crashing", async (t) => {
     new URL("./fixtures/transcript-render.jsonl", import.meta.url),
   );
   const homeDir = await mkdtemp(path.join(tmpdir(), "context-lens-home-"));
+  await writeHudConfig(homeDir, {});
   const projectDir = path.join(homeDir, "dev", "apps", "my-project");
   await import("node:fs/promises").then((fs) =>
     fs.mkdir(projectDir, { recursive: true }),
@@ -210,6 +214,7 @@ test("CLI ignores non-string and post-sanitize-empty added_dirs entries", async 
     new URL("./fixtures/transcript-render.jsonl", import.meta.url),
   );
   const homeDir = await mkdtemp(path.join(tmpdir(), "context-lens-home-"));
+  await writeHudConfig(homeDir, {});
   const projectDir = path.join(homeDir, "dev", "apps", "my-project");
   const validA = path.join(homeDir, "dev", "apps", "valid-one");
   const validB = path.join(homeDir, "dev", "apps", "valid-two");
@@ -261,6 +266,7 @@ test("CLI caps inline added_dirs at 5 with overflow indicator", async (t) => {
     new URL("./fixtures/transcript-render.jsonl", import.meta.url),
   );
   const homeDir = await mkdtemp(path.join(tmpdir(), "context-lens-home-"));
+  await writeHudConfig(homeDir, {});
   const projectDir = path.join(homeDir, "dev", "apps", "my-project");
   const dirs = Array.from({ length: 7 }, (_, i) =>
     path.join(homeDir, "dev", "apps", `dir-${i + 1}`),
@@ -310,6 +316,7 @@ test("CLI truncates long inline added_dirs basenames", async (t) => {
     new URL("./fixtures/transcript-render.jsonl", import.meta.url),
   );
   const homeDir = await mkdtemp(path.join(tmpdir(), "context-lens-home-"));
+  await writeHudConfig(homeDir, {});
   const projectDir = path.join(homeDir, "dev", "apps", "my-project");
   const longName = "a".repeat(40);
   const longDir = path.join(homeDir, "dev", "apps", longName);
@@ -355,7 +362,7 @@ async function writeHudConfig(homeDir, config) {
   const fs = await import("node:fs/promises");
   const dir = path.join(homeDir, ".claude", "plugins", "context-lens");
   await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(path.join(dir, "config.json"), JSON.stringify(config), "utf8");
+  await fs.writeFile(path.join(dir, "config.json"), JSON.stringify({ ...config, display: { showTerminal: true, ...config.display } }), "utf8");
 }
 
 test("CLI renders line layout 'Added dirs:' on a separate line", async (t) => {
@@ -363,6 +370,7 @@ test("CLI renders line layout 'Added dirs:' on a separate line", async (t) => {
     new URL("./fixtures/transcript-render.jsonl", import.meta.url),
   );
   const homeDir = await mkdtemp(path.join(tmpdir(), "context-lens-home-"));
+  await writeHudConfig(homeDir, {});
   const projectDir = path.join(homeDir, "dev", "apps", "my-project");
   const dirA = path.join(homeDir, "dev", "apps", "shared-utils");
   const dirB = path.join(homeDir, "dev", "apps", "mobile-app");
@@ -414,6 +422,7 @@ test("CLI renders inline added_dirs even when showProject is false", async (t) =
     new URL("./fixtures/transcript-render.jsonl", import.meta.url),
   );
   const homeDir = await mkdtemp(path.join(tmpdir(), "context-lens-home-"));
+  await writeHudConfig(homeDir, {});
   const projectDir = path.join(homeDir, "dev", "apps", "my-project");
   const addedDir = path.join(homeDir, "dev", "apps", "lib-foo");
   await import("node:fs/promises").then((fs) =>
@@ -459,6 +468,7 @@ test("CLI applies caps in line layout (overflow + truncation)", async (t) => {
     new URL("./fixtures/transcript-render.jsonl", import.meta.url),
   );
   const homeDir = await mkdtemp(path.join(tmpdir(), "context-lens-home-"));
+  await writeHudConfig(homeDir, {});
   const projectDir = path.join(homeDir, "dev", "apps", "my-project");
   const dirs = Array.from({ length: 7 }, (_, i) =>
     path.join(homeDir, "dev", "apps", `dir-${i + 1}`),
@@ -529,6 +539,7 @@ test("CLI applies caps in line layout (overflow + truncation)", async (t) => {
 
 test("CLI prints initializing message on empty stdin", async (t) => {
   const homeDir = await mkdtemp(path.join(tmpdir(), "context-lens-home-"));
+  await writeHudConfig(homeDir, {});
 
   try {
     const result = spawnSync("node", ["dist/index.js"], {

@@ -3,7 +3,7 @@ import { resolveEffortLevel } from '../effort.js';
 import { getNativeCostUsd } from '../cost.js';
 import { formatSessionDuration } from '../utils/format.js';
 // Values computed from the render context alone, without I/O.
-export const contextUsage = (ctx) => getContextUsage(ctx.stdin, ctx.config?.display?.autoCompactWindow, ctx.transcript?.contextTokens);
+export const contextUsage = (ctx) => getContextUsage(ctx.stdin, ctx.config?.display?.autoCompactWindow ?? ctx.contextBudget, ctx.transcript?.contextTokens);
 export const sessionName = (ctx) => stdinText(ctx.stdin.session_name);
 export const claudeCodeVersion = (ctx) => stdinText(ctx.stdin.version, 32);
 export const outputStyle = (ctx) => stdinText(ctx.stdin.output_style?.name, 40);

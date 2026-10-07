@@ -3,7 +3,7 @@ description: Configure context-lens as your statusline
 allowed-tools: Bash, Read, AskUserQuestion
 ---
 
-Set up context-lens as the Claude Code status line. `${CLAUDE_PLUGIN_ROOT}` is this plugin's install directory. Placeholders in `{BRACES}` are values you fill in from earlier steps.
+Set up the silent Context Lens collector through the Claude Code status line. `${CLAUDE_PLUGIN_ROOT}` is this plugin's install directory. Placeholders in `{BRACES}` are values you fill in from earlier steps.
 
 ## Step 1: Pick the shell
 
@@ -64,7 +64,8 @@ This does the following:
 - On `gitbash`, writes a `statusline.cmd` shim next to it. Launching through cmd.exe stops Git Bash from stranding suspended `node.exe` processes.
 - Backs up settings.json to the reported `backupPath`.
 - Saves a replaced command to `previousCommandPath`.
-- Writes `statusLine` and keeps every other setting.
+- Writes `statusLine`, sets `display.showTerminal` and `display.showLens` to false in the per-directory config, and keeps unrelated settings. Both changed configuration files are backed up.
+- Use `--lens` only when the user explicitly requests the complete terminal HUD; it enables both display switches.
 
 Test the result with sample input:
 
@@ -74,11 +75,7 @@ echo '{"model":{"display_name":"Opus"},"context_window":{"used_percentage":12,"c
 
 `{COMMAND}` is the `command` from the report. On `powershell`, test the launcher directly instead: `'<json>' | & "{RUNTIME}" "<config dir>\plugins\context-lens\statusline.mjs"`.
 
-It should print two HUD lines within a few seconds. If it errors or prints nothing:
-
-1. Show the output.
-2. Restore the backup by copying `backupPath` over `settingsPath`.
-3. Stop.
+The default collector should exit successfully with empty stdout. Empty output is expected. Verify live capture with a real session ID on the next Claude refresh; do not write synthetic counters into a real session. With an explicitly requested `--lens` install, the sample should produce HUD output. Diagnose nonzero exit status before restoring any backed-up configuration.
 
 ## Step 5: Finish
 

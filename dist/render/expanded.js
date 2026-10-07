@@ -118,16 +118,19 @@ export function expandedLines(f) {
         }
     }
     const lines = rows.map(({ line }) => line);
+    const display = f.config?.display;
     const gitFiles = gitFilesLine(f);
     if (gitFiles)
         lines.push(gitFiles);
-    if (f.config?.display?.showSessionTokens) {
+    const hideTokens = display?.defaultHideSessionTokens ?? false;
+    if (display?.showSessionTokens && !hideTokens) {
         const tokens = sessionTokensSummary(f, t('label.tokens'));
         if (tokens)
             lines.push(tokens);
     }
+    const showOnlyWhenPresent = display?.showCompactionsOnlyWhenPresent ?? true;
     const compactions = compactionsPart(f);
-    if (compactions)
+    if (compactions && (!showOnlyWhenPresent || (f.transcript?.compactionCount ?? 0) > 0))
         lines.push(compactions);
     const firstActivity = rows.findIndex(({ activity }) => activity);
     if (f.config?.showSeparators && firstActivity > 0) {
