@@ -10,7 +10,7 @@ const signed = () => `Authority=${identity}\nCodeDirectory flags=0x10000(runtime
 test('macOS distribution signs its bundled runtime with release entitlements before sealing the app', () => {
   const calls = [];
   signDesktop(app, identity, (tool, args) => calls.push({ tool, args }));
-  assert.equal(calls[0].args.at(-1), app + '/Contents/Resources/runtime/node');
+  assert.equal(calls[0].args.at(-1).replaceAll('\\', '/'), app + '/Contents/Resources/runtime/node');
   assert.equal(calls[1].args.at(-1), app);
   for (const call of calls.slice(0, 2)) {
     assert.ok(call.args.includes('--timestamp'));
@@ -32,6 +32,7 @@ test('notarization refuses missing credentials and ad-hoc signatures before uplo
   const noUpload = () => assert.fail('must not upload');
   assert.throws(() => notarizeDesktop(app, '', noUpload, signed), /MAC_NOTARY_PROFILE/);
   assert.throws(() => notarizeDesktop(app, 'profile', noUpload, () => 'Signature=adhoc'), /Developer ID signing/);
+  assert.throws(() => notarizeDesktop(app, 'profile', noUpload, () => `Executable=/runtime/Context Lens.app\nAuthority=${identity}\nCodeDirectory flags=0x0(none)`), /Hardened Runtime/);
 });
 
 test('rejected submissions cannot staple tickets or claim Gatekeeper success', () => {

@@ -24,7 +24,7 @@ export function signDesktop(app, identity = process.env.CONTEXT_LENS_MAC_SIGNING
 export function notarizeDesktop(app, profile = process.env.CONTEXT_LENS_MAC_NOTARY_PROFILE, run = execFileSync, inspect = captureSignature) {
   if (!profile) throw new Error('Apple notarization requires CONTEXT_LENS_MAC_NOTARY_PROFILE, an existing notarytool keychain profile');
   const details = inspect(app);
-  if (!details.includes('Authority=Developer ID Application:') || !details.includes('runtime')) {
+  if (!/^Authority=Developer ID Application:/m.test(details) || !/^CodeDirectory .*flags=0x[0-9a-f]+\([^\n)]*\bruntime\b[^\n)]*\)/m.test(details)) {
     throw new Error('Apple notarization requires Developer ID signing and Hardened Runtime');
   }
   const folder = mkdtempSync(path.join(os.tmpdir(), 'context-lens-notary-'));
