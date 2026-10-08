@@ -333,7 +333,7 @@ test('the session time line shows the start date and how long ago the last reply
 test('Chinese labels translate the session token summary in both layouts', () => {
   setLanguage('zh-Hans');
   const transcript = { sessionTokens: { inputTokens: 12345, outputTokens: 6789, cacheCreationTokens: 0, cacheReadTokens: 4321 } };
-  const config = { display: { showSessionTokens: true } };
+  const config = { display: { showSessionTokens: true, defaultHideSessionTokens: false } };
   assert.equal(lines(ctx({ transcript, config })).at(-1), '词元 23k (输入: 12k, 输出: 7k, 缓存: 4k)');
   assert.match(lines(ctx({ transcript, config: compact(config) }))[0], /\| 词元: 23k \(输入: 12k, 输出: 7k, 缓存: 4k\)$/);
 });

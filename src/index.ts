@@ -16,6 +16,7 @@ import { getOutputSpeed } from "./speed.js";
 import { resolveUsage, writeExternalUsageSnapshot } from "./external-usage.js";
 import { setLanguage, t } from "./i18n/index.js";
 import type { StdinData, TranscriptData } from "./types.js";
+import { resolveClaudeSettings } from "./lens/settings.js";
 
 const EMPTY_TRANSCRIPT: TranscriptData = { tools: [], skills: [], mcpServers: [], mcpErrors: [], agents: [], todos: [] };
 const NO_COUNTS: ConfigCounts = { claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 };
@@ -54,19 +55,29 @@ export async function resolveVcsStatus(
 export async function main(): Promise<void> {
   if (isHudDisabled()) return;
 
+  let showTerminal = false;
   try {
-    const stdin = await readStdin();
     const config = await loadConfig();
+    showTerminal = config.display.showTerminal;
+    const stdin = await readStdin();
     setLanguage(config.language);
 
     if (!stdin) {
       // Setup runs the command without input to check that it starts.
-      console.log(t("init.initializing"));
-      if (process.platform === "darwin") console.log(t("init.macosNote"));
+      if (showTerminal) {
+        console.log(t("init.initializing"));
+        if (process.platform === "darwin") console.log(t("init.macosNote"));
+      }
       return;
     }
 
     const display = config.display;
+    const { claudeLaunchSettings, captureClaude } = await import('./lens/sessions.js');
+    const launch = claudeLaunchSettings();
+    // The statusline is also a silent live-data bridge for the floating app.
+    try { captureClaude(stdin, launch, display.autoCompactWindow ?? undefined); } catch { /* The panel reports missing live data. */ }
+    if (!showTerminal) return;
+
     const now = Date.now();
     const extraCmd = parseExtraCmdArg();
     const [transcript, gitStatus, extraLabel, memoryUsage] = await Promise.all([
@@ -82,7 +93,11 @@ export async function main(): Promise<void> {
     }
     const usageData = display.showUsage ? resolveUsage(config, stdinUsage, now) : null;
 
+    const budget = resolveClaudeSettings({ cwd: stdin.workspace?.project_dir || stdin.cwd || process.cwd(),
+      model: stdin.model?.id || '', capacity: stdin.context_window?.context_window_size ?? null, launch });
+
     render({
+      contextBudget: budget.budget.accuracy === 'configured' ? budget.budget.tokens : null,
       stdin,
       transcript,
       ...(display.showConfigCounts ? countConfigs(stdin.cwd) : NO_COUNTS),
@@ -97,8 +112,20 @@ export async function main(): Promise<void> {
       extraLabel,
       authInfo: display.showAuth || display.showAuthUser ? readAuthInfo() : null,
     });
+    if (display.showLens && stdin.session_id && stdin.transcript_path) {
+      try {
+        const { SessionCollector } = await import('./lens/snapshot.js');
+        const { renderLensLines } = await import('./lens/terminal.js');
+        const { statSync } = await import('node:fs');
+        const stat = statSync(stdin.transcript_path);
+        const snapshot = await new SessionCollector().snapshot({ client: 'claude', id: stdin.session_id,
+          cwd: stdin.cwd || '', model: stdin.model?.id || '', updatedAt: stat.mtime.toISOString(),
+          file: stdin.transcript_path, size: stat.size, mtimeMs: stat.mtimeMs });
+        for (const line of renderLensLines(snapshot, process.stdout.columns || 100)) console.log(line);
+      } catch { console.log('[context-lens] Extended metrics unavailable; check transcript access and configuration.'); }
+    }
   } catch (error) {
-    console.log("[context-lens] Error:", error instanceof Error ? error.message : "Unknown error");
+    if (showTerminal) console.log("[context-lens] Error:", error instanceof Error ? error.message : "Unknown error");
   }
 }
 

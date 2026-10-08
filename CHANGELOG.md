@@ -1,11 +1,27 @@
 # Changelog
 
-All notable changes to Claude HUD will be documented in this file.
+All notable changes to Context Lens are documented in this file. Earlier Claude HUD history is retained below.
 
 ## [Unreleased]
 
 ### Fixed
 - A folder name containing ` │ ` no longer leaves the project link open over the rest of the HUD when line 1 wraps.
+- macOS download instructions identify the v0.11.0 ad-hoc signature and first-launch requirement. Distribution builds support Developer ID signing, Apple notarization, ticket stapling and Gatekeeper verification.
+
+## [0.11.0] - 2026-10-08
+
+### Added
+- Nine fixed desktop themes and seven islands for context, usage, costs, commands, skills, MCP and session runtime.
+- Parsed Claude context attachments, message breakdowns, compactions, hooks, files, tasks and linked agents; paged details retain the existing accounting boundaries.
+- Separate current-session, cumulative-query and per-request cost pages; unused models and absent categories are hidden.
+- GitHub stable-release checks in Settings, pinned to Chin-Jing1998/context-lens.
+- A shared application icon, a standalone macOS app and Windows 10+ x64 setup and portable executables.
+- Windows foreground tracking, process-parent matching, Claude live-session registration and explicit resumed-session matching.
+
+### Fixed
+- Floating-ball percentage alignment and click feedback preserve ring and glyph geometry.
+- Island label spacing, auto-hiding scrollbars, content-sized session details and theme gallery sizing.
+- Old session responses cannot overwrite a newly selected session; foreground recognition reports native permission and refresh states.
 
 ## [0.10.0] - 2026-10-01
 

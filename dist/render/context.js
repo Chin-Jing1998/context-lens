@@ -14,20 +14,40 @@ export function contextBarAndValue(f) {
     const display = f.config?.display;
     const colors = f.config?.colors;
     const context = contextUsage(f);
-    const value = `${getContextColor(context.percent, colors, thresholds(f))}${formatContextValue(context, display?.contextValue ?? 'percent')}${RESET}`;
+    const format = display?.compactContextFormat ?? 'full';
+    const mode = display?.contextValue ?? 'percent';
+    // minimal 格式强制使用 percent 模式
+    const valueMode = format === 'minimal' ? 'percent' : mode;
+    const value = `${getContextColor(context.percent, colors, thresholds(f))}${formatContextValue(context, valueMode)}${RESET}`;
     const bar = display?.showContextBar !== false
         ? coloredBar(context.percent, f.barWidth, colors, thresholds(f))
         : null;
     return { bar, value };
 }
-/** ` (in: 12k, cache: 180k)` once context reaches the critical threshold. */
+/** ` (in: 12k, cache: 180k)` when context reaches the configured threshold. */
 export function tokenBreakdown(f) {
     const display = f.config?.display;
     const usage = f.stdin.context_window?.current_usage;
     if (display?.showTokenBreakdown === false || !usage)
         return '';
-    if (contextUsage(f).percent < (display?.contextCriticalThreshold ?? 85))
+    const mode = display?.contextDetailMode ?? 'critical';
+    const context = contextUsage(f);
+    // 根据模式判断是否显示
+    if (mode === 'never')
         return '';
+    if (mode === 'always') {
+        // 始终显示
+    }
+    else if (mode === 'warning') {
+        const threshold = display?.contextWarningThreshold ?? 70;
+        if (context.percent < threshold)
+            return '';
+    }
+    else { // 'critical'
+        const threshold = display?.contextCriticalThreshold ?? 85;
+        if (context.percent < threshold)
+            return '';
+    }
     const input = formatTokens(usage.input_tokens ?? 0);
     const cache = formatTokens((usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0));
     return label(` (${t('format.in')}: ${input}, ${t('format.cache')}: ${cache})`, f.config?.colors);

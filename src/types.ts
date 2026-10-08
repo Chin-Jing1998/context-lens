@@ -183,6 +183,7 @@ export interface TranscriptData {
 }
 
 export interface RenderContext {
+  contextBudget?: number | null;
   stdin: StdinData;
   transcript: TranscriptData;
   claudeMdCount: number;

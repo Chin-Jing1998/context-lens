@@ -1,0 +1,43 @@
+name: Windows desktop
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'codex/**']
+    paths: ['desktop/**', 'web/**', 'src/**', 'scripts/build-icons.mjs', 'package*.json', '.github/workflows/desktop-windows.yml']
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: node --test tests/lens-updates.test.js tests/lens-active.test.js tests/windows-desktop.test.js
+      - run: npm run build:windows
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Launch the packaged application
+        shell: pwsh
+        run: |
+          $report = Join-Path $PWD 'desktop/build/windows/startup-check.json'
+          $exe = Join-Path $PWD 'desktop/build/windows/win-unpacked/Context Lens.exe'
+          $process = Start-Process -FilePath $exe -ArgumentList '--smoke-test', $report -PassThru
+          if (-not $process.WaitForExit(45000)) { $process.Kill(); throw 'Desktop startup timed out' }
+          if ($process.ExitCode -ne 0) { throw "Desktop exited with $($process.ExitCode)" }
+          $check = Get-Content $report -Raw | ConvertFrom-Json
+          if (-not $check.ok) { throw 'Desktop startup check failed' }
+          Get-ChildItem desktop/build/windows/*.exe | Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $([IO.Path]::GetFileName($_.Path))" } | Set-Content desktop/build/windows/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Context-Lens-Windows-x64
+          compression-level: 0
+          path: |
+            desktop/build/windows/*.exe
+            desktop/build/windows/SHA256SUMS.txt
+            desktop/build/windows/startup-check.json

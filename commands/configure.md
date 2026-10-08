@@ -14,6 +14,8 @@ The config directory is `$CLAUDE_CONFIG_DIR` when set, otherwise `~/.claude`. Re
 
 The effective config is the base with the override layered on top: nested objects merge key by key, and arrays and scalars are replaced. Missing keys use the defaults in the README's configuration table. Use the effective values when describing the current state.
 
+Terminal rendering is disabled by default (`display.showTerminal: false`). These options configure the optional HUD, not floating-app category visibility. Preserve the terminal switch unless the user explicitly requests a change; when a per-directory override keeps it disabled, state that the override still applies.
+
 ## Ask
 
 Ask these with AskUserQuestion, in two batches of up to four. Put the current value in each question. In multi-select questions, every listed item becomes `true` if selected and `false` if not.

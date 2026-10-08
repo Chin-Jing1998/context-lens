@@ -1,9 +1,12 @@
 {
   "name": "context-lens",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Context and usage HUD maintained by Chin-Jing1998, derived from Claude HUD",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "context-lens": "scripts/context-lens.mjs"
+  },
   "files": [
     "dist/",
     "src/",
@@ -11,7 +14,19 @@
     "scripts/clean-dist.mjs",
     "scripts/setup.mjs",
     "scripts/statusline.mjs",
-    ".claude-plugin/"
+    "scripts/context-lens.mjs",
+    "scripts/build-desktop.mjs",
+    "scripts/macos-signing.mjs",
+    "desktop/ContextLens.swift",
+    "desktop/node-entitlements.plist",
+    "web/",
+    "docs/",
+    "!docs/design/**",
+    "!docs/VALIDATION.md",
+    ".claude-plugin/",
+    "desktop/assets/",
+    "desktop/windows/",
+    "scripts/build-icons.mjs"
   ],
   "scripts": {
     "build": "node scripts/clean-dist.mjs && tsc",
@@ -19,7 +34,10 @@
     "test": "npm run build && node --test",
     "test:coverage": "npm run build && c8 --reporter=text --reporter=lcov node --test",
     "test:update-snapshots": "UPDATE_SNAPSHOTS=1 npm test",
-    "test:stdin": "npm run build && echo '{\"model\":{\"display_name\":\"Opus\"},\"context_window\":{\"current_usage\":{\"input_tokens\":45000},\"context_window_size\":200000},\"transcript_path\":\"/tmp/test.jsonl\"}' | node dist/index.js"
+    "test:stdin": "npm run build && echo '{\"model\":{\"display_name\":\"Opus\"},\"context_window\":{\"current_usage\":{\"input_tokens\":45000},\"context_window_size\":200000},\"transcript_path\":\"/tmp/test.jsonl\"}' | node dist/index.js",
+    "build:icons": "node scripts/build-icons.mjs",
+    "build:windows": "electron-builder --config desktop/windows/builder.cjs --win nsis portable --x64 --publish never",
+    "desktop:windows": "electron desktop/windows/main.cjs"
   },
   "keywords": [
     "claude-code",
@@ -32,8 +50,11 @@
     "node": ">=18.0.0"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "2.6.2",
     "@types/node": "^26.6.2",
     "c8": "^11.0.0",
+    "electron": "44.6.0",
+    "electron-builder": "26.15.3",
     "typescript": "^7.0.2"
   },
   "contributors": [
@@ -49,5 +70,9 @@
   },
   "bugs": {
     "url": "https://github.com/Chin-Jing1998/context-lens/issues"
+  },
+  "dependencies": {
+    "js-tiktoken": "^1.0.21",
+    "smol-toml": "^1.9.0"
   }
 }

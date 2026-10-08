@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Context Lens</title>
+  <defs>
+    <linearGradient id="tile" x1=".15" y1="0" x2=".8" y2="1"><stop stop-color="#fcfdfd"/><stop offset=".55" stop-color="#e4eef8"/><stop offset="1" stop-color="#c2d4e9"/></linearGradient>
+    <linearGradient id="rim" x1=".1" y1="0" x2=".8" y2="1"><stop stop-color="#152d48"/><stop offset="1" stop-color="#365779"/></linearGradient>
+    <linearGradient id="arc" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#369af6"/><stop offset="1" stop-color="#1766c9"/></linearGradient>
+    <radialGradient id="glass" cx=".35" cy=".27" r=".8"><stop stop-color="#ffffff"/><stop offset=".65" stop-color="#f1f8ff"/><stop offset="1" stop-color="#b9d8f3"/></radialGradient>
+  </defs>
+  <rect x="96" y="96" width="832" height="832" rx="186" fill="url(#tile)"/>
+  <rect x="104" y="104" width="816" height="816" rx="178" fill="none" stroke="#fff" stroke-opacity=".65" stroke-width="8"/>
+  <circle cx="512" cy="530" r="278" fill="#7596b2" opacity=".16"/>
+  <circle cx="512" cy="508" r="276" fill="url(#rim)"/>
+  <circle cx="512" cy="508" r="212" fill="url(#glass)"/>
+  <circle cx="512" cy="508" r="180" fill="none" stroke="#9eb8cf" stroke-width="12" opacity=".65"/>
+  <path d="M512 328a180 180 0 1 1-179.1 162" fill="none" stroke="url(#arc)" stroke-width="28" stroke-linecap="round"/>
+  <circle cx="512" cy="508" r="75" fill="url(#rim)"/>
+  <circle cx="495" cy="491" r="18" fill="#eaf6ff" opacity=".9"/>
+  <circle cx="731" cy="278" r="46" fill="url(#arc)" stroke="#f9fcff" stroke-width="14"/>
+</svg>

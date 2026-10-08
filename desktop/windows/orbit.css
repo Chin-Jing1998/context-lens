@@ -1,0 +1,12 @@
+html,body.desktop-orbit{width:100%;height:100%;padding:0;margin:0;background:transparent;overflow:hidden;user-select:none}
+.desktop-orbit #orbit{position:absolute;inset:0;width:276px;height:276px;display:none;filter:drop-shadow(0 4px 9px #14274022)}
+.desktop-orbit[data-surface=orbit] #orbit{display:block}.desktop-orbit[data-surface=orbit] #ball{display:none}
+.desktop-orbit #ball{position:absolute;inset:0;width:76px;height:76px;padding:0;background:transparent;border:0;border-radius:50%;box-shadow:none;cursor:pointer;touch-action:none;transform:none}
+.desktop-orbit #ball:active{opacity:.85;transform:none}.desktop-orbit #ball svg{width:76px;height:76px;filter:drop-shadow(0 3px 5px #172c4528)}
+.ball-face{fill:var(--surface);stroke:var(--line);stroke-width:1.5}.ball-track{fill:none;stroke:var(--line);stroke-width:2.2}#ball-progress{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linecap:round;stroke-dasharray:0 145;transition:stroke-dasharray var(--timing-std)}
+#ball-value{fill:var(--text);font-family:var(--numbers);font-size:17px;text-anchor:middle;dominant-baseline:central}
+.orbit-sector{fill:var(--glass);stroke:var(--line);stroke-width:1;cursor:pointer;outline:none;transition:fill var(--timing-quick)}.orbit-sector:hover,.orbit-sector:focus-visible{fill:var(--subtle);stroke:var(--accent);stroke-width:1.6}.orbit-sector[aria-pressed=true]{fill:var(--subtle);stroke:var(--accent);stroke-width:1.7}
+.orbit-sector text{pointer-events:none;fill:var(--text);text-anchor:middle;font-family:"Times New Roman",var(--chinese);font-size:11px}.orbit-sector .orbit-value{fill:var(--accent);font-size:12px}.orbit-sector:active{opacity:.8}
+:root[data-type-bold=true] .orbit-sector text{font-weight:700}:root[data-type-italic=true] .orbit-sector text{font-style:italic}
+.orbit-hub{fill:var(--surface);stroke:var(--line);cursor:pointer}.orbit-hub:focus-visible{stroke:var(--accent);stroke-width:2}.orbit-hub text{fill:var(--text);font:15px var(--numbers);text-anchor:middle;dominant-baseline:central;pointer-events:none}
+:root[data-reduce-motion=true] .orbit-sector,:root[data-reduce-motion=true] #ball-progress{transition:none}

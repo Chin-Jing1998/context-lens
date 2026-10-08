@@ -12,6 +12,9 @@ declare const HOUR_CYCLES: readonly ['auto', 'h11', 'h12', 'h23', 'h24'];
 declare const CUSTOM_LINE_POSITIONS: readonly ['first', 'last'];
 declare const ADDED_DIRS_LAYOUTS: readonly ['inline', 'line'];
 declare const COLOR_NAMES: readonly ['dim', 'red', 'green', 'yellow', 'magenta', 'cyan', 'brightBlue', 'brightMagenta'];
+declare const CONTEXT_DETAIL_MODES: readonly ['always', 'warning', 'critical', 'never'];
+declare const USAGE_DETAIL_MODES: readonly ['always', 'threshold', 'never'];
+declare const COMPACT_CONTEXT_FORMATS: readonly ['full', 'minimal'];
 declare const ELEMENTS: readonly ['project', 'addedDirs', 'context', 'usage', 'promptCache', 'cacheHitRate', 'memory', 'environment', 'tools', 'skills', 'mcp', 'agents', 'todos', 'sessionTime'];
 declare const FIRST_LINE_SEGMENTS: readonly ['model', 'project', 'advisor', 'sessionName', 'version', 'extra', 'duration', 'cost', 'speed', 'auth'];
 export type LineLayoutType = typeof LINE_LAYOUTS[number];
@@ -28,6 +31,9 @@ export type AddedDirsLayout = typeof ADDED_DIRS_LAYOUTS[number];
 export type HudColorName = typeof COLOR_NAMES[number];
 export type HudElement = typeof ELEMENTS[number];
 export type FirstLineSegment = typeof FIRST_LINE_SEGMENTS[number];
+export type ContextDetailMode = typeof CONTEXT_DETAIL_MODES[number];
+export type UsageDetailMode = typeof USAGE_DETAIL_MODES[number];
+export type CompactContextFormat = typeof COMPACT_CONTEXT_FORMATS[number];
 /** A named preset, a 256-color index (0-255), or a #rrggbb hex string. */
 export type HudColorValue = HudColorName | number | string;
 export interface HudColorOverrides {
@@ -73,6 +79,7 @@ export interface HudConfig {
         showConflicts: boolean;
     };
     display: {
+        showTerminal: boolean;
         showModel: boolean;
         showProject: boolean;
         showAddedDirs: boolean;
@@ -113,6 +120,7 @@ export interface HudConfig {
         showPromptCache: boolean;
         showCacheHitRate: boolean;
         showSessionTokens: boolean;
+        showLens: boolean;
         showOutputStyle: boolean;
         showSessionStartDate: boolean;
         showLastResponseAt: boolean;
@@ -140,6 +148,12 @@ export interface HudConfig {
         showAdvisor: boolean;
         advisorOverride: string;
         autoCompactWindow: number | null;
+        contextDetailMode: ContextDetailMode;
+        usageDetailMode: UsageDetailMode;
+        compactContextFormat: CompactContextFormat;
+        showGitFilesInCompact: boolean;
+        defaultHideSessionTokens: boolean;
+        showCompactionsOnlyWhenPresent: boolean;
     };
     colors: HudColorOverrides;
 }

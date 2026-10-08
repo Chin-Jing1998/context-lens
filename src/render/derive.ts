@@ -7,7 +7,7 @@ import { formatSessionDuration } from '../utils/format.js';
 // Values computed from the render context alone, without I/O.
 
 export const contextUsage = (ctx: RenderContext): ContextUsage =>
-  getContextUsage(ctx.stdin, ctx.config?.display?.autoCompactWindow, ctx.transcript?.contextTokens);
+  getContextUsage(ctx.stdin, ctx.config?.display?.autoCompactWindow ?? ctx.contextBudget, ctx.transcript?.contextTokens);
 
 export const sessionName = (ctx: RenderContext): string | undefined => stdinText(ctx.stdin.session_name);
 

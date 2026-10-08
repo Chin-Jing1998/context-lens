@@ -120,6 +120,7 @@ const KITCHEN_SINK = {
     showPromptCache: true,
     showCacheHitRate: true,
     showSessionTokens: true,
+    defaultHideSessionTokens: false,
     showOutputStyle: true,
     showSessionStartDate: true,
     showLastResponseAt: true,
@@ -131,9 +132,9 @@ const KITCHEN_SINK = {
 };
 
 const options = {
-  'contextValue=tokens': { display: { contextValue: 'tokens' } },
-  'contextValue=remaining': { display: { contextValue: 'remaining' } },
-  'contextValue=both': { display: { contextValue: 'both' } },
+  'contextValue=tokens': { display: { contextValue: 'tokens', compactContextFormat: 'full' } },
+  'contextValue=remaining': { display: { contextValue: 'remaining', compactContextFormat: 'full' } },
+  'contextValue=both': { display: { contextValue: 'both', compactContextFormat: 'full' } },
   'showContextBar=false': { display: { showContextBar: false } },
   'showTokenBreakdown=false': { display: { showTokenBreakdown: false } },
   'contextThresholds=50/60': { display: { contextWarningThreshold: 50, contextCriticalThreshold: 60 } },
@@ -183,6 +184,15 @@ const options = {
   'gitStatus.enabled=false': { gitStatus: { enabled: false } },
   'gitStatus.showDirty=false': { gitStatus: { showDirty: false } },
   'branchOverflow=wrap': { gitStatus: { branchOverflow: 'wrap' } },
+  'contextDetailMode=always': { display: { contextDetailMode: 'always' } },
+  'contextDetailMode=warning': { display: { contextDetailMode: 'warning' } },
+  'contextDetailMode=never': { display: { contextDetailMode: 'never' } },
+  'compactContextFormat=minimal': { display: { compactContextFormat: 'minimal', contextValue: 'tokens' } },
+  'defaultHideSessionTokens=false': { display: { showSessionTokens: true, defaultHideSessionTokens: false } },
+  'showCompactionsOnlyWhenPresent=false': { display: { showCompactions: true, showCompactionsOnlyWhenPresent: false } },
+  'showGitFilesInCompact=true': { display: { showGitFilesInCompact: true } },
+  'usageDetailMode=always': { display: { usageDetailMode: 'always' } },
+  'usageDetailMode=never': { display: { usageDetailMode: 'never' } },
 };
 
 const SINGLE_TOGGLES = Object.keys(KITCHEN_SINK.display).map((key) => [key, { display: { [key]: true } }]);

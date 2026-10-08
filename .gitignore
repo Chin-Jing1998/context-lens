@@ -62,3 +62,8 @@ bun.lock
 .codegraph/
 .serena/
 web-archive/
+desktop/build/
+# Local UI captures and session evidence stay outside the public source tree.
+docs/design/
+.agents/
+.codex/

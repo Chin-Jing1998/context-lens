@@ -276,6 +276,44 @@
 \e[0m\e[36m[Opus 5.5]\e[0m │ \e]8;;file://<BASE>/home/dev/my-project\e\\e[33mmy-project\e[0m\e]8;;\e\ │ \e[35mgit:(\e[0m\e]8;;https://github.com/Chin-Jing1998/context-lens/tree/main\e\\e[36mmain*\e[0m\e]8;;\e\\e[35m)\e[0m
 \e[0m\e[2mContext\e[0m \e[32m█████\e[2m░░░░░\e[0m \e[32m45%\e[0m │ \e[2mUsage\e[0m \e[94m███\e[2m░░░░░░░\e[0m \e[94m25%\e[0m (resets in 1h 30m)
 
+### option/contextDetailMode=always
+\e[0m\e[36m[Opus 5.5]\e[0m │ \e]8;;file://<BASE>/home/dev/my-project\e\\e[33mmy-project\e[0m\e]8;;\e\
+\e[0m\e[2mContext\e[0m \e[32m█████\e[2m░░░░░\e[0m \e[32m45%\e[0m\e[2m (in: 8k, cache: 82k)\e[0m │ \e[2mUsage\e[0m \e[94m███\e[2m░░░░░░░\e[0m \e[94m25%\e[0m (resets in 1h 30m)
+
+### option/contextDetailMode=warning
+\e[0m\e[36m[Opus 5.5]\e[0m │ \e]8;;file://<BASE>/home/dev/my-project\e\\e[33mmy-project\e[0m\e]8;;\e\
+\e[0m\e[2mContext\e[0m \e[32m█████\e[2m░░░░░\e[0m \e[32m45%\e[0m │ \e[2mUsage\e[0m \e[94m███\e[2m░░░░░░░\e[0m \e[94m25%\e[0m (resets in 1h 30m)
+
+### option/contextDetailMode=never
+\e[0m\e[36m[Opus 5.5]\e[0m │ \e]8;;file://<BASE>/home/dev/my-project\e\\e[33mmy-project\e[0m\e]8;;\e\
+\e[0m\e[2mContext\e[0m \e[32m█████\e[2m░░░░░\e[0m \e[32m45%\e[0m │ \e[2mUsage\e[0m \e[94m███\e[2m░░░░░░░\e[0m \e[94m25%\e[0m (resets in 1h 30m)
+
+### option/compactContextFormat=minimal
+\e[0m\e[36m[Opus 5.5]\e[0m │ \e]8;;file://<BASE>/home/dev/my-project\e\\e[33mmy-project\e[0m\e]8;;\e\
+\e[0m\e[2mContext\e[0m \e[32m█████\e[2m░░░░░\e[0m \e[32m45%\e[0m │ \e[2mUsage\e[0m \e[94m███\e[2m░░░░░░░\e[0m \e[94m25%\e[0m (resets in 1h 30m)
+
+### option/defaultHideSessionTokens=false
+\e[0m\e[36m[Opus 5.5]\e[0m │ \e]8;;file://<BASE>/home/dev/my-project\e\\e[33mmy-project\e[0m\e]8;;\e\
+\e[0m\e[2mContext\e[0m \e[32m█████\e[2m░░░░░\e[0m \e[32m45%\e[0m │ \e[2mUsage\e[0m \e[94m███\e[2m░░░░░░░\e[0m \e[94m25%\e[0m (resets in 1h 30m)
+\e[0m\e[2mTokens 262k (in: 6k, out: 2k, cache: 254k)\e[0m
+
+### option/showCompactionsOnlyWhenPresent=false
+\e[0m\e[36m[Opus 5.5]\e[0m │ \e]8;;file://<BASE>/home/dev/my-project\e\\e[33mmy-project\e[0m\e]8;;\e\
+\e[0m\e[2mContext\e[0m \e[32m█████\e[2m░░░░░\e[0m \e[32m45%\e[0m │ \e[2mUsage\e[0m \e[94m███\e[2m░░░░░░░\e[0m \e[94m25%\e[0m (resets in 1h 30m)
+\e[0m\e[2mCompactions: 1\e[0m
+
+### option/showGitFilesInCompact=true
+\e[0m\e[36m[Opus 5.5]\e[0m │ \e]8;;file://<BASE>/home/dev/my-project\e\\e[33mmy-project\e[0m\e]8;;\e\
+\e[0m\e[2mContext\e[0m \e[32m█████\e[2m░░░░░\e[0m \e[32m45%\e[0m │ \e[2mUsage\e[0m \e[94m███\e[2m░░░░░░░\e[0m \e[94m25%\e[0m (resets in 1h 30m)
+
+### option/usageDetailMode=always
+\e[0m\e[36m[Opus 5.5]\e[0m │ \e]8;;file://<BASE>/home/dev/my-project\e\\e[33mmy-project\e[0m\e]8;;\e\
+\e[0m\e[2mContext\e[0m \e[32m█████\e[2m░░░░░\e[0m \e[32m45%\e[0m │ \e[2mUsage\e[0m \e[94m███\e[2m░░░░░░░\e[0m \e[94m25%\e[0m (resets in 1h 30m)
+
+### option/usageDetailMode=never
+\e[0m\e[36m[Opus 5.5]\e[0m │ \e]8;;file://<BASE>/home/dev/my-project\e\\e[33mmy-project\e[0m\e]8;;\e\
+\e[0m\e[2mContext\e[0m \e[32m█████\e[2m░░░░░\e[0m \e[32m45%\e[0m │ \e[2mUsage\e[0m \e[94m███\e[2m░░░░░░░\e[0m \e[94m25%\e[0m (resets in 1h 30m)
+
 ### toggle/showTools
 \e[0m\e[36m[Opus 5.5]\e[0m │ \e]8;;file://<BASE>/home/dev/my-project\e\\e[33mmy-project\e[0m\e]8;;\e\
 \e[0m\e[2mContext\e[0m \e[32m█████\e[2m░░░░░\e[0m \e[32m45%\e[0m │ \e[2mUsage\e[0m \e[94m███\e[2m░░░░░░░\e[0m \e[94m25%\e[0m (resets in 1h 30m)
@@ -347,7 +385,10 @@
 ### toggle/showSessionTokens
 \e[0m\e[36m[Opus 5.5]\e[0m │ \e]8;;file://<BASE>/home/dev/my-project\e\\e[33mmy-project\e[0m\e]8;;\e\
 \e[0m\e[2mContext\e[0m \e[32m█████\e[2m░░░░░\e[0m \e[32m45%\e[0m │ \e[2mUsage\e[0m \e[94m███\e[2m░░░░░░░\e[0m \e[94m25%\e[0m (resets in 1h 30m)
-\e[0m\e[2mTokens 262k (in: 6k, out: 2k, cache: 254k)\e[0m
+
+### toggle/defaultHideSessionTokens
+\e[0m\e[36m[Opus 5.5]\e[0m │ \e]8;;file://<BASE>/home/dev/my-project\e\\e[33mmy-project\e[0m\e]8;;\e\
+\e[0m\e[2mContext\e[0m \e[32m█████\e[2m░░░░░\e[0m \e[32m45%\e[0m │ \e[2mUsage\e[0m \e[94m███\e[2m░░░░░░░\e[0m \e[94m25%\e[0m (resets in 1h 30m)
 
 ### toggle/showOutputStyle
 \e[0m\e[36m[Opus 5.5]\e[0m │ \e]8;;file://<BASE>/home/dev/my-project\e\\e[33mmy-project\e[0m\e]8;;\e\

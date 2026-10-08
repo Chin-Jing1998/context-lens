@@ -21,7 +21,8 @@
         "tools",
         "agents",
         "todos"
-      ]
+      ],
+      "version": "0.11.0"
     }
   ]
 }
