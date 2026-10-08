@@ -3,6 +3,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
+import { signDesktop, notarizeDesktop } from './macos-signing.mjs';
 
 export async function buildDesktop(port = 47831) {
   if (process.platform !== 'darwin') throw new Error('The floating ball currently supports macOS. Use context-lens serve on other platforms.');
@@ -56,7 +57,7 @@ export async function buildDesktop(port = 47831) {
     port,
     ...(process.env.CONTEXT_LENS_HOME ? { home: process.env.CONTEXT_LENS_HOME } : {}),
   }), { mode: 0o600 });
-  execFileSync('codesign', ['--force', '--sign', '-', app], { stdio: 'pipe' });
+  signDesktop(app);
   return app;
 }
 
@@ -128,8 +129,12 @@ export function installDesktop(app) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  if (process.argv.includes('--notarize') && (!process.env.CONTEXT_LENS_MAC_SIGNING_IDENTITY || !process.env.CONTEXT_LENS_MAC_NOTARY_PROFILE)) {
+    throw new Error('--notarize requires CONTEXT_LENS_MAC_SIGNING_IDENTITY and CONTEXT_LENS_MAC_NOTARY_PROFILE');
+  }
   const portIndex = process.argv.indexOf('--port');
   let app = await buildDesktop(portIndex >= 0 ? Number(process.argv[portIndex + 1]) : 47831);
+  if (process.argv.includes('--notarize')) notarizeDesktop(app);
   if (process.argv.includes('--install')) app = installDesktop(app);
   if (process.argv.includes('--open') && !process.argv.includes('--install')) execFileSync('open', ['-a', app], { stdio: 'pipe' });
   console.log(app);

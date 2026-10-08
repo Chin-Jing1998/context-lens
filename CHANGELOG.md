@@ -6,6 +6,7 @@ All notable changes to Context Lens are documented in this file. Earlier Claude 
 
 ### Fixed
 - A folder name containing ` │ ` no longer leaves the project link open over the rest of the HUD when line 1 wraps.
+- macOS download instructions identify the v0.11.0 ad-hoc signature and first-launch requirement. Distribution builds support Developer ID signing, Apple notarization, ticket stapling and Gatekeeper verification.
 
 ## [0.11.0] - 2026-10-08
 
