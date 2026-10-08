@@ -141,7 +141,9 @@ enum LensChineseFont: String, CaseIterable {
         let names: [String]
         switch self { case .song: names = ["STSongti-SC-Regular", "Songti SC"]; case .fangsong: names = ["STFangsong", "FangSong"]; case .kai: names = ["STKaiti", "Kaiti SC"]; case .system: names = ["PingFangSC-Regular", "PingFang SC"] }
         let font = names.compactMap { NSFont(name: $0, size: size) }.first ?? NSFont.systemFont(ofSize: size)
-        return bold ? NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask) : font
+        guard bold else { return font }
+        let descriptor = font.fontDescriptor.withSymbolicTraits(font.fontDescriptor.symbolicTraits.union(.bold))
+        return NSFont(descriptor: descriptor, size: size) ?? font
     }
 }
 

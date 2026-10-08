@@ -23,7 +23,20 @@ jobs:
       - run: node scripts/build-desktop.mjs
       - name: Verify native desktop behavior
         timeout-minutes: 2
-        run: '"desktop/build/Context Lens.app/Contents/MacOS/ContextLens" --self-test'
+        run: |
+          "desktop/build/Context Lens.app/Contents/MacOS/ContextLens" --self-test &
+          test_pid=$!
+          (
+            sleep 30
+            if kill -0 "$test_pid" 2>/dev/null; then
+              sample "$test_pid" 3 -file /tmp/context-lens-self-test.sample.txt || true
+              cat /tmp/context-lens-self-test.sample.txt || true
+              kill -TERM "$test_pid"
+            fi
+          ) &
+          watchdog_pid=$!
+          trap 'kill "$watchdog_pid" 2>/dev/null || true' EXIT
+          wait "$test_pid"
       - run: codesign --verify --deep --strict 'desktop/build/Context Lens.app'
   test:
     runs-on: ubuntu-latest
