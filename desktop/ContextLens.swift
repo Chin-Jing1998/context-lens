@@ -140,7 +140,9 @@ enum LensChineseFont: String, CaseIterable {
     @MainActor func font(size: CGFloat, bold: Bool) -> NSFont {
         let names: [String]
         switch self { case .song: names = ["STSongti-SC-Regular", "Songti SC"]; case .fangsong: names = ["STFangsong", "FangSong"]; case .kai: names = ["STKaiti", "Kaiti SC"]; case .system: names = ["PingFangSC-Regular", "PingFang SC"] }
-        let font = names.compactMap { NSFont(name: $0, size: size) }.first ?? NSFont.systemFont(ofSize: size)
+        // Request installed faces only; optional macOS fonts can open a blocking download dialog.
+        let available = Set(CTFontManagerCopyAvailablePostScriptNames() as? [String] ?? [])
+        let font = names.lazy.filter { available.contains($0) }.compactMap { NSFont(name: $0, size: size) }.first ?? NSFont.systemFont(ofSize: size)
         guard bold else { return font }
         let descriptor = font.fontDescriptor.withSymbolicTraits(font.fontDescriptor.symbolicTraits.union(.bold))
         return NSFont(descriptor: descriptor, size: size) ?? font
@@ -1209,6 +1211,7 @@ struct LensVisibility {
             precondition(!style.apply(message) && style.message == before)
             for preset in LensUITheme.allCases {
                 checkpoint("typography: \(preset.rawValue)")
+                checkpoint("Chinese font: \(preset.typography.chinese.font(size: 11, bold: preset.typography.bold).fontName)")
                 for value in ["52%", "128.4k", "1.20M", "$1.28", "¥2.00", "—"] {
                     let reading = preset.typography.reading(value, size: 16, color: .labelColor)
                     precondition(reading.string == value)
