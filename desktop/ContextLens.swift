@@ -1176,6 +1176,10 @@ struct LensVisibility {
 @main struct ContextLens {
     @MainActor static func main() {
         if CommandLine.arguments.contains("--self-test") {
+            func checkpoint(_ name: String) {
+                FileHandle.standardError.write(Data("[self-test] \(name)\n".utf8))
+            }
+            checkpoint("island geometry")
             precondition(LensUITheme.allCases.count == 9)
             precondition(LensIsland.allCases.count == 7)
             precondition(LensIsland.usage.height == 520 && LensIsland.cost.height == 420)
@@ -1184,6 +1188,7 @@ struct LensVisibility {
                 precondition(LensIsland.at(OrbitGeometry.center, material: material) == nil)
                 precondition(LensIsland.at(NSPoint(x: 1, y: 1), material: material) == nil)
             }
+            checkpoint("theme persistence")
             let suite = "context-lens-ui-test-" + UUID().uuidString
             let defaults = UserDefaults(suiteName: suite)!
             defer { defaults.removePersistentDomain(forName: suite) }
@@ -1191,6 +1196,7 @@ struct LensVisibility {
             precondition(style.theme == .native && style.warningPulse)
             var faces = Set<String>()
             for preset in LensUITheme.allCases {
+                checkpoint("font: \(preset.rawValue)")
                 precondition(style.apply(["uiTheme": preset.rawValue])); style.save(defaults); style = LensUIStyle.load(defaults)
                 precondition(style.theme == preset && style.motion.enter >= style.motion.exit)
                 let face = style.typography.numberFont(size: 16).fontName
@@ -1200,6 +1206,7 @@ struct LensVisibility {
             let before = style.message; var message = before; message["uiTheme"] = "unknown-theme"
             precondition(!style.apply(message) && style.message == before)
             for preset in LensUITheme.allCases {
+                checkpoint("typography: \(preset.rawValue)")
                 for value in ["52%", "128.4k", "1.20M", "$1.28", "¥2.00", "—"] {
                     let reading = preset.typography.reading(value, size: 16, color: .labelColor)
                     precondition(reading.string == value)
@@ -1213,12 +1220,16 @@ struct LensVisibility {
                     precondition(abs((positions.title.y + title.minY) - (positions.value.y + valueBounds.maxY) - 5) < 0.001)
                     precondition(positions.value.y + valueBounds.minY >= 0 && positions.title.y + title.maxY <= 40)
                 }
+                checkpoint("ball: \(preset.rawValue)")
                 let ball = BallView(frame: NSRect(x: 0, y: 0, width: 56, height: 56)); ball.style = LensUIStyle(theme: preset)
                 let down = NSEvent.mouseEvent(with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
                 let up = NSEvent.mouseEvent(with: .leftMouseUp, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, eventNumber: 1, clickCount: 1, pressure: 0)!
+                checkpoint("press: \(preset.rawValue)")
                 ball.mouseDown(with: down); precondition(ball.layer?.affineTransform() == .identity)
+                checkpoint("release: \(preset.rawValue)")
                 ball.mouseUp(with: up); precondition(ball.layer?.affineTransform() == .identity && ball.bounds.size == NSSize(width: 56, height: 56))
             }
+            checkpoint("identity and window bounds")
             precondition(abs(LensIsland.allCases.reduce(CGFloat(0)) { $0 + $1.span } - 360) < 0.001)
             for island in LensIsland.allCases { precondition(LensIsland.at(island.labelPoint) == island) }
             precondition(LensIsland.at(OrbitGeometry.center) == nil, "The central ball must remain reachable")
@@ -1231,6 +1242,7 @@ struct LensVisibility {
             precondition(clampedOrigin(NSPoint(x: -10, y: 200), size: NSSize(width: 56, height: 56), screen: NSRect(x: 0, y: 0, width: 100, height: 100)) == NSPoint(x: 0, y: 44))
             precondition(clampedOrigin(NSPoint(x: -1400, y: -200), size: NSSize(width: 420, height: 620), screen: NSRect(x: -1920, y: 0, width: 1920, height: 1080)) == NSPoint(x: -1400, y: 0))
             precondition(fittedFrame(NSRect(x: 800, y: 300, width: 1440, height: 1200), screen: NSRect(x: 0, y: 24, width: 1024, height: 744)) == NSRect(x: 0, y: 24, width: 1024, height: 744))
+            checkpoint("visibility")
             var state = LensVisibility()
             state.activate("codex:1", supported: true); precondition(state.ball && !state.panel)
             state.open(); state.activate("lens", supported: false, own: true); precondition(state.ball && state.panel)

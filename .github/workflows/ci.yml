@@ -11,6 +11,7 @@ on:
 jobs:
   macos-desktop:
     runs-on: macos-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -20,7 +21,9 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: node scripts/build-desktop.mjs
-      - run: '"desktop/build/Context Lens.app/Contents/MacOS/ContextLens" --self-test'
+      - name: Verify native desktop behavior
+        timeout-minutes: 2
+        run: '"desktop/build/Context Lens.app/Contents/MacOS/ContextLens" --self-test'
       - run: codesign --verify --deep --strict 'desktop/build/Context Lens.app'
   test:
     runs-on: ubuntu-latest
