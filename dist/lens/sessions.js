@@ -6,7 +6,7 @@ import { getClaudeConfigDir } from '../claude-config-dir.js';
 import { sanitizeDisplayText } from '../utils/sanitize.js';
 import { atomicJson, lensHome, record, launchSettings } from './settings.js';
 import { mergeRequests, TOKEN_KEYS } from './usage.js';
-import { tokenNumber } from './context.js';
+import { percentageNumber, tokenNumber } from './context.js';
 export const validId = (id) => typeof id === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(id);
 export const sessionKey = (s) => `${s.client}:${s.id}`;
 export const dataPath = (kind, s) => {
@@ -150,6 +150,7 @@ export function captureClaude(stdin, launch, hudWindow) {
         session_id: stdin.session_id, cwd: typeof stdin.cwd === 'string' ? stdin.cwd : undefined,
         model: { id: typeof stdin.model?.id === 'string' ? stdin.model.id : undefined },
         context_window: { context_window_size: tokenNumber(c.context_window_size) ?? undefined,
+            used_percentage: percentageNumber(c.used_percentage) ?? undefined,
             current_usage: c.current_usage === null ? null : {
                 input_tokens: tokenNumber(u.input_tokens) ?? undefined, output_tokens: tokenNumber(u.output_tokens) ?? undefined,
                 cache_creation_input_tokens: tokenNumber(u.cache_creation_input_tokens) ?? undefined, cache_read_input_tokens: tokenNumber(u.cache_read_input_tokens) ?? undefined,

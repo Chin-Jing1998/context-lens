@@ -66,7 +66,8 @@ export function estimateCost(rows: RequestUsage[], config: LensConfig, complete 
   const catalog = config.currency === 'USD' ? prices ?? readOfficialPrices() : undefined;
   const pricing = new Map<string, NonNullable<CostEstimate['pricing']>[number]>();
   for (const row of mergeRequests(rows)) {
-    const custom = Object.hasOwn(config.prices, row.model) ? config.prices[row.model] : config.prices['*'];
+    const custom = [Object.hasOwn(config.prices, row.model) ? config.prices[row.model] : undefined, config.prices['*']]
+      .find(rate => rate && Object.keys(rate).length > 0);
     const official = !custom && catalog ? officialPrice(row, catalog) : undefined;
     const rates = custom ?? official?.rates;
     if (rates) {

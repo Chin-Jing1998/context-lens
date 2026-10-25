@@ -6,6 +6,7 @@ export const CATEGORIES = [
     ['buffer', 'Autocompact buffer', '#c1bfb2'], ['free', 'Free space', '#e7e7e7'],
 ];
 export const tokenNumber = (v) => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : null;
+export const percentageNumber = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 100 ? v : null;
 export function buildContext(args) {
     const view = args.view ?? 'budget';
     const modelTokens = tokenNumber(args.capacity);
@@ -18,6 +19,8 @@ export function buildContext(args) {
     }
     const denominator = view === 'model' ? modelTokens : budget.tokens;
     let usedTokens = tokenNumber(args.used);
+    const windowPercent = percentageNumber(args.reportedPercent)
+        ?? (usedTokens !== null && modelTokens ? usedTokens / modelTokens * 100 : null);
     const warnings = [];
     const categories = { ...args.categories };
     if (view === 'budget' && budget.scope === 'body_after_prefix') {
@@ -60,7 +63,7 @@ export function buildContext(args) {
         const tokens = tokenNumber(m.tokens);
         return { ...m, tokens, id, label, color, percent: tokens !== null && denominator ? tokens / denominator * 100 : null };
     });
-    return { usedTokens, modelTokens, budget, denominator, view, segments, warnings,
-        percent: usedTokens !== null && denominator ? usedTokens / denominator * 100 : null, updatedAt: args.at ?? null };
+    return { usedTokens, modelTokens, budget, denominator, view, segments, warnings, windowPercent,
+        percent: view === 'model' ? windowPercent : usedTokens !== null && denominator ? usedTokens / denominator * 100 : null, updatedAt: args.at ?? null };
 }
 //# sourceMappingURL=context.js.map

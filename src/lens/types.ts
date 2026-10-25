@@ -14,7 +14,7 @@ export interface Budget {
 }
 export interface Context {
   usedTokens: number | null; modelTokens: number | null; budget: Budget;
-  denominator: number | null; percent: number | null; view: 'budget' | 'model';
+  denominator: number | null; percent: number | null; windowPercent: number | null; view: 'budget' | 'model';
   segments: Segment[]; warnings: string[]; updatedAt: string | null;
   messageBreakdown?: MessageSegment[];
 }

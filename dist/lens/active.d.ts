@@ -39,6 +39,11 @@ export declare class ActiveSessions {
     private parents;
     private error;
     private lastInteraction;
+    private desktop;
+    constructor(options?: {
+        claudeDesktopRoots?: string[];
+        now?: () => number;
+    });
     get(files: ActiveSessionInfo[], client?: string, targetPid?: number, hint?: VisibleSessionHint): ActiveResult;
     private scan;
 }

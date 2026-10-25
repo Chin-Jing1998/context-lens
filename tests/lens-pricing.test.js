@@ -16,6 +16,7 @@ after(() => {
 });
 
 const at = '2026-10-06T00:00:00Z';
+const google = readFileSync(new URL('./fixtures/gemini-pricing.md', import.meta.url), 'utf8');
 const openai = ['Standard', 'Batch', 'Flex', 'Fast', 'Ultrafast'].map((tier, index) => `### ${tier} pricing data
 | Model | Short context input | Short context cached input | Short context cache writes | Short context output | Long context input | Long context cached input | Long context cache writes | Long context output |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -170,5 +171,84 @@ test('official refresh is deduplicated, cached, bounded and preserves valid data
     writeFileSync(cache, JSON.stringify({ source: 'https://untrusted.invalid', checkedAt: at, models: {} }));
     assert.equal(readOfficialPrices(home).anthropic.source, PRICE_SOURCES.anthropic);
     assert.equal(readOfficialPrices(home).anthropic.models['claude-opus-5-5'].rates.input, 4);
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+test('Google Standard prices parse only the verified model table and retain the dated change', () => {
+  const parsed = parseOfficialPrices('google', google, at);
+  assert.deepEqual(Object.keys(parsed.models), ['gemini-4-argon']);
+  const price = parsed.models['gemini-4-argon'];
+  assert.deepEqual(price.rates, { input: 2, output: 10, cacheRead: .1 });
+  assert.deepEqual(price.dateChange, { at: '2026-12-01T00:00:00.000Z', rates: { input: 4, output: 20, cacheRead: .2 } });
+  assert.equal(Object.hasOwn(price.rates, 'cacheWrite'), false);
+  for (const changed of [google.replace('per 1M tokens in USD', 'per 1K tokens in EUR'),
+    google.replace('Implicit caching only (explicit caching is not supported).', 'Explicit cache writes are charged.'),
+    google.replace('November 30, 2026', 'November 29, 2026'), google.replace('id="gemini-4-argon"', 'id="other"')]) {
+    assert.throws(() => parseOfficialPrices('google', changed, at));
+  }
+});
+
+test('Gemini Standard prices follow request timestamps with the internal UTC boundary and exact identity', () => {
+  const rate = (at, extra = {}) => officialPrice({ model: 'gemini-4-argon', input: 170461, at, ...extra }, BUNDLED_PRICES);
+  assert.equal(rate('2026-11-30T23:59:59.999Z').rates.input, 2);
+  assert.equal(rate('2026-12-01T00:00:00.000Z').rates.input, 4);
+  assert.equal(rate('2026-12-01T07:59:59.999+08:00').rates.output, 10);
+  assert.equal(rate('2026-12-01T08:00:00.000+08:00').rates.output, 20);
+  for (const model of ['gemini-4-argon', 'models/gemini-4-argon', 'Google/gemini-4-argon', 'google/models/GEMINI-4-ARGON']) {
+    assert.equal(rate(at, { model }).rates.input, 2);
+  }
+  for (const model of ['gemini4', 'gemini-4-argon-20261018', 'proxy/gemini-4-argon', 'gemini-4-argon-extra']) assert.equal(rate(at, { model }), undefined);
+  for (const serviceTier of ['fast', 'batch', 'flex', 'priority', 'unknown']) assert.equal(rate(at, { serviceTier }), undefined);
+  assert.equal(rate(undefined), undefined);
+  assert.equal(rate('not-a-date'), undefined);
+  assert.equal(rate(at, { timestampKnown: false }), undefined);
+});
+
+test('Gemini input, implicit cache and inclusive thinking output are charged once and empty overrides do not mask them', () => {
+  const row = normalizeUsage('claude', { input_tokens: 2711, cache_read_input_tokens: 167750, cache_creation_input_tokens: 0,
+    output_tokens: 182, output_tokens_details: { thinking_tokens: 100 } }, 'gemini-response', 'gemini-4-argon', '2026-10-18T00:00:00Z');
+  const cost = prices => estimateCost([row, row], { currency: 'USD', prices }, true, BUNDLED_PRICES);
+  for (const prices of [{}, { 'gemini-4-argon': {} }, { '*': {} }, { 'gemini-4-argon': {}, '*': {} }]) {
+    assert.ok(Math.abs(cost(prices).amount - .024017) < 1e-12);
+    assert.equal(cost(prices).complete, true);
+  }
+  assert.ok(Math.abs(estimateCost([{ ...row, at: '2026-12-01T00:00:00Z' }], { currency: 'USD', prices: {} }, true, BUNDLED_PRICES).amount - .048034) < 1e-12);
+  const custom = { input: 1, output: 1, cacheRead: 1, cacheWrite: 1 };
+  assert.equal(cost({ 'gemini-4-argon': {}, '*': custom }).pricing[0].tier, 'custom');
+  assert.ok(Math.abs(cost({ 'gemini-4-argon': {}, '*': custom }).amount - .170643) < 1e-12);
+  assert.equal(cost({ 'gemini-4-argon': { input: 0, output: 0, cacheRead: 0 } }).amount, 0);
+  const partial = cost({ 'gemini-4-argon': { input: 1 }, '*': custom });
+  assert.equal(partial.complete, false); assert.equal(partial.amount, .002711);
+  const raw = { ...row, model: 'Google/gemini-4-argon' };
+  assert.equal(estimateCost([raw], { currency: 'USD', prices: { [raw.model]: custom } }, true, BUNDLED_PRICES).pricing[0].model, raw.model);
+  assert.equal(estimateCost([{ ...row, timestampKnown: false }], { currency: 'USD', prices: {} }, true, BUNDLED_PRICES).amount, null);
+  assert.equal(estimateCost([{ ...row, input: row.input + 1, cacheWrite: 1 }], { currency: 'USD', prices: {} }, true, BUNDLED_PRICES).complete, false);
+});
+
+test('Google refresh uses the original HTML page, saves verified prices and records failures without replacing them', async () => {
+  const home = mkdtempSync(path.join(tmpdir(), 'lens-google-pricing-'));
+  const now = Date.parse('2026-10-20T00:00:00Z'), urls = [];
+  const fetch = async url => {
+    urls.push(url);
+    if (url.includes('ai.google.dev')) return new Response(google);
+    throw new Error('offline');
+  };
+  try {
+    await refreshOfficialPrices({ home, now, force: true, fetch });
+    assert.ok(urls.includes(PRICE_SOURCES.google + '?hl=en'));
+    assert.equal(urls.some(url => url.includes('ai.google.dev') && url.includes('.md')), false);
+    const cache = path.join(home, 'official-prices-google.json');
+    const before = readFileSync(cache, 'utf8');
+    assert.equal(readOfficialPrices(home).google.checkedAt, new Date(now).toISOString());
+    await refreshOfficialPrices({ home, now: now + 1, force: true, fetch: async () => new Response('changed HTML') });
+    assert.equal(readFileSync(cache, 'utf8'), before);
+    const failure = JSON.parse(readFileSync(path.join(home, 'official-prices-google-status.json'), 'utf8'));
+    assert.equal(failure.status, 'failed'); assert.equal(failure.source, PRICE_SOURCES.google);
+    const invalid = JSON.parse(before); delete invalid.models['gemini-4-argon'].dateChange;
+    writeFileSync(cache, JSON.stringify(invalid));
+    assert.deepEqual(readOfficialPrices(home).google, BUNDLED_PRICES.google);
+    const incomplete = JSON.parse(before); delete incomplete.models['gemini-4-argon'].dateChange.rates.output;
+    writeFileSync(cache, JSON.stringify(incomplete));
+    assert.deepEqual(readOfficialPrices(home).google, BUNDLED_PRICES.google);
   } finally { rmSync(home, { recursive: true, force: true }); }
 });

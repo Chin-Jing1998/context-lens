@@ -495,28 +495,37 @@ function render(snapshot) {
     renderActivities();
     renderRuntime(true);
     updateSelection();
-    const c = snapshot.context;
-    text($('context-percent'), (c.budget.accuracy === 'estimated' && c.percent !== null ? '≈' : '') + pct(c.percent));
-    text($('settings-preview-percent'), c.percent === null ? '—' : (c.budget.accuracy === 'estimated' ? '≈' : '') + Math.round(c.percent) + '%');
+    const c = snapshot.context, claude = snapshot.session.client === 'claude';
+    const primaryPercent = claude ? c.windowPercent ?? null : c.percent;
+    const approximate = !claude && c.budget.accuracy === 'estimated' ? '≈' : '';
+    text($('context-title'), claude ? '上下文窗口' : '上下文');
+    text($('context-percent'), (primaryPercent === null ? '' : approximate) + pct(primaryPercent));
+    text($('settings-preview-percent'), primaryPercent === null ? '—' : approximate + Math.round(primaryPercent) + '%');
     $('settings-preview-percent').title = $('context-percent').textContent || '—';
-    $('settings-preview-percent').parentElement.style.setProperty('--preview-usage', Math.max(0, Math.min(100, c.percent ?? 0)) * 3.6 + 'deg');
+    $('settings-preview-percent').parentElement.style.setProperty('--preview-usage', Math.max(0, Math.min(100, primaryPercent ?? 0)) * 3.6 + 'deg');
     text($('context-used'), count(c.usedTokens));
-    text($('context-limit'), count(c.denominator));
+    text($('context-limit'), count(claude ? c.modelTokens : c.denominator));
+    $('context-budget-info').hidden = !claude;
+    if (claude) {
+        const budget = c.budget.tokens === null ? '未知' : count(c.budget.tokens) + ' tokens' + (c.budget.accuracy === 'estimated' ? '（估算）' : '');
+        text($('context-budget-info'), (c.budget.disabled ? '自动压缩已关闭' : '压缩预算：' + budget) + ' · 分类占比按' + (c.view === 'budget' ? '压缩预算' : '上下文窗口') + '计算');
+    }
     const visible = c.segments.filter(s => s.tokens !== null && Number.isSafeInteger(s.tokens) && s.tokens > 0);
     const allocated = visible.filter(s => s.tokens !== null);
     $('segments').parentElement.hidden = !allocated.length;
     $('category-table').hidden = !visible.length;
     $('context-details').hidden = !visible.length;
     const notices = [
-        c.percent !== null && c.percent > 100 ? '已超出当前口径的容量' : '',
+        claude && primaryPercent === null ? c.modelTokens === null ? '当前会话未上报窗口容量或占用率' : '当前会话尚无有效上下文读数' : '',
+        primaryPercent !== null && primaryPercent > 100 ? '已超出当前口径的容量' : '',
         !allocated.length ? '暂无分类数据' : '',
     ].filter(Boolean);
     text($('context-notice'), notices.join(' · '));
     $('context-notice').hidden = !notices.length;
     const contextPanel = document.querySelector('.context-panel');
     if (contextPanel) {
-        contextPanel.classList.toggle('state-warning', c.percent !== null && c.percent >= 70 && c.percent < 85);
-        contextPanel.classList.toggle('state-critical', c.percent !== null && c.percent >= 85);
+        contextPanel.classList.toggle('state-warning', primaryPercent !== null && primaryPercent >= 70 && primaryPercent < 85);
+        contextPanel.classList.toggle('state-critical', primaryPercent !== null && primaryPercent >= 85);
     }
     const present = new Set(visible.map(s => s.id));
     for (const [id, nodes] of categories)

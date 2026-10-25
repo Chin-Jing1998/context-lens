@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { getClaudeConfigDir } from '../claude-config-dir.js';
 import { readDocument } from './settings.js';
 import { sessionKey, validId } from './sessions.js';
+import { ClaudeDesktopSessions } from './claude-desktop.js';
 export function isClaudeProcess(command) {
     return /(?:^|\/|\s)claude(?:\.exe)?(?:$|\s)|@anthropic-ai\/claude-code(?:\/|$)/i.test(command.replaceAll('\\', '/'));
 }
@@ -59,8 +60,12 @@ export class ActiveSessions {
     parents = new Map();
     error = '';
     lastInteraction = new Map();
+    desktop;
+    constructor(options = {}) {
+        this.desktop = new ClaudeDesktopSessions(options.claudeDesktopRoots, options.now);
+    }
     get(files, client, targetPid, hint) {
-        const visible = visibleSession(files, client, hint);
+        const visible = client === 'claude' ? this.desktop.resolve(files, hint) : visibleSession(files, client, hint);
         if (visible !== undefined)
             return { selected: visible, candidates: [], reason: visible ? '已跟随前台显示的对话' : '当前可见对话尚无本地记录，或标题无法唯一对应' };
         if (Date.now() - this.at > 2000)

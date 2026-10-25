@@ -28,69 +28,297 @@ struct FrontmostSession: Equatable {
     }
 }
 func visibleSessionId(_ value: String) -> String? {
-    let pattern = "(?:/(?:threads?|sessions?|chats?|conversations?)/|(?:thread|session|chat)[-_:])([a-zA-Z0-9_-]{1,100})(?:[/?#]|$)"
+    guard value.utf8.count <= 8192 else { return nil }
+    let route = value.components(separatedBy: CharacterSet(charactersIn: "?#")).first ?? value
+    let codeRoute = route.contains("/code/") || route.contains("/epitaxy/")
+    if codeRoute && value.rangeOfCharacter(from: .controlCharacters) != nil { return nil }
+    let candidate = codeRoute ? route : value
+    let pattern = codeRoute
+        ? "/(?:code|epitaxy)/(local_[a-zA-Z0-9_-]{1,94})/?$"
+        : "(?:/(?:threads?|sessions?|chats?|conversations?)/|(?:thread|session|chat)[-_:])([a-zA-Z0-9_-]{1,100})(?:[/?#]|$)"
     guard let expression = try? NSRegularExpression(pattern: pattern),
-          let match = expression.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)),
-          let range = Range(match.range(at: 1), in: value) else { return nil }
-    return String(value[range])
+          let match = expression.firstMatch(in: candidate, range: NSRange(candidate.startIndex..., in: candidate)),
+          let range = Range(match.range(at: 1), in: candidate) else { return nil }
+    return String(candidate[range])
 }
-// Read navigation identity only. Chat message values and editable text are never requested.
+// Read navigation identity only. The injected reader is shared with native fixtures.
+typealias SessionAXRead = (error: AXError, value: CFTypeRef?)
+func navigationSession(_ root: AXUIElement, pid: pid_t, client: String?, appName: String,
+                       read: (AXUIElement, String) -> SessionAXRead, foreground: () -> pid_t?,
+                       now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) -> FrontmostSession {
+    guard foreground() == pid else { return FrontmostSession() }
+    let deadline = now() + 0.18
+    var incomplete = false
+    func attribute(_ element: AXUIElement, _ name: String) -> SessionAXRead {
+        guard now() < deadline else { incomplete = true; return (.cannotComplete, nil) }
+        let result = read(element, name)
+        if ![AXError.success, .noValue, .attributeUnsupported].contains(result.error) { incomplete = true }
+        return result
+    }
+    func value(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
+        let result = attribute(element, name); return result.error == .success ? result.value : nil
+    }
+    func string(_ element: AXUIElement, _ name: String) -> String { (value(element, name) as? String) ?? "" }
+    func flag(_ element: AXUIElement, _ name: String) -> Bool? {
+        guard let value = value(element, name), CFGetTypeID(value) == CFBooleanGetTypeID() else { return nil }; return value as? Bool
+    }
+    func element(_ value: CFTypeRef?) -> AXUIElement? {
+        guard let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }; return (value as! AXUIElement)
+    }
+    func urlString(_ value: CFTypeRef?) -> String {
+        if let url = value as? URL { return url.absoluteString }; return (value as? String) ?? ""
+    }
+    func title(_ value: String) -> String {
+        let normalized = value.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty, value.count <= 200,
+              normalized.caseInsensitiveCompare(appName) != .orderedSame else { return "" }; return normalized
+    }
+    let focused = attribute(root, kAXFocusedWindowAttribute)
+    let window: AXUIElement
+    if focused.error == .noValue {
+        guard foreground() == pid, let main = element(value(root, kAXMainWindowAttribute)),
+              string(main, kAXRoleAttribute) == "AXWindow", let minimized = value(main, kAXMinimizedAttribute),
+              CFGetTypeID(minimized) == CFBooleanGetTypeID(), (minimized as? Bool) == false else { return FrontmostSession() }
+        window = main
+    } else {
+        guard focused.error == .success, let found = element(focused.value), string(found, kAXRoleAttribute) == "AXWindow" else { return FrontmostSession() }
+        window = found
+    }
+    var result = FrontmostSession()
+    let document = urlString(value(window, kAXDocumentAttribute)), documentId = visibleSessionId(document)
+    if let url = URL(string: document), url.isFileURL { result.cwd = url.path }
+    let rawWindowTitle = string(window, kAXTitleAttribute)
+    if let tty = rawWindowTitle.range(of: "ttys?\\d{1,6}", options: .regularExpression) { result.tty = String(rawWindowTitle[tty]) }
+    var windowTitle = rawWindowTitle
+    for suffix in [" — " + appName, " - " + appName] { if windowTitle.hasSuffix(suffix) { windowTitle = String(windowTitle.dropLast(suffix.count)) } }
+    windowTitle = client == nil ? "" : title(windowTitle)
+    var ids = Set(documentId.map { [$0] } ?? []), selectedTitles = Set<String>(), headings = Set<String>(), chatTabs: [String] = []
+    var queue: [(AXUIElement, Int, String, Bool)] = [(window, 0, "", false)], cursor = 0, mainWebAreas = 0
+    while cursor < queue.count && cursor < 900 && now() < deadline {
+        let (node, depth, parentRole, insideWeb) = queue[cursor]; cursor += 1
+        let role = string(node, kAXRoleAttribute)
+        if role.isEmpty { incomplete = true; continue }
+        if ["AXTextArea", "AXTextField", "AXSecureTextField", "AXStaticText", "AXLink"].contains(role)
+            || role == "AXHeading" && (depth > 10 || insideWeb) { continue }
+        var inWeb = insideWeb
+        if role == "AXWebArea" {
+            if insideWeb { continue } // An embedded preview is not the main document.
+            let address = urlString(value(node, kAXURLAttribute))
+            // Claude 的本地桌面壳层不承载会话，其子树也不能提供会话身份。
+            if client == "claude", let url = URL(string: address), url.isFileURL,
+               url.path.hasSuffix(".app/Contents/Resources/app.asar/.vite/renderer/main_window/index.html"),
+               url.query == nil, url.fragment == nil { continue }
+            mainWebAreas += 1; inWeb = true
+            if let id = visibleSessionId(address) {
+                ids.insert(id)
+                if client == "claude" { continue }
+            }
+        }
+        if client == "codex", role == "AXRadioButton", parentRole == "AXTabGroup",
+           flag(node, kAXSelectedAttribute) == true,
+           string(node, "AXDOMIdentifier").hasSuffix("-chat-tab") {
+            chatTabs.append(title(string(node, kAXTitleAttribute)))
+        }
+        if depth <= 10 {
+            let identifier = string(node, kAXIdentifierAttribute), selected = flag(node, kAXSelectedAttribute) == true
+            if let id = visibleSessionId(identifier), selected || role == "AXHeading" && !inWeb { ids.insert(id) }
+            if selected && (role == "AXRow" || parentRole == "AXOutline" || identifier.lowercased().contains("thread")) {
+                let current = title(string(node, kAXTitleAttribute)); if !current.isEmpty { selectedTitles.insert(current) }
+            }
+            if role == "AXHeading", !inWeb { let current = title(string(node, kAXTitleAttribute)); if !current.isEmpty { headings.insert(current) } }
+        }
+        if let children = value(node, kAXChildrenAttribute) as? [AXUIElement], !children.isEmpty {
+            if depth >= 24 { incomplete = true; continue }
+            if children.count > 120 { incomplete = true }
+            queue.append(contentsOf: children.prefix(120).map { ($0, depth + 1, role, inWeb) })
+        }
+    }
+    if cursor < queue.count || now() >= deadline { incomplete = true }
+    guard foreground() == pid else { return FrontmostSession() }
+    // Observed conflicts are never repaired by choosing the traversal's first match.
+    guard mainWebAreas <= 1, chatTabs.count <= 1, ids.count <= 1 else { return FrontmostSession() }
+    if let tab = chatTabs.first, !tab.isEmpty, !windowTitle.isEmpty, tab != windowTitle { return FrontmostSession() }
+    if incomplete {
+        // Direct window metadata does not depend on the uniqueness of a partial tree.
+        result.id = documentId ?? ""; result.title = documentId == nil ? windowTitle : ""; return result
+    }
+    if let id = ids.first { result.id = id }
+    else if let tab = chatTabs.first, !tab.isEmpty { result.title = tab }
+    else if selectedTitles.count == 1 { result.title = selectedTitles.first! }
+    else if !windowTitle.isEmpty { result.title = windowTitle }
+    else if headings.count == 1 { result.title = headings.first! }
+    return result
+}
 func frontmostSession(_ app: NSRunningApplication, client: String?) -> FrontmostSession {
     guard AXIsProcessTrusted() else { return FrontmostSession() }
-    func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
-        var value: CFTypeRef?
-        return AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success ? value : nil
-    }
-    func string(_ element: AXUIElement, _ name: String) -> String { (attribute(element, name) as? String) ?? "" }
     let root = AXUIElementCreateApplication(app.processIdentifier)
     AXUIElementSetMessagingTimeout(root, 0.03)
-    guard let focused = attribute(root, kAXFocusedWindowAttribute), CFGetTypeID(focused) == AXUIElementGetTypeID() else { return FrontmostSession() }
-    let window = focused as! AXUIElement
-    var result = FrontmostSession()
-    let document = string(window, kAXDocumentAttribute)
-    if let id = visibleSessionId(document) { result.id = id; return result }
-    if let url = URL(string: document), url.isFileURL { result.cwd = url.path }
-    let windowTitle = string(window, kAXTitleAttribute)
-    if let tty = windowTitle.range(of: "ttys?\\d{1,6}", options: .regularExpression) { result.tty = String(windowTitle[tty]) }
-    var queue: [(AXUIElement, Int, String)] = [(window, 0, "")], cursor = 0
-    let deadline = Date().addingTimeInterval(0.18)
-    var selectedTitles: [String] = [], headings: [String] = []
-    while cursor < queue.count && cursor < 900 && Date() < deadline {
-        let (node, depth, parentRole) = queue[cursor]; cursor += 1
-        let role = string(node, kAXRoleAttribute), identifier = string(node, kAXIdentifierAttribute)
-        if let id = visibleSessionId(identifier) {
-            let selected = (attribute(node, kAXSelectedAttribute) as? Bool) == true
-            if selected || role == "AXHeading" { result.id = id; return result }
-        }
-        if role == "AXHeading" && headings.count < 3 {
-            let value = string(node, kAXTitleAttribute).isEmpty ? string(node, kAXValueAttribute) : string(node, kAXTitleAttribute)
-            if !value.isEmpty && value.count <= 200 { headings.append(value) }
-        }
-        if (attribute(node, kAXSelectedAttribute) as? Bool) == true && (role == "AXRow" || parentRole == "AXOutline" || identifier.lowercased().contains("thread")) {
-            var title = string(node, kAXTitleAttribute)
-            if title.isEmpty, let children = attribute(node, kAXChildrenAttribute) as? [AXUIElement] {
-                title = children.prefix(4).map { string($0, kAXTitleAttribute).isEmpty ? string($0, kAXValueAttribute) : string($0, kAXTitleAttribute) }.first { !$0.isEmpty && $0.count <= 200 } ?? ""
-            }
-            if !title.isEmpty && title.count <= 200 { selectedTitles.append(title) }
-        }
-        if depth < 10 && !["AXTextArea", "AXTextField", "AXStaticText"].contains(role), let children = attribute(node, kAXChildrenAttribute) as? [AXUIElement] {
-            queue.append(contentsOf: children.prefix(120).map { ($0, depth + 1, role) })
-        }
+    return navigationSession(root, pid: app.processIdentifier, client: client, appName: app.localizedName ?? "",
+        read: { element, name in
+            var value: CFTypeRef?
+            let error = AXUIElementCopyAttributeValue(element, name as CFString, &value)
+            return (error, value)
+        }, foreground: { NSWorkspace.shared.frontmostApplication?.processIdentifier })
+}
+
+func checkNavigationFixtures() {
+    var nodes: [(AXUIElement, [String: CFTypeRef])] = [], errors: [String: AXError] = [:], calls: [String] = []
+    var activePID: pid_t = 42, clock = 0.0, timeoutAt = "", switchAt = ""
+    func node(_ fields: [String: CFTypeRef]) -> AXUIElement {
+        let item = AXUIElementCreateApplication(pid_t(900000 + nodes.count)); nodes.append((item, fields)); return item
     }
-    if let title = selectedTitles.first { result.title = title }
-    else if client != nil, let title = headings.first(where: { $0.lowercased() != (app.localizedName ?? "").lowercased() }) { result.title = title }
-    else if client != nil {
-        var title = windowTitle
-        for suffix in [" — " + (app.localizedName ?? ""), " - " + (app.localizedName ?? "")] { if title.hasSuffix(suffix) { title = String(title.dropLast(suffix.count)) } }
-        if !title.isEmpty && title.count <= 200 && title.lowercased() != (app.localizedName ?? "").lowercased() { result.title = title }
+    func index(_ item: AXUIElement) -> Int { nodes.firstIndex { CFEqual($0.0, item) }! }
+    func key(_ item: AXUIElement, _ name: String) -> String { "\(index(item)):\(name)" }
+    func set(_ item: AXUIElement, _ name: String, _ value: CFTypeRef?) { nodes[index(item)].1[name] = value }
+    func children(_ item: AXUIElement, _ values: [AXUIElement]) { set(item, kAXChildrenAttribute, values as CFArray) }
+    func check(_ condition: Bool, _ message: String) {
+        if !condition { FileHandle.standardError.write(Data("[navigation-fixture] \(message)\n".utf8)) }; precondition(condition, message)
     }
-    return result
+    let window = node([kAXRoleAttribute: "AXWindow" as CFString]), root = node([:])
+    func reset(_ title: String = "Window fallback") {
+        nodes[index(window)].1 = [kAXRoleAttribute: "AXWindow" as CFString, kAXTitleAttribute: title as CFString]
+        nodes[index(root)].1 = [kAXFocusedWindowAttribute: window]
+        errors = [:]; calls = []; activePID = 42; clock = 0; timeoutAt = ""; switchAt = ""
+    }
+    func collect(_ client: String = "codex") -> FrontmostSession {
+        navigationSession(root, pid: 42, client: client, appName: client == "codex" ? "Codex" : "Claude", read: { item, name in
+            let requested = key(item, name); calls.append(requested)
+            if requested == timeoutAt { clock = 1 }; if requested == switchAt { activePID = 99 }
+            if let error = errors[requested] { return (error, nil) }
+            if let value = nodes[index(item)].1[name] { return (.success, value) }; return (.attributeUnsupported, nil)
+        }, foreground: { activePID }, now: { clock })
+    }
+    func place(_ leaf: AXUIElement, depth: Int, parent: String = "AXGroup") {
+        var current = node([kAXRoleAttribute: parent as CFString, kAXChildrenAttribute: [leaf] as CFArray])
+        if depth > 2 { for _ in 0..<(depth - 2) { current = node([kAXRoleAttribute: "AXGroup" as CFString, kAXChildrenAttribute: [current] as CFArray]) } }
+        children(window, [current])
+    }
+    reset(); check(collect().title == "Window fallback", "The direct window title remains a fallback")
+    errors[key(root, kAXFocusedWindowAttribute)] = .noValue
+    set(root, kAXMainWindowAttribute, window); set(window, kAXMinimizedAttribute, kCFBooleanFalse)
+    check(collect().title == "Window fallback" && calls.filter { $0 == key(root, kAXMainWindowAttribute) }.count == 1, "Focused noValue permits exactly one valid MainWindow read")
+    for minimized: CFTypeRef? in [kCFBooleanTrue, nil, NSNumber(value: 0)] {
+        set(window, kAXMinimizedAttribute, minimized); check(collect().title.isEmpty, "MainWindow must explicitly report Boolean false for minimized")
+    }
+    set(window, kAXMinimizedAttribute, kCFBooleanFalse); set(window, kAXRoleAttribute, "AXGroup" as CFString)
+    check(collect().title.isEmpty, "MainWindow must have AXWindow role")
+    set(window, kAXRoleAttribute, "AXWindow" as CFString); set(root, kAXMainWindowAttribute, "not an element" as CFString)
+    check(collect().title.isEmpty, "A non-element MainWindow is rejected")
+    for error in [AXError.apiDisabled, .cannotComplete, .attributeUnsupported] {
+        reset(); errors[key(root, kAXFocusedWindowAttribute)] = error; set(root, kAXMainWindowAttribute, window)
+        check(collect().title.isEmpty && !calls.contains(key(root, kAXMainWindowAttribute)), "Focused errors do not enumerate or fall back to MainWindow")
+    }
+    reset(); set(root, kAXFocusedWindowAttribute, "wrong type" as CFString)
+    check(collect().title.isEmpty, "A non-element FocusedWindow is rejected")
+
+    let web = node([kAXRoleAttribute: "AXWebArea" as CFString])
+    for value: CFTypeRef in [NSURL(string: "https://claude.ai/code/local_url")!, "/code/local_string" as CFString,
+                             NSURL(string: "app://claude/epitaxy/local_epitaxy")!, "/epitaxy/local_string?view=code" as CFString] {
+        reset(); set(web, kAXURLAttribute, value); children(window, [web])
+        check(collect("claude").id.hasPrefix("local_"), "Main WebArea accepts CFURL and String route values")
+    }
+    for route in ["/epitaxy/local_valid", "/epitaxy/local_valid/", "/epitaxy/local_valid?view=code", "/epitaxy/local_valid#details"] {
+        check(visibleSessionId(route) == "local_valid", "epitaxy 路由保留严格的本地会话 ID")
+    }
+    for route in ["/epitaxy/invalid", "/epitaxy/local_", "/epitaxy/local_valid/extra", "/epitaxy/local_valid\n",
+                  "/epitaxy/invalid?redirect=/code/local_query", "/code/invalid#redirect=/epitaxy/local_fragment",
+                  "/epitaxy/local_" + String(repeating: "x", count: 95)] {
+        check(visibleSessionId(route) == nil, "epitaxy 路由拒绝非法、超长或嵌套会话 ID")
+    }
+    let shellURL = "file:///Applications/Claude.app/Contents/Resources/app.asar/.vite/renderer/main_window/index.html"
+    let shellHeading = node([kAXRoleAttribute: "AXHeading" as CFString, kAXIdentifierAttribute: "/code/local_shell" as CFString])
+    let shell = node([kAXRoleAttribute: "AXWebArea" as CFString, kAXURLAttribute: shellURL as CFString,
+                      kAXChildrenAttribute: [shellHeading] as CFArray])
+    reset("Claude"); set(web, kAXURLAttribute, "app://claude/epitaxy/local_active" as CFString)
+    for ordered in [[shell, web], [web, shell]] {
+        children(window, ordered)
+        check(collect("claude").id == "local_active" && !calls.contains(key(shellHeading, kAXRoleAttribute)), "Claude 本地壳层及其内容不参与会话身份选择")
+    }
+    check(collect("codex").id.isEmpty, "壳层排除仅适用于 Claude")
+    for address in ["file:///tmp/index.html", "https://example.invalid/Contents/Resources/app.asar/.vite/renderer/main_window/index.html"] {
+        set(shell, kAXURLAttribute, address as CFString)
+        check(collect("claude").id.isEmpty, "普通文件或远程网页不能冒充本地桌面壳层")
+    }
+    set(shell, kAXURLAttribute, shellURL as CFString)
+    let other = node([kAXRoleAttribute: "AXWebArea" as CFString, kAXURLAttribute: "/epitaxy/local_other" as CFString])
+    children(window, [shell, web, other])
+    check(collect("claude").id.isEmpty && collect("claude").title.isEmpty, "壳层排除后仍拒绝两个实际会话页面")
+    var body = node([kAXRoleAttribute: "AXGroup" as CFString])
+    for _ in 0..<25 { body = node([kAXRoleAttribute: "AXGroup" as CFString, kAXChildrenAttribute: [body] as CFArray]) }
+    reset("Claude"); children(web, [body]); children(window, [web])
+    check(collect("claude").id == "local_active" && !calls.contains(key(body, kAXRoleAttribute)), "主网页路由确认身份后不遍历对话正文，也不受正文深度影响")
+    check(collect("codex").id.isEmpty, "正文子树剪枝仅适用于 Claude")
+    children(web, [])
+    let nested = node([kAXRoleAttribute: "AXWebArea" as CFString, kAXURLAttribute: "/code/local_nested" as CFString])
+    reset(); set(web, kAXURLAttribute, "app://-/index.html" as CFString); children(web, [nested]); children(window, [web])
+    check(collect("claude").id.isEmpty && !calls.contains(key(nested, kAXURLAttribute)), "Embedded preview WebAreas are never identity sources")
+    let link = node([kAXRoleAttribute: "AXLink" as CFString, kAXURLAttribute: "/code/local_link" as CFString])
+    reset(); children(link, [nested]); children(window, [link])
+    check(collect("claude").id.isEmpty && !calls.contains(key(link, kAXURLAttribute)), "An ordinary link route cannot become a visible identity")
+    reset(); children(web, []); set(web, kAXURLAttribute, "/code/local_url" as CFString); children(window, [web, nested])
+    check(collect("claude").id.isEmpty && collect("claude").title.isEmpty, "Multiple outer WebAreas reject the identity")
+    reset(); set(window, kAXDocumentAttribute, "/code/local_document" as CFString); children(window, [web])
+    check(collect("claude").id.isEmpty && collect("claude").title.isEmpty, "Conflicting direct document and WebArea routes reject the identity")
+
+    let tab = node([kAXRoleAttribute: "AXRadioButton" as CFString, kAXSelectedAttribute: kCFBooleanTrue,
+                    "AXDOMIdentifier": "_r_ubc_-chat-tab" as CFString, kAXTitleAttribute: "Current chat" as CFString])
+    reset("Codex"); place(tab, depth: 17, parent: "AXTabGroup")
+    check(collect().title == "Current chat", "The strict selected Codex chat tab is readable at actual depth 17")
+    reset(" \tCurrent \t chat \n"); place(tab, depth: 17, parent: "AXTabGroup")
+    set(tab, kAXTitleAttribute, " \nCurrent  chat\t " as CFString)
+    check(collect().title == "Current chat", "Whitespace-equivalent chat and window titles share a normalized identity")
+    set(tab, kAXTitleAttribute, "Current chat" as CFString)
+    reset("Codex"); place(tab, depth: 17, parent: "AXTabGroup")
+    for (field, value) in [(kAXRoleAttribute, "AXButton" as CFTypeRef), (kAXSelectedAttribute, kCFBooleanFalse as CFTypeRef),
+                           (kAXSelectedAttribute, NSNumber(value: 1) as CFTypeRef), ("AXDOMIdentifier", "settings-tab" as CFTypeRef), (kAXTitleAttribute, "" as CFTypeRef)] {
+        let prior = nodes[index(tab)].1[field]; set(tab, field, value)
+        check(collect().title.isEmpty, "Each strict chat-tab condition is required"); set(tab, field, prior)
+    }
+    place(tab, depth: 17, parent: "AXGroup"); check(collect().title.isEmpty, "A selected radio outside its direct TabGroup is rejected")
+    place(tab, depth: 17, parent: "AXTabGroup"); check(collect("claude").title == "Codex", "The new chat-tab branch is limited to Codex")
+    reset("Window fallback"); place(tab, depth: 17, parent: "AXTabGroup")
+    check(collect().title.isEmpty, "A strict chat title conflicting with the window title is rejected")
+    let second = node(nodes[index(tab)].1)
+    reset("Codex"); children(window, [node([kAXRoleAttribute: "AXTabGroup" as CFString, kAXChildrenAttribute: [tab, second] as CFArray])])
+    check(collect().title.isEmpty, "Two selected chat-tab nodes are ambiguous even with identical titles")
+    reset("Current chat"); place(tab, depth: 17, parent: "AXTabGroup")
+    let deepHeading = node([kAXRoleAttribute: "AXHeading" as CFString, kAXTitleAttribute: "Message Markdown heading" as CFString, kAXValueAttribute: "message body" as CFString])
+    let tabChain = nodes[index(window)].1[kAXChildrenAttribute] as! [AXUIElement]
+    place(deepHeading, depth: 17); let headingChain = nodes[index(window)].1[kAXChildrenAttribute] as! [AXUIElement]
+    children(window, tabChain + headingChain)
+    check(collect().title == "Current chat" && !calls.contains(key(deepHeading, kAXTitleAttribute)) && !calls.contains(where: { $0.hasSuffix(":" + kAXValueAttribute) }), "Deep Markdown headings and message values are not read")
+
+    reset(); children(window, [web] + (0..<121).map { _ in node([kAXRoleAttribute: "AXGroup" as CFString]) })
+    let capped = collect("claude")
+    check(capped.id.isEmpty && capped.title == "Window fallback", "A partial child scan cannot declare its first WebArea globally unique")
+    reset(); place(tab, depth: 17, parent: "AXTabGroup")
+    let partialTab = nodes[index(window)].1[kAXChildrenAttribute] as! [AXUIElement]
+    children(window, partialTab + (0..<121).map { _ in node([kAXRoleAttribute: "AXGroup" as CFString]) })
+    check(collect().title.isEmpty, "An observed conflicting chat title stays rejected even if the tree is truncated")
+    let timedSibling = node([kAXRoleAttribute: "AXGroup" as CFString])
+    reset(); children(window, [web, timedSibling]); timeoutAt = key(timedSibling, kAXChildrenAttribute)
+    let timed = collect("claude")
+    check(timed.id.isEmpty && timed.title == "Window fallback", "A time-truncated tree only retains direct window metadata")
+    reset(); activePID = 99; check(collect().title.isEmpty && calls.isEmpty, "A different initial foreground PID prevents all AX reads")
+    reset(); switchAt = key(window, kAXTitleAttribute)
+    check(collect().title.isEmpty, "A foreground PID change during collection discards all identity")
 }
 
 func shortNumber(_ value: Double) -> String {
     if value >= 1_000_000 { return String(format: "%.1fM", value / 1_000_000) }
     if value >= 1_000 { return String(format: "%.1fk", value / 1_000) }
     return String(format: "%.0f", value)
+}
+
+func contextPercent(_ context: [String: Any], client: String) -> Double? {
+    let value = (context[client == "claude" ? "windowPercent" : "percent"] as? NSNumber)?.doubleValue
+    return value.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
+}
+
+func contextReading(_ percent: Double?, usedTokens: Double?) -> String {
+    if let value = percent, value.isFinite, value >= 0 { return String(format: "%.1f%%", value) }
+    if let value = usedTokens, value.isFinite, value >= 0 { return shortNumber(value) }
+    return "—"
 }
 
 func clampedOrigin(_ point: NSPoint, size: NSSize, screen: NSRect) -> NSPoint {
@@ -429,6 +657,7 @@ struct LensVisibility {
     var entered: (() -> Void)?
     var dragStarted: (() -> Void)?
     var percent: Double?
+    var usedTokens: Double?
     var style = LensUIStyle() { didSet { stopPulse(); needsDisplay = true; if let percent, percent >= 85 { startPulse() } } }
     var isPositionLocked = false
     private var mouseStart = NSPoint.zero
@@ -510,7 +739,7 @@ struct LensVisibility {
                            startAngle: 90, endAngle: 90 - CGFloat(min(100, max(0, p))) * 3.6, clockwise: true)
             (p >= 90 ? NSColor.systemRed : p >= 70 ? NSColor.systemOrange : material.accent).setStroke(); ring.stroke()
         }
-        let value = percent.map { String(format: "%.0f%%", $0) } ?? "—"
+        let value = percent.map { String(format: "%.0f%%", $0) } ?? contextReading(nil, usedTokens: usedTokens)
         let line = CTLineCreateWithAttributedString(style.typography.reading(value, size: value.count > 4 ? 12 : 16, color: material.ink))
         // Center the visible glyphs, rather than the font's ascent/descent line box.
         let ink = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
@@ -541,6 +770,14 @@ struct LensVisibility {
     private var hoverIsland: LensIsland?
     private var hoverSince = Date.distantPast
     private var leftSince: Date?
+    private var positioning = false
+    private var positionRevision = 0
+    private var positionTimer: Timer?
+    private var positionSnap: (from: NSPoint, to: NSPoint, started: TimeInterval)?
+    private var positionClock = { ProcessInfo.processInfo.systemUptime }
+    private var positionMotionAllowed = { !lensReduceMotion }
+    private var positionDefaults = UserDefaults.standard
+    private var windowTransition = 0
     private var pinned = false
     private var activeIsland = LensIsland.context
     private var islandHeights: [LensIsland: CGFloat] = [:]
@@ -635,34 +872,10 @@ struct LensVisibility {
         ballView.isPositionLocked = isPositionLocked
         ballView.toggle = { [weak self] in self?.toggleOrbit() }
         ballView.entered = { [weak self] in self?.showOrbit() }
-        ballView.dragStarted = { [weak self] in self?.closeOrbit(restore: false, reason: "drag") }
-        ballView.moved = { [weak self] in
-            guard let self else { return }
-            guard let screen = self.ball.screen else {
-                UserDefaults.standard.set(NSStringFromPoint(self.ball.frame.origin), forKey: "position"); return
-            }
-            let snapThreshold: CGFloat = 24
-            let vis = screen.visibleFrame
-            var origin = self.ball.frame.origin
-            let size = self.ball.frame.size
-            var snapped = false
-            if abs(origin.x - vis.minX) < snapThreshold { origin.x = vis.minX + 8; snapped = true }
-            else if abs(origin.x + size.width - vis.maxX) < snapThreshold { origin.x = vis.maxX - size.width - 8; snapped = true }
-            if abs(origin.y - vis.minY) < snapThreshold { origin.y = vis.minY + 8; snapped = true }
-            else if abs(origin.y + size.height - vis.maxY) < snapThreshold { origin.y = vis.maxY - size.height - 8; snapped = true }
-            if snapped && !lensReduceMotion {
-                NSAnimationContext.runAnimationGroup { ctx in
-                    ctx.duration = 0.28
-                    ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.34, 1.56, 0.64, 1)
-                    self.ball.animator().setFrameOrigin(origin)
-                }
-            } else if snapped {
-                self.ball.setFrameOrigin(origin)
-            }
-            UserDefaults.standard.set(NSStringFromPoint(self.ball.frame.origin), forKey: "position")
-        }
+        ballView.dragStarted = { [weak self] in self?.beginBallDrag() }
+        ballView.moved = { [weak self] in self?.endBallDrag() }
         ball.contentView = glassContent(ballView, radius: 28)
-        if let saved = UserDefaults.standard.string(forKey: "position") {
+        if let saved = positionDefaults.string(forKey: "position") {
             let point = NSPointFromString(saved)
             let display = NSScreen.screens.first { $0.visibleFrame.contains(point) }?.visibleFrame ?? screen
             ball.setFrameOrigin(clampedOrigin(point, size: ball.frame.size, screen: display))
@@ -674,7 +887,7 @@ struct LensVisibility {
         orbitView.activate = { [weak self] island, pin in self?.showIsland(island, pin: pin) }
         let mask = CGMutablePath(); LensIsland.allCases.forEach { mask.addPath($0.path(center: OrbitGeometry.center)) }
         orbit.contentView = glassContent(orbitView, radius: 28, mask: mask)
-        hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in Task { @MainActor in self?.trackHover() } }
+        startHoverTracking()
         let menu = NSMenu(); menu.delegate = self
         func item(_ title: String, _ action: Selector, _ key: String = "", _ symbol: String? = nil) -> NSMenuItem {
             let value = menu.addItem(withTitle: title, action: action, keyEquivalent: key); value.target = self
@@ -714,7 +927,75 @@ struct LensVisibility {
         panel.contentView = glassContent(web, radius: 20)
     }
 
+    private func startHoverTracking() {
+        hoverTimer?.invalidate()
+        let revision = positionRevision
+        hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.positionRevision == revision, !self.positioning else { return }
+                self.trackHover()
+            }
+        }
+    }
+    private func beginBallDrag() {
+        positionRevision += 1; positioning = true
+        positionTimer?.invalidate(); positionTimer = nil; positionSnap = nil
+        hoverTimer?.invalidate(); hoverTimer = nil
+        windowTransition += 1
+        closeOrbit(restore: false, reason: "drag", immediately: true)
+    }
+    private func endBallDrag() {
+        guard positioning else { return }
+        let revision = positionRevision
+        guard let screen = ball.screen?.visibleFrame ?? NSScreen.main?.visibleFrame else {
+            finishBallPosition(ball.frame.origin, revision: revision); return
+        }
+        let size = ball.frame.size, start = ball.frame.origin
+        var target = clampedOrigin(start, size: size, screen: screen)
+        if abs(target.x - screen.minX) < 24 { target.x = screen.minX + 8 }
+        else if abs(target.x + size.width - screen.maxX) < 24 { target.x = screen.maxX - size.width - 8 }
+        if abs(target.y - screen.minY) < 24 { target.y = screen.minY + 8 }
+        else if abs(target.y + size.height - screen.maxY) < 24 { target.y = screen.maxY - size.height - 8 }
+        target = clampedOrigin(target, size: size, screen: screen)
+        guard target != start, uiStyle.motion != .instant, positionMotionAllowed() else {
+            finishBallPosition(target, revision: revision); return
+        }
+        positionSnap = (start, target, positionClock())
+        // A retained Timer can be invalidated; no old AppKit frame animator keeps moving the ball.
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.advanceBallPosition(revision: revision, now: self.positionClock())
+            }
+        }
+        positionTimer = timer; RunLoop.main.add(timer, forMode: .common)
+    }
+    private func advanceBallPosition(revision: Int, now: TimeInterval) {
+        guard positioning, positionRevision == revision, let snap = positionSnap else { return }
+        let progress = min(1, max(0, (now - snap.started) / 0.28))
+        if progress >= 1 { finishBallPosition(snap.to, revision: revision); return }
+        // Preserve the previous cubic timing curve (0.34, 1.56, 0.64, 1).
+        var low = 0.0, high = 1.0, t = progress
+        for _ in 0..<18 {
+            let x = 3 * (1 - t) * (1 - t) * t * 0.34 + 3 * (1 - t) * t * t * 0.64 + t * t * t
+            if x < progress { low = t } else { high = t }; t = (low + high) / 2
+        }
+        let eased = 3 * (1 - t) * (1 - t) * t * 1.56 + 3 * (1 - t) * t * t + t * t * t
+        var point = NSPoint(x: snap.from.x + (snap.to.x - snap.from.x) * eased, y: snap.from.y + (snap.to.y - snap.from.y) * eased)
+        if let screen = ball.screen?.visibleFrame ?? NSScreen.main?.visibleFrame { point = clampedOrigin(point, size: ball.frame.size, screen: screen) }
+        ball.setFrameOrigin(point)
+    }
+    private func finishBallPosition(_ point: NSPoint, revision: Int) {
+        guard positioning, positionRevision == revision else { return }
+        positionTimer?.invalidate(); positionTimer = nil; positionSnap = nil
+        let screen = ball.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
+        ball.setFrameOrigin(screen.map { clampedOrigin(point, size: ball.frame.size, screen: $0) } ?? point)
+        positionDefaults.set(NSStringFromPoint(ball.frame.origin), forKey: "position")
+        positioning = false; startHoverTracking()
+    }
+
     private func applyVisibility() {
+        let revision = windowTransition
         for (window, shown) in [(ball!, visibility.ball), (panel!, visibility.panel)] {
             if shown {
                 let animate = uiStyle.motion != .instant && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -730,7 +1011,7 @@ struct LensVisibility {
                     context.duration = 0.14; window.animator().alphaValue = 0
                 }, completionHandler: { [weak self, weak window] in
                     Task { @MainActor in
-                        guard let self, let window else { return }
+                        guard let self, let window, self.windowTransition == revision else { return }
                         let stillHidden = window === self.ball ? !self.visibility.ball : !self.visibility.panel
                         if stillHidden { window.orderOut(nil) }
                         window.alphaValue = 1
@@ -740,6 +1021,8 @@ struct LensVisibility {
         }
     }
     private func animate(_ window: NSWindow, show: Bool) {
+        guard !show || !positioning else { return }
+        let revision = windowTransition
         let selectedMotion = uiStyle.motion
         let motion = selectedMotion != .instant && !lensReduceMotion
         let view = window.contentView; view?.wantsLayer = true
@@ -765,35 +1048,49 @@ struct LensVisibility {
             context.duration = show ? selectedMotion.enter : selectedMotion.exit; window.animator().alphaValue = show ? 1 : 0
         }, completionHandler: { [weak self, weak window] in
             Task { @MainActor in
-                guard let self, let window else { return }
+                guard let self, let window, self.windowTransition == revision else { return }
                 let visible = window === self.orbit ? self.orbitOpen : self.visibility.panel
                 if !visible { window.orderOut(nil) }
             }
         })
     }
-    private func showOrbit() {
-        guard visibility.ball, !orbitOpen, panel != nil else { return }
+    @discardableResult private func showOrbit() -> Bool {
+        guard !positioning, visibility.ball, panel != nil else { return false }
+        if orbitOpen { return true }
         orbitOpen = true; leftSince = nil; collapsedOrigin = ball.frame.origin
         let screen = ball.screen?.visibleFrame ?? NSScreen.main!.visibleFrame
         let origin = clampedOrigin(NSPoint(x: ball.frame.midX - OrbitGeometry.center.x, y: ball.frame.midY - OrbitGeometry.center.y), size: orbit.frame.size, screen: screen.insetBy(dx: 8, dy: 8))
         orbit.setFrameOrigin(origin)
         ball.setFrameOrigin(NSPoint(x: origin.x + OrbitGeometry.center.x - ball.frame.width / 2, y: origin.y + OrbitGeometry.center.y - ball.frame.height / 2))
         animate(orbit, show: true); ball.orderFrontRegardless()
+        return true
     }
-    private func closeOrbit(restore: Bool = true, reason: String = "explicit") {
-        guard orbit != nil, panel != nil, orbitOpen || visibility.panel else { return }
+    private func closeOrbit(restore: Bool = true, reason: String = "explicit", immediately: Bool = false) {
+        guard orbit != nil, panel != nil, orbitOpen || visibility.panel || immediately else { return }
         traceEvent("close-" + reason)
         orbitOpen = false; pinned = false; hoverIsland = nil; orbitView.selected = nil
         detailTransition += 1
         detailSizing = false
         if webReady { dispatch("context-lens-card-transition", "end") }
-        visibility.collapse(); animate(panel, show: false); animate(orbit, show: false)
+        visibility.collapse()
+        if immediately {
+            orbitView.animateSectors(show: false, motion: .instant)
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0
+                panel.animator().setFrame(panel.frame, display: false)
+                for window in [panel!, orbit!] { window.animator().alphaValue = 0 }
+            }
+            for window in [panel!, orbit!] {
+                window.contentView?.layer?.removeAnimation(forKey: "island-transition")
+                window.orderOut(nil)
+            }
+        } else { animate(panel, show: false); animate(orbit, show: false) }
         if let origin = collapsedOrigin, restore { ball.setFrameOrigin(origin) }
         collapsedOrigin = nil
     }
-    private func toggleOrbit() { traceEvent("ball-toggle"); if orbitOpen { closeOrbit(reason: "ball-toggle") } else { showOrbit(); pinned = true } }
+    private func toggleOrbit() { traceEvent("ball-toggle"); if orbitOpen { closeOrbit(reason: "ball-toggle") } else if showOrbit() { pinned = true } }
     private func trackHover() {
-        guard orbitOpen else { return }
+        guard !positioning, orbitOpen else { return }
         let mouse = NSEvent.mouseLocation
         let local = NSPoint(x: mouse.x - orbit.frame.minX, y: mouse.y - orbit.frame.minY)
         let island = LensIsland.at(local, material: uiStyle.island)
@@ -808,6 +1105,7 @@ struct LensVisibility {
         else if leftSince == nil { leftSince = Date() }
     }
     private func fitDetail(height: CGFloat, width: CGFloat? = nil, animated: Bool = true) {
+        guard !positioning else { return }
         let screen = (ball.screen?.visibleFrame ?? NSScreen.main!.visibleFrame).insetBy(dx: 8, dy: 8)
         let size = NSSize(width: min(width ?? panel.frame.width, screen.width), height: min(max(112, ceil(height)), min(640, screen.height)))
         let left = orbit.frame.minX - size.width - 10
@@ -838,8 +1136,9 @@ struct LensVisibility {
         })
     }
     private func showIsland(_ island: LensIsland, pin: Bool) {
+        guard showOrbit() else { return }
         traceEvent("show-" + island.rawValue + (pin ? "-pinned" : "-hover"))
-        showOrbit(); pinned = pin; activeIsland = island; orbitView.selected = island
+        pinned = pin; activeIsland = island; orbitView.selected = island
         let wasVisible = visibility.panel
         if !settingsPresented { fitDetail(height: islandHeights[island] ?? island.height, width: uiStyle.theme.width(for: island)) }
         dispatch("context-lens-island", island.rawValue)
@@ -847,13 +1146,14 @@ struct LensVisibility {
         if !wasVisible { animate(panel, show: true) }
         if pin { panel.makeKeyAndOrderFront(nil) }
     }
-    @objc private func showPanel() { visibility.restore(); applyVisibility(); showIsland(activeIsland, pin: true) }
+    @objc private func showPanel() { guard !positioning else { return }; visibility.restore(); applyVisibility(); showIsland(activeIsland, pin: true) }
     @objc private func collapsePanel() { closeOrbit(reason: "collapse") }
     @objc private func toggleBall() {
         if visibility.ball { closeOrbit(reason: "hide"); visibility.hide() } else { visibility.restore() }
         applyVisibility()
     }
     @objc private func showSettings() {
+        guard !positioning else { return }
         NSApp.activate(ignoringOtherApps: true)
         pendingSettings = true; showPanel()
         deliverSettings()
@@ -900,7 +1200,7 @@ struct LensVisibility {
     func windowDidResignKey(_ notification: Notification) { traceEvent("resign-key"); pinned = false }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showPanel(); return true }
     func applicationWillTerminate(_ notification: Notification) {
-        timer?.invalidate(); hoverTimer?.invalidate(); if backend?.isRunning == true { backend?.terminate() }
+        timer?.invalidate(); hoverTimer?.invalidate(); positionTimer?.invalidate(); if backend?.isRunning == true { backend?.terminate() }
     }
     @objc private func workspaceChanged(_ notification: Notification) {
         if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication { follow(app) }
@@ -981,7 +1281,8 @@ struct LensVisibility {
         let terminal = ["com.apple.Terminal", "com.googlecode.iterm2", "com.mitchellh.ghostty", "dev.warp.Warp-Stable", "net.kovidgoyal.kitty", "org.alacritty"].contains(app.bundleIdentifier ?? "")
         guard client != nil || terminal else { dispatch("context-lens-detection", ["state": "waiting"]); return }
         supportedForeground = true; targetClient = client; targetPid = Int(app.processIdentifier)
-        visibleHint = frontmostSession(app, client: client); targetRevision += 1
+        if current?.bundleIdentifier != Bundle.main.bundleIdentifier { visibleHint = frontmostSession(app, client: client) }
+        targetRevision += 1
         detectionRequested = true; traceEvent("manual-foreground-scan")
         dispatch("context-lens-detection", ["state": "loading"])
         Task { await refreshBall() }
@@ -1050,6 +1351,7 @@ struct LensVisibility {
             let hint = frontmostSession(app, client: targetClient)
             if hint != visibleHint { visibleHint = hint; targetRevision += 1 }
         }
+        if clearUnidentifiedDesktopSelection() { return }
         if supportedForeground || visibility.ball {
             let revision = targetRevision
             var url = URLComponents(url: origin.appendingPathComponent("api/active"), resolvingAgainstBaseURL: false)!
@@ -1074,8 +1376,7 @@ struct LensVisibility {
             let data = try await json(url.url!)
             guard key == selection && mode == view else { return }
             let context = data["context"] as? [String: Any] ?? [:]
-            let percent = (context["percent"] as? NSNumber)?.doubleValue
-            let value = percent.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
+            let value = contextPercent(context, client: key.split(separator: ":").first.map(String.init) ?? "")
             let totals = (data["totals"] as? [String: Any])?["all"] as? [String: Any] ?? [:]
             if let input = totals["input"] as? Double, let output = totals["output"] as? Double { orbitView.labels[.usage]?.value = shortNumber(input + output) }
             else { orbitView.labels[.usage]?.value = "—" }
@@ -1097,15 +1398,25 @@ struct LensVisibility {
             } else { orbitView.labels[.runtime]?.value = "—" }
             let tool = key.split(separator: ":").first.map(String.init) ?? ""
             let name = ["claude": "Claude", "codex": "Codex", "opencode": "OpenCode", "mimocode": "MiMo", "deepseek": "DeepSeek", "zcode": "ZCode"][tool] ?? tool
-            updateBall(value, client: name,
-                       help: mode == "budget" ? "压缩预算" : "模型窗口")
+            updateBall(value, usedTokens: context["usedTokens"] as? Double, client: name,
+                       help: tool == "claude" ? "当前会话上下文窗口" : mode == "budget" ? "压缩预算" : "模型窗口")
         } catch { networkError = true; if key == selection { updateBall(nil, client: "离线", help: "连接中断或会话已移除；点击展开检查") } }
     }
-    private func updateBall(_ percent: Double?, client: String, help: String) {
-        orbitView.labels[.context]?.value = percent.map { String(format: "%.1f%%", $0) } ?? "—"
+    @discardableResult private func clearUnidentifiedDesktopSelection() -> Bool {
+        guard ["codex", "claude"].contains(targetClient ?? ""), visibleHint.id.isEmpty, visibleHint.title.isEmpty else { return false }
+        selection = ""
+        dispatch("context-lens-active", ["session": "", "reason": "当前可见对话无法唯一对应"])
+        updateBall(nil, client: "等待对话", help: "自动跟随活跃对话")
+        return true
+    }
+    private func updateBall(_ percent: Double?, usedTokens: Double? = nil, client: String, help: String) {
+        let readingTokens = client == "Claude" ? nil : usedTokens
+        let reading = contextReading(percent, usedTokens: readingTokens)
+        orbitView.labels[.context]?.value = reading
         if percent == nil && !["Claude", "Codex", "OpenCode", "MiMo", "DeepSeek", "ZCode"].contains(client) { for island in LensIsland.allCases { orbitView.labels[island]?.value = "—" } }
-        ballView.percent = percent; ballView.toolTip = "\(client)\n\(help)"; ballView.needsDisplay = true
-        let value = percent.map { String(format: "%@ %.1f%%", client, $0) } ?? "\(client) 未知"
+        ballView.percent = percent; ballView.usedTokens = readingTokens
+        ballView.toolTip = "\(client)\n\(help)"; ballView.needsDisplay = true
+        let value = reading == "—" ? "\(client) 未知" : "\(client) \(reading)"
         ballView.setAccessibilityValue(value); status.button?.toolTip = "Context Lens · \(value)"
         if let p = percent, p >= 85 { ballView.startPulse() } else { ballView.stopPulse() }
     }
@@ -1131,6 +1442,7 @@ struct LensVisibility {
             openAccessibilitySettings()
         case "recognize": recognizeForeground()
         case "settings-open":
+            guard !positioning else { return }
             pinned = true; settingsPresented = true
             fitDetail(height: settingsHeight, width: uiStyle.theme.settingsWidth)
         case "settings-layout":
@@ -1175,6 +1487,180 @@ struct LensVisibility {
         let url = navigationAction.request.url
         decisionHandler(url?.scheme == "http" && url?.host == "127.0.0.1" && url?.port == origin?.port ? .allow : .cancel)
     }
+
+    static func checkDragLifecycle() {
+        _ = NSApplication.shared
+        let suite = "context-lens-drag-test-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        let app = LensApp(); app.positionDefaults = defaults; app.makeWindows(); app.visibility.restore()
+        app.isPositionLocked = false; app.ballView.isPositionLocked = false
+        app.uiStyle = LensUIStyle(theme: .native)
+        var clock = 0.0
+        app.positionClock = { clock }; app.positionMotionAllowed = { true }
+        defer {
+            app.hoverTimer?.invalidate(); app.positionTimer?.invalidate()
+            for window in [app.ball!, app.orbit!, app.panel!] { window.orderOut(nil) }
+            NSStatusBar.system.removeStatusItem(app.status)
+            app.web.configuration.userContentController.removeScriptMessageHandler(forName: "lens")
+            defaults.removePersistentDomain(forName: suite)
+        }
+        func check(_ value: Bool, _ message: String) {
+            if !value { FileHandle.standardError.write(Data("[native-regression] \(message)\n".utf8)) }
+            precondition(value, message)
+        }
+        func mouse(_ type: NSEvent.EventType, _ screenPoint: NSPoint) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: app.ball.convertPoint(fromScreen: screenPoint), modifierFlags: [], timestamp: 0,
+                windowNumber: app.ball.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)!
+        }
+        func center() -> NSPoint { NSPoint(x: app.ball.frame.midX, y: app.ball.frame.midY) }
+        func blockedOpenings() {
+            app.ballView.mouseEntered(with: mouse(.mouseMoved, center()))
+            check(!app.showOrbit(), "Opening the orbit must be rejected while positioning")
+            app.showIsland(.usage, pin: true); app.showPanel(); app.showSettings(); app.trackHover()
+            check(!app.orbitOpen && !app.visibility.panel && !app.orbit.isVisible && !app.panel.isVisible,
+                  "No hover, island, menu or settings entrance may open while positioning")
+        }
+        func aligned() {
+            check(abs(app.ball.frame.midX - app.orbit.frame.midX) <= 0.5 && abs(app.ball.frame.midY - app.orbit.frame.midY) <= 0.5,
+                  "The ball and reopened orbit must share the final center")
+        }
+        func drag(_ origin: NSPoint, delta: NSPoint) {
+            app.closeOrbit(restore: false, immediately: true); app.ball.setFrameOrigin(origin)
+            let start = center(), end = NSPoint(x: start.x + delta.x, y: start.y + delta.y)
+            app.ballView.mouseDown(with: mouse(.leftMouseDown, start))
+            app.ballView.mouseDragged(with: mouse(.leftMouseDragged, end))
+            app.ballView.mouseUp(with: mouse(.leftMouseUp, end))
+        }
+
+        // This is the same clearing handler called by refreshBall before any active API request.
+        FileHandle.standardError.write(Data("[self-test] desktop missing-identity guard\n".utf8))
+        for client in ["codex", "claude"] {
+            app.targetClient = client; app.visibleHint = FrontmostSession(cwd: "/fixture", tty: "ttys001")
+            app.selection = client + ":old"; app.updateBall(47, usedTokens: 170461, client: "Codex", help: "")
+            check(app.clearUnidentifiedDesktopSelection(), "Desktop navigation without an id or title must stop active lookup")
+            check(app.selection.isEmpty && app.ballView.percent == nil && app.ballView.usedTokens == nil,
+                  "A missing desktop identity clears the previous selection and ball reading")
+            check(LensIsland.allCases.allSatisfy { app.orbitView.labels[$0]?.value == "—" }, "Missing identity clears all island readings")
+            for hint in [FrontmostSession(id: "known"), FrontmostSession(title: "Known title")] {
+                app.visibleHint = hint; app.selection = client + ":known"; app.visibility.open()
+                check(!app.clearUnidentifiedDesktopSelection() && app.selection == client + ":known",
+                      "Known desktop identity remains available while our own panel is open")
+            }
+        }
+        app.updateBall(nil, usedTokens: 170461, client: "Claude", help: "当前会话上下文窗口")
+        check(app.ballView.usedTokens == nil && app.orbitView.labels[.context]?.value == "—", "Claude 缺少窗口占比时不能用 token 数替代主读数")
+        app.updateBall(12.5, usedTokens: 170461, client: "Claude", help: "当前会话上下文窗口")
+        check(app.ballView.percent == 12.5 && app.ballView.usedTokens == nil && app.orbitView.labels[.context]?.value == "12.5%", "Claude 主读数使用窗口百分比")
+        app.updateBall(nil, usedTokens: 170461, client: "Codex", help: "")
+        check(app.ballView.usedTokens == 170461 && app.orbitView.labels[.context]?.value == "170.5k", "其他客户端的现有回退行为保持不变")
+        for client: String? in [nil, "opencode", "mimocode", "deepseek", "zcode"] {
+            app.targetClient = client; app.visibleHint = FrontmostSession(); app.selection = "codex:known"
+            check(!app.clearUnidentifiedDesktopSelection() && app.selection == "codex:known", "Terminal and other client fallback remains available")
+        }
+        app.visibility.collapse()
+
+        app.showIsland(.context, pin: false)
+        app.fitDetail(height: 300)
+        let before = app.ball.frame.origin
+        let originalStart = app.ballView.dragStarted
+        let oldHover = app.hoverTimer
+        var started = false
+        app.ballView.dragStarted = {
+            originalStart?()
+            started = true
+            check(app.ball.frame.origin == before, "Closing must happen before the first ball movement")
+            check(!app.orbit.isVisible && !app.panel.isVisible, "Drag start must immediately hide expanded windows")
+        }
+        let start = center(), second = NSPoint(x: start.x - 100, y: start.y - 50)
+        app.ballView.mouseDown(with: mouse(.leftMouseDown, start))
+        app.ballView.mouseDragged(with: mouse(.leftMouseDragged, NSPoint(x: start.x - 60, y: start.y - 40)))
+        check(started && app.positioning && oldHover?.isValid == false, "The real first drag owns position and invalidates old hover work")
+        app.ballView.dragStarted = originalStart
+        blockedOpenings()
+        let detailRevision = app.detailTransition, detailFrame = app.panel.frame
+        app.fitDetail(height: 600)
+        check(app.detailTransition == detailRevision && app.panel.frame == detailFrame, "Late card sizing cannot move a hidden card during drag")
+        app.ballView.mouseDragged(with: mouse(.leftMouseDragged, second))
+        blockedOpenings()
+        app.ballView.mouseUp(with: mouse(.leftMouseUp, second))
+        check(!app.positioning && app.positionTimer == nil, "A nonsnapping drag releases ownership on mouse up")
+        let settled = app.ball.frame.origin
+        check(defaults.string(forKey: "position") == NSStringFromPoint(settled), "Only the settled position is saved")
+        check(app.showOrbit(), "The next opening is available after a stable drag"); aligned()
+        app.closeOrbit(immediately: true)
+        check(app.ball.frame.origin == settled, "Collapsing restores the final dragged position")
+
+        let screen = app.ball.screen?.visibleFrame ?? NSScreen.main!.visibleFrame
+        drag(NSPoint(x: screen.minX + 15, y: screen.midY), delta: NSPoint(x: -4, y: 0))
+        check(app.positioning && app.positionSnap != nil && app.positionTimer?.isValid == true, "Edge snapping retains ownership for its animation")
+        let oldRevision = app.positionRevision, oldTimer = app.positionTimer!, oldTarget = app.positionSnap!.to
+        let savedBeforeSnap = defaults.string(forKey: "position")
+        clock += 0.14; app.advanceBallPosition(revision: oldRevision, now: clock)
+        blockedOpenings()
+        check(defaults.string(forKey: "position") == savedBeforeSnap, "A partial snap must not persist its intermediate position")
+        let nextStart = center(), nextEnd = NSPoint(x: nextStart.x + 80, y: nextStart.y - 20)
+        app.ballView.mouseDown(with: mouse(.leftMouseDown, nextStart))
+        app.ballView.mouseDragged(with: mouse(.leftMouseDragged, nextEnd))
+        let nextRevision = app.positionRevision, newFrame = app.ball.frame
+        check(nextRevision > oldRevision && !oldTimer.isValid && app.positionSnap == nil, "A new real drag cancels the previous geometry timer")
+        app.advanceBallPosition(revision: oldRevision, now: clock + 1)
+        app.finishBallPosition(oldTarget, revision: oldRevision)
+        check(app.positioning && app.ball.frame == newFrame && defaults.string(forKey: "position") == savedBeforeSnap,
+              "Old timer work and completion cannot move, persist or release a newer drag")
+        blockedOpenings()
+        app.ballView.mouseUp(with: mouse(.leftMouseUp, nextEnd))
+        let newest = app.ball.frame.origin
+        check(!app.positioning && defaults.string(forKey: "position") == NSStringFromPoint(newest), "The second drag's final position wins")
+        app.finishBallPosition(oldTarget, revision: oldRevision)
+        check(app.ball.frame.origin == newest, "A late old completion stays inert after the newer drag finishes")
+        app.showIsland(.cost, pin: false); app.pinned = true; aligned()
+        let reopenedPanel = app.panel.frame
+        app.hoverTimer?.invalidate()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.4))
+        check(app.orbit.isVisible && app.panel.isVisible && app.panel.frame == reopenedPanel, "Old show, fade and size completions cannot disturb the reopened geometry")
+        aligned()
+
+        let width = app.ball.frame.width, height = app.ball.frame.height
+        for point in [NSPoint(x: screen.minX + 15, y: screen.midY), NSPoint(x: screen.maxX - width - 15, y: screen.midY),
+                      NSPoint(x: screen.midX, y: screen.minY + 15), NSPoint(x: screen.midX, y: screen.maxY - height - 15),
+                      NSPoint(x: screen.minX + 15, y: screen.minY + 15), NSPoint(x: screen.maxX - width - 15, y: screen.maxY - height - 15)] {
+            drag(point, delta: NSPoint(x: 4, y: 4))
+            check(app.positioning && app.positionSnap != nil, "Every screen edge keeps the snap phase active")
+            blockedOpenings()
+            let revision = app.positionRevision, expected = app.positionSnap!.to
+            clock += 1; app.advanceBallPosition(revision: revision, now: clock)
+            check(!app.positioning && app.ball.frame.origin == expected && defaults.string(forKey: "position") == NSStringFromPoint(expected), "A completed snap persists its exact final target")
+            check(screen.contains(app.ball.frame), "Snapping keeps the ball in the visible screen")
+            check(app.showOrbit(), "Stable edge snaps permit a new opening"); aligned()
+        }
+        for instant in [true, false] {
+            app.uiStyle = LensUIStyle(theme: instant ? .ink : .native)
+            app.positionMotionAllowed = { instant }
+            drag(NSPoint(x: screen.minX + 15, y: screen.midY), delta: NSPoint(x: 4, y: 0))
+            check(!app.positioning && app.positionTimer == nil && app.positionSnap == nil, "Instant and reduced motion snap without a delayed geometry operation")
+        }
+        app.uiStyle = LensUIStyle(theme: .native); app.positionMotionAllowed = { true }
+        app.positionClock = { ProcessInfo.processInfo.systemUptime }
+        drag(NSPoint(x: screen.minX + 15, y: screen.midY), delta: NSPoint(x: 4, y: 0))
+        check(app.positionTimer?.isValid == true, "The actual run-loop timer starts for animated snapping")
+        RunLoop.current.run(until: Date().addingTimeInterval(0.45))
+        check(!app.positioning && app.positionTimer == nil && defaults.string(forKey: "position") == NSStringFromPoint(app.ball.frame.origin),
+              "The actual timer finishes and persists the settled position")
+        app.closeOrbit(restore: false, immediately: true)
+        let originalToggle = app.ballView.toggle
+        var toggles = 0
+        app.ballView.toggle = { toggles += 1; originalToggle?() }
+        for locked in [false, true] {
+            app.closeOrbit(restore: false, immediately: true)
+            app.ballView.isPositionLocked = locked
+            let point = center(), origin = app.ball.frame.origin, revision = app.positionRevision, saved = defaults.string(forKey: "position"), oldToggles = toggles
+            let end = NSPoint(x: point.x + (locked ? 40 : 1), y: point.y)
+            app.ballView.mouseDown(with: mouse(.leftMouseDown, point)); app.ballView.mouseDragged(with: mouse(.leftMouseDragged, end))
+            check(app.ball.frame.origin == origin && app.positionRevision == revision, "A short click or locked gesture must not drag")
+            app.ballView.mouseUp(with: mouse(.leftMouseUp, end))
+            check(toggles == oldToggles + 1 && app.orbitOpen && !app.positioning && defaults.string(forKey: "position") == saved, "Ordinary and locked clicks retain one toggle without a position write")
+        }
+    }
 }
 
 @main struct ContextLens {
@@ -1183,6 +1669,36 @@ struct LensVisibility {
             func checkpoint(_ name: String) {
                 FileHandle.standardError.write(Data("[self-test] \(name)\n".utf8))
             }
+            checkpoint("context readings")
+            let context: [String: Any] = ["windowPercent": 12.5, "percent": 50.0]
+            precondition(contextPercent(context, client: "claude") == 12.5)
+            precondition(contextPercent(context, client: "codex") == 50)
+            precondition(contextPercent(["percent": 50.0], client: "claude") == nil)
+            precondition(contextPercent(["windowPercent": NSNull(), "percent": 50.0], client: "claude") == nil)
+            precondition(contextPercent(["windowPercent": Double.nan], client: "claude") == nil)
+            precondition(contextReading(nil, usedTokens: 170461) == "170.5k")
+            precondition(contextReading(16.26, usedTokens: 170461) == "16.3%")
+            precondition(contextReading(nil, usedTokens: nil) == "—")
+            precondition(contextReading(nil, usedTokens: .nan) == "—")
+            precondition(contextReading(nil, usedTokens: -1) == "—")
+            checkpoint("actual ball rendering")
+            let readingBall = BallView(frame: NSRect(x: 0, y: 0, width: 56, height: 56))
+            func ballPixels(_ percent: Double?, tokens: Double?) -> Data {
+                readingBall.percent = percent; readingBall.usedTokens = tokens
+                let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 56, pixelsHigh: 56,
+                    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                    colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+                bitmap.bitmapData!.initialize(repeating: 0, count: bitmap.bytesPerRow * bitmap.pixelsHigh)
+                NSGraphicsContext.saveGraphicsState()
+                NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+                readingBall.draw(readingBall.bounds)
+                NSGraphicsContext.restoreGraphicsState()
+                return Data(bytes: bitmap.bitmapData!, count: bitmap.bytesPerRow * bitmap.pixelsHigh)
+            }
+            let unknownBall = ballPixels(nil, tokens: nil)
+            precondition(ballPixels(nil, tokens: 170461) != unknownBall, "Actual draw must show the known token count")
+            precondition(ballPixels(16.26, tokens: 170461) == ballPixels(16.26, tokens: nil), "Percent keeps priority and its original precision")
+            precondition(ballPixels(nil, tokens: nil) == unknownBall, "Unknown sessions clear the previous token reading")
             checkpoint("island geometry")
             precondition(LensUITheme.allCases.count == 9)
             precondition(LensIsland.allCases.count == 7)
@@ -1242,6 +1758,12 @@ struct LensVisibility {
             precondition(LensIsland.at(NSPoint(x: OrbitGeometry.center.x, y: OrbitGeometry.center.y + 70)) == nil, "The gaps between islands are not buttons")
             precondition(validSession("codex:abc-123")); precondition(validSession("deepseek:session_123")); precondition(!validSession("codex:../credentials")); precondition(!validSession("https://example.com"))
             precondition(visibleSessionId("codex://threads/abc-123?view=chat") == "abc-123")
+            precondition(visibleSessionId("codex://threads/abc-123?return=/code/local_other") == "abc-123")
+            precondition(visibleSessionId("/code/local_a-123") == "local_a-123")
+            precondition(visibleSessionId("https://claude.ai/code/local_a-123/?view=code#tab") == "local_a-123")
+            for route in ["/code/other", "/code/local_", "/code/local_../", "/code/local_a/../secret", "/code/local_a\n", "/code/local_" + String(repeating: "a", count: 95)] {
+                precondition(visibleSessionId(route) == nil)
+            }
             precondition(visibleSessionId("file:///Users/workspace") == nil)
             precondition(agentClient(bundle: "com.openai.codex", name: "Codex") == "codex")
             precondition(clampedOrigin(NSPoint(x: -10, y: 200), size: NSSize(width: 56, height: 56), screen: NSRect(x: 0, y: 0, width: 100, height: 100)) == NSPoint(x: 0, y: 44))
@@ -1263,6 +1785,10 @@ struct LensVisibility {
             state.collapse(); precondition(state.ball && !state.panel)
             state.activate("finder:2", supported: false); precondition(state.ball, "Returning to the same app must preserve explicit restore")
             state.activate("preview:4", supported: false); precondition(!state.ball)
+            checkpoint("bounded navigation fixtures")
+            checkNavigationFixtures()
+            checkpoint("actual drag lifecycle")
+            LensApp.checkDragLifecycle()
             print("Context Lens desktop checks passed: seven islands, nine fixed themes, persistence, four Times New Roman faces, hit regions, identity, bounds and visibility")
         } else {
             let app = NSApplication.shared

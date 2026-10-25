@@ -27,6 +27,7 @@ export interface Context {
     budget: Budget;
     denominator: number | null;
     percent: number | null;
+    windowPercent: number | null;
     view: 'budget' | 'model';
     segments: Segment[];
     warnings: string[];

@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { getClaudeConfigDir } from '../claude-config-dir.js';
 import { readDocument } from './settings.js';
 import { sessionKey, validId, type SessionFile } from './sessions.js';
+import { ClaudeDesktopSessions } from './claude-desktop.js';
 
 interface Running { key: string; pid: number; evidence: string }
 export interface ActiveResult { selected: string | null; reason: string; candidates: Running[] }
@@ -60,9 +61,13 @@ export class ActiveSessions {
   private parents = new Map<number, number>();
   private error = '';
   private lastInteraction = new Map<string, number>();
+  private desktop: ClaudeDesktopSessions;
+  constructor(options: { claudeDesktopRoots?: string[]; now?: () => number } = {}) {
+    this.desktop = new ClaudeDesktopSessions(options.claudeDesktopRoots, options.now);
+  }
 
   get(files: ActiveSessionInfo[], client?: string, targetPid?: number, hint?: VisibleSessionHint): ActiveResult {
-    const visible = visibleSession(files, client, hint);
+    const visible = client === 'claude' ? this.desktop.resolve(files, hint) : visibleSession(files, client, hint);
     if (visible !== undefined) return { selected: visible, candidates: [], reason: visible ? '已跟随前台显示的对话' : '当前可见对话尚无本地记录，或标题无法唯一对应' };
     if (Date.now() - this.at > 2000) this.scan(files);
     const activity = new Map(files.filter(f => !f.parentId && f.lastUserAt).map(f => [sessionKey(f), f.lastUserAt!]));

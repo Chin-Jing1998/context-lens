@@ -2,12 +2,15 @@ import * as path from 'node:path';
 import { atomicJson, lensHome, readDocument, validatePrices } from './settings.js';
 import { BUNDLED_PRICES } from './pricing-data.js';
 import { deepSeekTier, parseAgentPrices } from './pricing-agents.js';
+import { parseGooglePrices } from './pricing-google.js';
+import { officialModelMetadata } from './model-metadata.js';
 export const PRICE_SOURCES = {
     openai: 'https://developers.openai.com/api/docs/pricing',
     anthropic: 'https://platform.claude.com/docs/en/about-claude/pricing',
     deepseek: 'https://api-docs.deepseek.com/quick_start/pricing/',
     mimo: 'https://mimo.mi.com/static/docs/price/pay-as-you-go.md',
     zai: 'https://docs.z.ai/guides/overview/pricing',
+    google: 'https://ai.google.dev/gemini-api/docs/pricing',
 };
 const fields = ['input', 'cacheRead', 'cacheWrite', 'output'];
 const cells = (line) => line.trim().split('|').slice(1, -1).map(cell => cell.trim());
@@ -35,6 +38,8 @@ function section(document, heading) {
 }
 /** Parse only the documented text-token tables; never infer prices from model names. */
 export function parseOfficialPrices(provider, document, checkedAt) {
+    if (provider === 'google')
+        return { source: PRICE_SOURCES.google, checkedAt, models: parseGooglePrices(document) };
     if (['deepseek', 'mimo', 'zai'].includes(provider))
         return { source: PRICE_SOURCES[provider], checkedAt, models: parseAgentPrices(provider, document) };
     const models = Object.create(null);
@@ -111,11 +116,21 @@ export function parseOfficialPrices(provider, document, checkedAt) {
     return { source: PRICE_SOURCES[provider], checkedAt, models };
 }
 function validateProvider(provider, value) {
-    const minimum = ['deepseek', 'mimo', 'zai'].includes(provider) ? 2 : 3;
+    const minimum = provider === 'google' ? 1 : ['deepseek', 'mimo', 'zai'].includes(provider) ? 2 : 3;
     if (value.source !== PRICE_SOURCES[provider] || !Number.isFinite(Date.parse(value.checkedAt)) || !value.models || Object.keys(value.models).length < minimum || Object.keys(value.models).length > 300)
         throw new Error('Invalid price cache');
     for (const [model, price] of Object.entries(value.models)) {
         validatePrices({ currency: 'USD', prices: { [model]: price.rates } });
+        if (provider === 'google' && (model !== 'gemini-4-argon' || !price.dateChange || Object.keys(price.tiers ?? {}).length
+            || price.dateChange.at !== '2026-12-01T00:00:00.000Z'))
+            throw new Error('Invalid Gemini price policy');
+        if (price.dateChange) {
+            if (!Number.isFinite(Date.parse(price.dateChange.at)))
+                throw new Error('Invalid price date');
+            validatePrices({ currency: 'USD', prices: { [model]: price.dateChange.rates } });
+        }
+        if (provider === 'google' && [price.rates, price.dateChange.rates].some(rate => Object.keys(rate).sort().join('|') !== 'cacheRead|input|output'))
+            throw new Error('Incomplete Gemini token rates');
         if (price.threshold !== undefined && (!Number.isSafeInteger(price.threshold) || price.threshold <= 0))
             throw new Error('Invalid price threshold');
         for (const tier of [price, ...Object.values(price.tiers ?? {})]) {
@@ -139,8 +154,10 @@ export function readOfficialPrices(home = lensHome()) {
     return result;
 }
 export function officialPrice(row, catalog) {
-    let id = row.model;
-    const provider = Object.values(catalog).find(p => Object.hasOwn(p.models, id) || Object.hasOwn(p.models, id.replace(/-\d{4}-\d{2}-\d{2}$|-\d{8}$/, '')));
+    const metadata = officialModelMetadata(row.model);
+    let id = metadata?.id ?? row.model;
+    const provider = Object.values(catalog).find(p => p === catalog.google ? metadata && Object.hasOwn(p.models, id)
+        : Object.hasOwn(p.models, id) || Object.hasOwn(p.models, id.replace(/-\d{4}-\d{2}-\d{2}$|-\d{8}$/, '')));
     if (!provider)
         return undefined;
     if (!Object.hasOwn(provider.models, id))
@@ -159,11 +176,21 @@ export function officialPrice(row, catalog) {
     const selected = tier === 'standard' ? price : price.tiers?.[tier];
     if (!selected)
         return undefined;
+    if (provider === catalog.google && !price.dateChange)
+        return undefined;
     const long = price.threshold !== undefined && row.input > price.threshold;
     // A published long-context tier cannot silently fall back to short-context prices.
     if (long && price.longContext && !selected.longContext)
         return undefined;
-    return { rates: long && selected.longContext ? selected.longContext : selected.rates, source: provider.source, checkedAt: provider.checkedAt, tier };
+    let rates = long && selected.longContext ? selected.longContext : selected.rates;
+    if (price.dateChange) {
+        const at = row.timestampKnown === false || !row.at ? NaN : Date.parse(row.at);
+        if (!Number.isFinite(at))
+            return undefined;
+        if (at >= Date.parse(price.dateChange.at))
+            rates = price.dateChange.rates;
+    }
+    return { rates, source: provider.source, checkedAt: provider.checkedAt, tier };
 }
 const inFlight = new Map();
 const attempts = new Map();
@@ -182,10 +209,11 @@ export function refreshOfficialPrices(options = {}) {
             if (!options.force && now - Date.parse(catalog[provider].checkedAt) < 24 * 60 * 60 * 1000)
                 return;
             try {
-                const documentUrl = provider === 'deepseek' || provider === 'mimo' ? PRICE_SOURCES[provider] : PRICE_SOURCES[provider] + '.md';
-                const response = await (options.fetch ?? fetch)(documentUrl, { signal: AbortSignal.timeout(6000), redirect: 'error' });
+                const documentUrl = provider === 'google' ? PRICE_SOURCES.google + '?hl=en'
+                    : provider === 'deepseek' || provider === 'mimo' ? PRICE_SOURCES[provider] : PRICE_SOURCES[provider] + '.md';
+                const response = await (options.fetch ?? fetch)(documentUrl, { signal: AbortSignal.timeout(provider === 'google' ? 15000 : 6000), redirect: 'error' });
                 if (!response.ok || !response.body)
-                    return;
+                    throw new Error(`Official price document unavailable (HTTP ${response.status})`);
                 const reader = response.body.getReader();
                 const chunks = [];
                 let size = 0;
@@ -205,8 +233,22 @@ export function refreshOfficialPrices(options = {}) {
                 }
                 const parsed = parseOfficialPrices(provider, Buffer.concat(chunks).toString('utf8'), new Date(now).toISOString());
                 atomicJson(path.join(home, 'official-prices-' + provider + '.json'), validateProvider(provider, parsed));
+                if (provider === 'google')
+                    atomicJson(path.join(home, 'official-prices-google-status.json'), {
+                        status: 'ok', source: PRICE_SOURCES.google, attemptedAt: new Date(now).toISOString(),
+                    });
             }
-            catch { /* Offline or a changed document retains the last successfully verified prices. */ }
+            catch (error) {
+                // A format/network failure retains verified prices and leaves a local audit record.
+                if (provider === 'google')
+                    try {
+                        atomicJson(path.join(home, 'official-prices-google-status.json'), {
+                            status: 'failed', source: PRICE_SOURCES.google, attemptedAt: new Date(now).toISOString(),
+                            reason: error instanceof Error ? error.message.slice(0, 200) : 'Official Google price refresh failed',
+                        });
+                    }
+                    catch { /* Read-only state directories must not interrupt collection. */ }
+            }
         }));
     })().finally(() => inFlight.delete(home));
     inFlight.set(home, work);

@@ -5,6 +5,7 @@ export declare const PRICE_SOURCES: {
     readonly deepseek: 'https://api-docs.deepseek.com/quick_start/pricing/';
     readonly mimo: 'https://mimo.mi.com/static/docs/price/pay-as-you-go.md';
     readonly zai: 'https://docs.z.ai/guides/overview/pricing';
+    readonly google: 'https://ai.google.dev/gemini-api/docs/pricing';
 };
 type Provider = keyof typeof PRICE_SOURCES;
 interface TierPrice {
@@ -15,6 +16,10 @@ export interface OfficialPrice extends TierPrice {
     threshold?: number;
     tiers?: Record<string, TierPrice>;
     timePolicy?: 'deepseek';
+    dateChange?: {
+        at: string;
+        rates: Rate;
+    };
 }
 export interface ProviderPrices {
     source: string;

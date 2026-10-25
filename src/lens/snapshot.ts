@@ -1,5 +1,5 @@
 import * as fs from 'node:fs';
-import { buildContext, tokenNumber } from './context.js';
+import { buildContext, percentageNumber, tokenNumber } from './context.js';
 import { readSession, type ParsedSession } from './reader.js';
 import { discoverSessions, checkpoint, readLiveClaude, sessionKey, type SessionFile, type LiveClaude } from './sessions.js';
 import { readPrices, resolveClaudeSettings, resolveCodexSettings, type LaunchSettings } from './settings.js';
@@ -8,6 +8,7 @@ import { summarizeActivity, type ActivityLog } from './activity.js';
 import { sessionTiming } from './timing.js';
 import { summarizeDetails } from './claude-details.js';
 import { buildSessionDetails, type DetailQuery, type DetailSource } from './session-details.js';
+import { officialModelMetadata } from './model-metadata.js';
 import type { HudSnapshot, LensConfig, RequestUsage, Totals } from './types.js';
 
 function totals(parsed: ParsedSession, requests: RequestUsage[]): Totals {
@@ -118,29 +119,37 @@ export class SessionCollector {
       if (!added) break;
     }
     const now = Date.now();
-    const live = file.client === 'claude' ? options.live ?? readLiveClaude(main.info) : null;
+    const candidate = file.client === 'claude' ? options.live ?? readLiveClaude(main.info) : null;
+    const live = candidate?.stdin.session_id === main.info.id && Number.isFinite(Date.parse(candidate.at)) ? candidate : null;
     let used = main.used;
-    let capacity = main.capacity;
+    let capacity = tokenNumber(main.capacity) || null;
     let at = main.at;
+    let reportedPercent: number | null = null;
     const fresh = live && (!at || Date.parse(live.at) >= Date.parse(at));
     if (fresh) {
       const u = live.stdin.context_window?.current_usage;
       used = u && tokenNumber(u.input_tokens) !== null
         ? u.input_tokens! + (tokenNumber(u.cache_read_input_tokens) ?? 0) + (tokenNumber(u.cache_creation_input_tokens) ?? 0) : null;
       if (used === 0) used = null;
+      // 首次响应及压缩后的零占位不能证明窗口为空。
+      reportedPercent = percentageNumber(live.stdin.context_window?.used_percentage) || null;
       at = live.at;
     }
-    if (live) capacity = tokenNumber(live.stdin.context_window?.context_window_size) ?? capacity;
+    const metadata = file.client === 'claude' ? officialModelMetadata(main.info.model) : undefined;
+    const contextLive = live && (fresh || live.stdin.model?.id === main.info.model
+      || metadata && officialModelMetadata(live.stdin.model?.id)?.id === metadata.id) ? live : null;
+    if (contextLive && (fresh || !capacity)) capacity = tokenNumber(contextLive.stdin.context_window?.context_window_size) || capacity;
     const settings = file.client === 'claude'
-      ? resolveClaudeSettings({ cwd: main.info.cwd, model: live?.stdin.model?.id || main.info.model, capacity,
-        env: live?.environment ?? {}, launch: options.launch ?? live?.launch })
+      ? resolveClaudeSettings({ cwd: main.info.cwd, model: contextLive?.stdin.model?.id || main.info.model, capacity,
+        env: contextLive?.environment ?? {}, launch: options.launch ?? contextLive?.launch })
       : resolveCodexSettings({ cwd: main.info.cwd, capacity, launch: options.launch, runtime: main.runtime });
     warnings.push(...settings.warnings);
-    if (live?.hudWindow && tokenNumber(live.hudWindow)) settings.budget = {
-      ...settings.budget, tokens: live.hudWindow, accuracy: 'configured', source: 'Context Lens display.autoCompactWindow (manual HUD override)',
+    if (contextLive?.hudWindow && tokenNumber(contextLive.hudWindow)) settings.budget = {
+      ...settings.budget, tokens: contextLive.hudWindow, accuracy: 'configured', source: 'Context Lens display.autoCompactWindow (manual HUD override)',
     };
-    if (file.client === 'claude' && !live) warnings.push('Claude live counters are unavailable; install the Context Lens silent statusline collector and wait for a client refresh');
-    const context = buildContext({ used, capacity: settings.capacity, budget: settings.budget,
+    if (file.client === 'claude' && !live) warnings.push('当前 Claude 会话没有状态栏实时采样；已配置采集命令不代表 Desktop / SDK 已执行它');
+    if (file.client === 'claude' && !capacity && reportedPercent === null) warnings.push('当前会话未上报有效窗口容量或占用率；不会根据模型别名、公开上限或压缩预算推测窗口占比');
+    const context = buildContext({ used, capacity: settings.capacity, budget: settings.budget, reportedPercent,
       categories: main.categories, buffer: main.buffer, view: options.view, at });
     if (main.messageBreakdown?.length) context.messageBreakdown = main.messageBreakdown;
     let prices: LensConfig;

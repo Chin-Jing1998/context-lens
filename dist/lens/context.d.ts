@@ -1,6 +1,7 @@
 import type { Budget, Category, Context, Measurement } from './types.js';
 export declare const CATEGORIES: [Category, string, string][];
 export declare const tokenNumber: (v: unknown) => number | null;
+export declare const percentageNumber: (v: unknown) => number | null;
 export declare function buildContext(args: {
     used: number | null;
     capacity: number | null;
@@ -11,5 +12,6 @@ export declare function buildContext(args: {
     };
     view?: 'budget' | 'model';
     at?: string;
+    reportedPercent?: number | null;
 }): Context;
 //# sourceMappingURL=context.d.ts.map

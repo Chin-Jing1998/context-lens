@@ -21,23 +21,24 @@ const collector = {
     if (state.delayed) await new Promise(resolve => setTimeout(resolve, 1500));
     const unknown = state.scenario === 'unknown';
     const used = state.scenario === 'over' ? 220000 : state.scenario === 'zero' ? 0 : 80000;
-    const denominator = view === 'model' ? 256000 : 200000;
+    const capacity = state.scenario === 'missing-window' ? null : 256000;
+    const denominator = view === 'model' ? capacity : 200000;
     const at = new Date().toISOString();
-    const row = (id, label, tokens, color) => ({ id, label, tokens, color, percent: tokens === null ? null : tokens / denominator * 100, source: 'UI 验收合成数据，非实测', accuracy: unknown ? 'unknown' : 'reported', at });
+    const row = (id, label, tokens, color) => ({ id, label, tokens, color, percent: tokens === null || !denominator ? null : tokens / denominator * 100, source: 'UI 验收合成数据，非实测', accuracy: unknown ? 'unknown' : 'reported', at });
     const rows = [
       { ...row('mcpTools', 'MCP tools', unknown ? null : state.scenario === 'removed' ? 0 : 20000, '#007aff'), accuracy: 'estimated' },
       row('systemTools', 'System tools', 0, '#ef6834'), row('skills', 'Skills', null, '#11ae79'),
       row('systemPrompt', 'System prompt', 1.5, '#e4a000'), row('memoryFiles', 'Memory files', -1, '#83817b'),
       row('messages', 'Conversation', unknown ? null : used - 21000, '#30a46c'),
       row('unclassified', 'Unclassified', unknown ? null : 1000, '#64748b'),
-      row('free', 'Free space', unknown ? null : Math.max(denominator - used, 0), '#aaaaaf'),
+      row('free', 'Free space', unknown || !denominator ? null : Math.max(denominator - used, 0), '#aaaaaf'),
     ];
     if (unknown || state.scenario === 'zero') for (const r of rows) { r.tokens = unknown ? null : 0; r.percent = unknown ? null : 0; }
     const session = sessions.find(s => s.client + ':' + s.id === key) || sessions[0];
     const cost = estimateCost([{ ...totals, id: 'synthetic-request', model: session.model, at, complete: !unknown }], readPrices());
     return {
       session,
-      context: { usedTokens: unknown ? null : used, modelTokens: 256000, denominator: unknown ? null : denominator, percent: unknown ? null : used / denominator * 100, view, budget: { tokens: 200000, source: 'UI 验收合成预算', accuracy: unknown ? 'estimated' : 'configured', scope: 'total' }, segments: rows, updatedAt: at, warnings: unknown ? ['缓冲未知，无法确定分类占比'] : [] },
+      context: { usedTokens: unknown ? null : used, modelTokens: capacity, denominator: unknown ? null : denominator, percent: unknown || !denominator ? null : used / denominator * 100, windowPercent: unknown || !capacity ? null : used / capacity * 100, view, budget: { tokens: 200000, source: 'UI 验收合成预算', accuracy: unknown ? 'estimated' : 'configured', scope: 'total' }, segments: rows, updatedAt: at, warnings: unknown ? ['缓冲未知，无法确定分类占比'] : [] },
       totals: { main: totals, agents: { ...totals, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite5m: 0, cacheWrite1h: 0, reasoning: 0, requests: 0, cacheReadRequests: 0, hitRate: null }, all: { ...totals, complete: !unknown }, agentCount: 0 },
       cache: { state: unknown ? 'unknown' : 'warm', accuracy: 'reported', source: 'UI 验收合成缓存状态', expiresAt: unknown ? null : new Date(Date.now() + 120000).toISOString() },
       cost: unknown ? { ...cost, amount: null } : cost, nativeCostUsd: null,

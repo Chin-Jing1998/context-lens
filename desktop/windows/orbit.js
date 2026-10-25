@@ -34,8 +34,10 @@ host.onEvent((name, detail) => {
   const root = document.documentElement;
   for (const [key, value] of Object.entries(detail.style || {})) root.dataset[key] = value;
   root.dataset.reduceMotion = String(detail.reduceMotion === true); document.body.dataset.surface = detail.surface;
-  const percent = typeof detail.percent === 'number' ? Math.max(0, detail.percent) : null;
-  const text = percent === null ? '—' : Math.round(percent) + '%'; reading.textContent = document.getElementById('ball-value').textContent = text;
+  const percent = Number.isFinite(detail.percent) ? Math.max(0, detail.percent) : null;
+  const text = percent === null ? typeof detail.values?.context === 'string' ? detail.values.context : '—' : Math.round(percent) + '%';
+  const ballValue = document.getElementById('ball-value'); reading.textContent = ballValue.textContent = text;
+  for (const item of [reading, ballValue]) item.style.fontSize = text.length > 4 ? '12px' : '';
   const arc = 2 * Math.PI * 23; document.getElementById('ball-progress').style.strokeDasharray = `${percent === null ? 0 : arc * Math.min(100, percent) / 100} ${arc}`;
   for (const [key, item] of sectors) { item.value.textContent = detail.values?.[key] ?? '—'; item.group.setAttribute('aria-pressed', String(detail.island === key)); }
 });

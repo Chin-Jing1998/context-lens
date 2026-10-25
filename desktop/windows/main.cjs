@@ -57,12 +57,16 @@ function surface() {
   const cost = snapshot?.cost, totals = snapshot?.totals?.all, timing = snapshot?.timing;
   const activityCount = key => activities[key] ? activities.complete === false && activities[key].total === 0 ? '—' : (activities.complete === false ? '≥' : '') + count(activities[key].total) : '—';
   const seconds = typeof timing?.elapsedMs === 'number' ? Math.floor(timing.elapsedMs / 1000) : null;
-  const values = { context: context?.percent == null ? '—' : context.percent.toFixed(1) + '%',
+  const claude = snapshot?.session?.client === 'claude';
+  const rawPercent = claude ? context?.windowPercent : context?.percent;
+  const percent = Number.isFinite(rawPercent) && rawPercent >= 0 ? rawPercent : null;
+  const tokens = claude ? null : context?.usedTokens;
+  const values = { context: percent === null ? Number.isFinite(tokens) && tokens >= 0 ? count(tokens) : '—' : percent.toFixed(1) + '%',
     usage: totals ? (totals.complete ? '' : '≥') + count(totals.input + totals.output) : '—',
     cost: typeof cost?.amount === 'number' ? (cost.currency === 'USD' ? '$' : cost.currency === 'CNY' ? '¥' : cost.currency + ' ') + cost.amount.toFixed(2) : '—',
     commands: activityCount('commands'), skills: activityCount('skills'), mcp: activityCount('mcp'),
     runtime: seconds === null ? '—' : (timing.startAccuracy === 'observed' ? '≈' : '') + (seconds >= 3600 ? Math.floor(seconds / 3600) + 'h ' + String(Math.floor(seconds / 60) % 60).padStart(2, '0') + 'm' : Math.floor(seconds / 60) + 'm ' + String(seconds % 60).padStart(2, '0') + 's') };
-  const data = { style: surfaceStyle(), reduceMotion: preferences.reduceMotion || nativeTheme.prefersReducedMotion, percent: context?.percent ?? null, values, island };
+  const data = { style: surfaceStyle(), reduceMotion: preferences.reduceMotion || nativeTheme.prefersReducedMotion, percent, values, island };
   emit(ball, 'surface', { ...data, surface: 'ball' }); emit(orbit, 'surface', { ...data, surface: 'orbit' });
 }
 function collapse() { orbitOpen = false; pinned = false; settingsOpen = false; forced = false; orbit.hide(); detail.hide(); }

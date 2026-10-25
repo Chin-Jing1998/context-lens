@@ -23,7 +23,9 @@ export function renderLensLines(snapshot: HudSnapshot, columns = 100): string[] 
   bar += '\x1b[2m' + '░'.repeat(remaining) + RESET;
   const lines = [
     `Context Lens · ${sanitizeDisplayText(snapshot.session.client)} · ${sanitizeDisplayText(snapshot.session.model)}`,
-    `Context window ${number(c.usedTokens)} / ${number(c.denominator)} (${percent(c.percent)}) · ${c.view}`,
+    snapshot.session.client === 'claude'
+      ? `Context window ${number(c.usedTokens)} / ${number(c.modelTokens)} (${percent(c.windowPercent)}) · model`
+      : `Context window ${number(c.usedTokens)} / ${number(c.denominator)} (${percent(c.percent)}) · ${c.view}`,
     bar,
     ...c.segments.map(s => `${color(s.color)}■${RESET} ${s.label}: ${s.accuracy === 'estimated' ? '≈' : ''}${number(s.tokens)} (${percent(s.percent)})`),
     totalsLine('Main', snapshot.totals.main),
@@ -31,7 +33,7 @@ export function renderLensLines(snapshot: HudSnapshot, columns = 100): string[] 
     `Cache (main): ${snapshot.cache.state} · writes ${number(snapshot.totals.all.cacheWrite)}`,
     `Custom cost: ${snapshot.cost.amount === null ? 'unconfigured' : `${snapshot.cost.currency} ${snapshot.cost.amount.toFixed(6)} (${snapshot.cost.complete ? 'estimate' : 'partial estimate'})`}`,
     ...(snapshot.nativeCostUsd === null ? [] : [`Client cost: USD ${snapshot.nativeCostUsd.toFixed(4)}`]),
-    `Budget: ${sanitizeDisplayText(c.budget.source)}${c.budget.accuracy === 'estimated' ? ' (estimated)' : ''}`,
+    `Budget: ${snapshot.session.client === 'claude' ? number(c.budget.tokens) + ' tokens · ' : ''}${sanitizeDisplayText(c.budget.source)}${c.budget.accuracy === 'estimated' ? ' (estimated)' : ''}`,
     ...snapshot.warnings.map(w => `! ${sanitizeDisplayText(w)}`),
   ];
   return lines.flatMap(line => wrapToWidth(line, columns));
