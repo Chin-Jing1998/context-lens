@@ -306,12 +306,46 @@ test('agent model IDs shorten to family and version; others pass through', () =>
   assert.equal(model('claude-'), '◐ t (1s)');
 });
 
+test('agent effort shows next to the model only with showAgentEffort, in effortFormat', () => {
+  const agent = (fields) => ({ id: 'a', type: 'review', status: 'running', startTime: ago(SECOND), effort: 'medium', ...fields });
+  const line = (fields, display) => lines(ctx({ transcript: { agents: [agent(fields)] }, config: { display: { showAgents: true, ...display } } }))[2];
+  assert.equal(line({ model: 'claude-haiku-4-5' }, {}), '◐ review [haiku-4.5] (1s)');
+  assert.equal(line({ model: 'claude-haiku-4-5' }, { showAgentEffort: true }), '◐ review [haiku-4.5 ◔ medium] (1s)');
+  assert.equal(line({}, { showAgentEffort: true, effortFormat: 'symbol' }), '◐ review [◔] (1s)');
+  assert.equal(line({}, { showAgentEffort: true, effortFormat: 'text' }), '◐ review [medium] (1s)');
+  assert.equal(line({ effort: '\x1b[31mHIGH' }, { showAgentEffort: true }), '◐ review [◑ high] (1s)');
+  assert.equal(line({ effort: undefined }, { showAgentEffort: true }), '◐ review (1s)');
+});
+
 test('todos show the task in progress, or completion once every item is done', () => {
   const config = { display: { showTodos: true } };
   const todos = [{ content: 'Fix the bug', status: 'in_progress' }, { content: 'b', status: 'completed' }, { content: 'c', status: 'pending' }];
   assert.equal(lines(ctx({ transcript: { todos }, config }))[2], '▸ Fix the bug (1/3)');
   assert.equal(lines(ctx({ transcript: { todos: todos.slice(1) }, config })).length, 2, 'nothing in progress, not all done');
   assert.equal(lines(ctx({ transcript: { todos: [todos[1]] }, config }))[2], '✓ All todos complete (1/1)');
+});
+
+test('todo truncation does not leave half an emoji in the rendered line', () => {
+  const prefix = 'a'.repeat(46);
+  const transcript = { todos: [{ content: `${prefix}😀tail`, status: 'in_progress' }] };
+  const config = { display: { showTodos: true } };
+  assert.equal(lines(ctx({ transcript, config }))[2], `▸ ${prefix}... (0/1)`);
+});
+
+test('agent description truncation keeps joined emoji whole', () => {
+  const prefix = 'a'.repeat(34);
+  const transcript = { agents: [{ id: 'a', type: 'review', description: `${prefix}👩‍💻tail`, status: 'running', startTime: ago(SECOND) }] };
+  const config = { display: { showAgents: true } };
+  assert.equal(lines(ctx({ transcript, config }))[2], `◐ review: ${prefix}... (1s)`);
+});
+
+test('tool target and name truncation keep emoji whole', () => {
+  const tools = [
+    { id: '1', name: 'Edit', status: 'running', target: `${'a'.repeat(16)}😀.ts`, startTime: ago(SECOND) },
+    { id: '2', name: 'mcp__x__abc😀def', status: 'running', startTime: ago(SECOND) },
+  ];
+  const config = { display: { showTools: true, toolNameMaxLength: 5 } };
+  assert.equal(lines(ctx({ transcript: { tools }, config }))[2], `◐ Edit: ${'a'.repeat(16)}... | ◐ abc…`);
 });
 
 test('the environment line names failing MCP servers and respects environmentThreshold', () => {
@@ -336,6 +370,48 @@ test('Chinese labels translate the session token summary in both layouts', () =>
   const config = { display: { showSessionTokens: true, defaultHideSessionTokens: false } };
   assert.equal(lines(ctx({ transcript, config })).at(-1), '词元 23k (输入: 12k, 输出: 7k, 缓存: 4k)');
   assert.match(lines(ctx({ transcript, config: compact(config) }))[0], /\| 词元: 23k \(输入: 12k, 输出: 7k, 缓存: 4k\)$/);
+});
+
+test('the session token summary keeps its last line until elementOrder places it', () => {
+  const transcript = { sessionTokens: { inputTokens: 12345, outputTokens: 6789, cacheCreationTokens: 0, cacheReadTokens: 4321 } };
+  const tokens = 'Tokens 23k (in: 12k, out: 7k, cache: 4k)';
+  const show = { showSessionTokens: true, defaultHideSessionTokens: false };
+  assert.equal(lines(ctx({ transcript, config: { display: show } })).at(-1), tokens, 'the default order leaves it last');
+  assert.equal(lines(ctx({ transcript, config: { display: show, elementOrder: ['project', 'context'] } })).at(-1), tokens, 'so does an older custom order');
+
+  const merged = lines(ctx({
+    transcript,
+    config: { display: { ...show, mergeGroups: [['project', 'sessionTokens']] }, elementOrder: ['project', 'sessionTokens', 'context'] },
+  }));
+  assert.equal(merged.length, 2);
+  assert.match(merged[0], new RegExp(`my-project .*│ ${tokens.replace(/[()]/g, '\\$&')}$`));
+  assert.match(merged[1], /^Context/);
+
+  const placed = { display: show, elementOrder: ['sessionTokens', 'project'] };
+  assert.equal(lines(ctx({ transcript, config: placed }))[0], tokens);
+  assert.deepEqual(lines(ctx({ transcript, config: { ...placed, display: {} } })).length, 1, 'placed but turned off draws nothing');
+});
+
+test('显式隐藏词元汇总时，末行和自定义排列位置均不显示', () => {
+  const transcript = { sessionTokens: { inputTokens: 12345, outputTokens: 6789, cacheCreationTokens: 0, cacheReadTokens: 4321 } };
+  const display = { showSessionTokens: true, defaultHideSessionTokens: true };
+  for (const elementOrder of [undefined, ['project', 'sessionTokens'], ['sessionTokens', 'project']]) {
+    assert.ok(lines(ctx({ transcript, config: { display, elementOrder } })).every(line => !line.includes('Tokens')));
+  }
+});
+
+test('cost keeps its first-line spot until elementOrder places it', () => {
+  const stdin = { cost: { total_cost_usd: 1.2345 } };
+  const show = { showCost: true };
+  assert.match(lines(ctx({ stdin, config: { display: show } }))[0], /│ Cost \$1\.23$/, 'the default order keeps it on the first line');
+  assert.match(lines(ctx({ stdin, config: { display: show, elementOrder: ['project', 'context'] } }))[0], /│ Cost \$1\.23$/, 'so does an older custom order');
+
+  const placed = { display: show, elementOrder: ['project', 'cost', 'context'] };
+  const [first, cost, context] = lines(ctx({ stdin, config: placed }));
+  assert.doesNotMatch(first, /Cost/);
+  assert.equal(cost, 'Cost $1.23');
+  assert.match(context, /^Context/);
+  assert.deepEqual(lines(ctx({ stdin, config: { ...placed, display: {} } })).length, 2, 'placed but turned off draws nothing');
 });
 
 test('wrap width: columns, then maxWidth, and forceMaxWidth overrides columns', () => {

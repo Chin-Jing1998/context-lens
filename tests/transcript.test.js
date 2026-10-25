@@ -1,20 +1,28 @@
 import { test } from 'node:test';
+import { spawnSync } from 'node:child_process';
+import { stripVTControlCharacters } from 'node:util';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, open, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { parseTranscript } from '../dist/transcript.js';
+import { addSubagentEfforts, parseTranscript } from '../dist/transcript.js';
 import { TRANSCRIPT_MODEL_MAX_LEN } from '../dist/model-source.js';
 
 const fixture = (name) => fileURLToPath(new URL(name, import.meta.url));
+
+// Saved parser state lands under the home's .claude, so every test gets its own.
+process.env.CLAUDE_CONFIG_DIR = '';
+const home = await mkdtemp(path.join(tmpdir(), 'hud-transcript-home-'));
+test.after(() => rm(home, { recursive: true, force: true }));
 
 async function parse(entries) {
   const dir = await mkdtemp(path.join(tmpdir(), 'hud-transcript-'));
   try {
     const file = path.join(dir, 'transcript.jsonl');
     await writeFile(file, entries.map((e) => (typeof e === 'string' ? e : JSON.stringify(e))).join('\n'));
-    return await parseTranscript(file);
+    return await parseTranscript(file, dir);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -41,8 +49,55 @@ const tokens = (input, output, cacheCreation, cacheRead) => ({
   cacheReadTokens: cacheRead,
 });
 
+test('API request blobs do not replay tool, task, or agent activity, including after a saved cursor', async () => {
+  const started = '2026-10-01T00:00:00.000Z';
+  const ended = '2026-10-01T00:01:00.000Z';
+  const launch = toolUse('agent', 'Agent', { subagent_type: 'Explore', model: 'haiku' }, started);
+  const launched = toolResult('agent', {
+    timestamp: started,
+    toolUseResult: { isAsync: true, agentId: 'a1', resolvedModel: 'claude-haiku-4-5' },
+  });
+  const bash = toolUse('bash', 'Bash', { command: 'ls' }, started);
+  const failed = toolUse('failed', 'mcp__github__run', {}, started);
+  const task = toolUse('create', 'TaskCreate', { subject: 'Write the fix' }, started);
+  const entries = [
+    launch, launched, bash, toolResult('bash', { timestamp: ended }),
+    failed, toolResult('failed', { timestamp: ended, isError: true }), task,
+    toolUse('update', 'TaskUpdate', { taskId: '1', status: 'in_progress' }, ended),
+  ];
+  const blobs = [launch, launched, bash, failed, task, toolResult('failed')].map((entry) => ({
+    type: 'api-request-blob', hash: 'replay', sessionId: 'session', message: entry.message,
+  }));
+  for (const completed of [false, true]) {
+    const real = completed ? [...entries, {
+      type: 'queue-operation', operation: 'enqueue', timestamp: ended,
+      content: '<task-notification><task-id>a1</task-id><status>completed</status></task-notification>',
+    }] : entries;
+    const expected = await parse(real);
+    assert.deepEqual(expected.tools.map((tool) => tool.status), ['completed', 'error']);
+    assert.deepEqual(expected.todos, [{ content: 'Write the fix', status: 'in_progress' }]);
+    assert.equal(expected.agents[0].status, completed ? 'completed' : 'running');
+    assert.deepEqual(await parse([...real, ...blobs]), expected, 'full read');
+
+    const dir = await mkdtemp(path.join(tmpdir(), 'hud-blob-replay-'));
+    try {
+      const file = path.join(dir, 'transcript.jsonl');
+      const jsonl = (records) => records.map((entry) => JSON.stringify(entry) + '\n').join('');
+      await writeFile(file, jsonl(real));
+      await parseTranscript(file, dir);
+      await appendFile(file, jsonl(blobs));
+      // Saved state omits undefined-valued keys, as in the other cursor tests.
+      const plain = (value) => JSON.parse(JSON.stringify(value));
+      assert.deepEqual(plain(await parseTranscript(file, dir)), plain(expected), 'resumed read');
+      assert.deepEqual(plain(await parseTranscript(file, dir)), plain(expected), 'saved replay state');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+});
+
 test('parseTranscript reads a realistic session', async () => {
-  const r = await parseTranscript(fixture('./golden/transcript.jsonl'));
+  const r = await parseTranscript(fixture('./golden/transcript.jsonl'), home);
 
   assert.deepEqual(r.tools.map((t) => [t.name, t.target, t.status]), [
     ['Read', '/repo/src/auth.ts', 'completed'],
@@ -72,7 +127,7 @@ test('parseTranscript reads a realistic session', async () => {
 
 test('parseTranscript returns an empty result for a missing file and skips malformed lines', async () => {
   for (const missing of ['', '/no/such/transcript.jsonl', tmpdir()]) {
-    assert.deepEqual(await parseTranscript(missing), { tools: [], skills: [], mcpServers: [], mcpErrors: [], agents: [], todos: [] });
+    assert.deepEqual(await parseTranscript(missing, home), { tools: [], skills: [], mcpServers: [], mcpErrors: [], agents: [], todos: [] });
   }
   const r = await parse(['{not json', '42', toolUse('t1', 'Read', { file_path: '/a' }), '', '{"type":']);
   assert.equal(r.tools.length, 1);
@@ -116,6 +171,13 @@ test('contextTokens tracks the main conversation and compactions', async () => {
   ]);
   assert.equal(r.contextTokens, 10_000, 'subagent requests run against their own context');
 
+  // #809: a gateway's per-block thinking record carries all-zero usage mid-stream.
+  const streaming = await parse([
+    assistant({ timestamp: at(1) }, { usage: usage(1_000, 0, 500, 8_500) }),
+    assistant({ timestamp: at(2) }, { content: [{ type: 'thinking', thinking: '' }], usage: usage(0) }),
+  ]);
+  assert.equal(streaming.contextTokens, 10_000, 'a zero-usage record keeps the last real size');
+
   const compacted = await parse([
     assistant({ timestamp: at(1) }, { usage: usage(50_000) }),
     { type: 'system', subtype: 'compact_boundary' },
@@ -158,7 +220,7 @@ test('ultracode follows the latest enter/exit attachment or /effort output', asy
   const exit = { type: 'attachment', attachment: { type: 'ultra_effort_exit' } };
   const effort = (level) => ({ type: 'user', message: { content: `<local-command-stdout>Set effort level to ${level} (this session only): x</local-command-stdout>` } });
 
-  assert.equal((await parseTranscript(fixture('./fixtures/transcript-ultracode.jsonl'))).ultracodeActive, true);
+  assert.equal((await parseTranscript(fixture('./fixtures/transcript-ultracode.jsonl'), home)).ultracodeActive, true);
   assert.equal((await parse([assistant()])).ultracodeActive, undefined);
   assert.equal((await parse([enter, exit])).ultracodeActive, false);
   assert.equal((await parse([enter, effort('xhigh')])).ultracodeActive, false);
@@ -184,6 +246,34 @@ test('agents report the resolved model, and background agents finish at their qu
   assert.deepEqual([async.type, async.background, async.status], ['agent', true, 'running'], 'needs a task-id to complete');
 });
 
+test('a notification missing <tool-use-id> still completes its agent via the launch agentId', async () => {
+  const r = await parse([
+    toolUse('fork1', 'Agent', { subagent_type: 'fork' }, '2026-10-01T00:00:01.000Z'),
+    toolResult('fork1', { timestamp: '2026-10-01T00:00:02.000Z', toolUseResult: { status: 'async_launched', agentId: 'a1b2c3' } }),
+    { type: 'queue-operation', operation: 'enqueue', timestamp: '2026-10-01T00:01:00.000Z', content: '<task-notification>\n<task-id>a1b2c3</task-id>\n<output-file>...</output-file>\n<status>completed</status>\n</task-notification>' },
+  ]);
+  const [fork1] = r.agents;
+  assert.deepEqual([fork1.background, fork1.status, fork1.endTime?.toISOString()], [true, 'completed', '2026-10-01T00:01:00.000Z']);
+});
+
+test('a queued_command attachment also completes its agent, keeping the earliest of both carriers', async () => {
+  const launch = [
+    toolUse('qc1', 'Agent', {}, '2026-10-01T00:00:01.000Z'),
+    toolResult('qc1', { timestamp: '2026-10-01T00:00:02.000Z', toolUseResult: { status: 'async_launched', agentId: 'a1' } }),
+  ];
+  const notice = '<task-notification>\n<task-id>a1</task-id>\n<tool-use-id>qc1</tool-use-id>\n<status>completed</status>\n</task-notification>';
+  const enqueue = { type: 'queue-operation', operation: 'enqueue', timestamp: '2026-10-01T00:01:00.000Z', content: notice };
+  const attachment = (prompt, type = 'queued_command', timestamp = '2026-10-01T00:05:00.000Z') => ({ type: 'attachment', timestamp, attachment: { type, prompt } });
+  const endOf = async (...entries) => (await parse([...launch, ...entries])).agents[0].endTime?.toISOString();
+
+  assert.equal(await endOf(attachment(notice)), '2026-10-01T00:05:00.000Z');
+  assert.equal(await endOf(enqueue, attachment(notice)), '2026-10-01T00:01:00.000Z');
+  assert.equal(await endOf(attachment(notice), enqueue), '2026-10-01T00:01:00.000Z');
+  for (const ignored of [attachment('is the agent done yet?'), attachment([{ type: 'text', text: notice }]), attachment(notice, 'other'), attachment(notice, 'queued_command', null)]) {
+    assert.equal(await endOf(ignored), undefined);
+  }
+});
+
 test('TaskCreate ids survive TodoWrite rewrites, including duplicate content', async () => {
   const r = await parse([
     toolUse('c1', 'TaskCreate', { subject: 'Ship', taskId: 'task-a' }),
@@ -205,6 +295,181 @@ test('TaskCreate ids survive TodoWrite rewrites, including duplicate content', a
     ['Ship', 'completed'],
   ]);
   assert.equal(r.tools.length, 0, 'task tools are not activity');
+});
+
+test('numeric task IDs survive deletion and TodoWrite, including after a saved cursor', async () => {
+  const created = ['First task', 'Same subject', 'Same subject'].map((subject, i) =>
+    toolUse('create-' + i, 'TaskCreate', { subject }));
+  for (const deleted of [[0], [1], [2], [0, 1], [0, 2], [1, 2], [0, 1, 2]]) {
+    const removals = deleted.map((i) =>
+      toolUse('delete-' + i, 'TaskUpdate', { taskId: String(i + 1), status: 'deleted' }));
+    const rewrite = toolUse('rewrite', 'TodoWrite', { todos: created.flatMap((entry, i) => deleted.includes(i) ? [] : [{
+      content: entry.message.content[0].input.subject, status: 'pending',
+    }]) });
+    const updates = [
+      ...removals, // Repeating a deletion must not remove a different task.
+      ...created.map((_, i) =>
+        toolUse('update-' + i, 'TaskUpdate', { taskId: String(i + 1), status: 'completed' })),
+      toolUse('missing', 'TaskUpdate', { taskId: '99', status: 'deleted' }),
+      toolUse('create-new', 'TaskCreate', { subject: 'New task' }),
+      toolUse('finish-new', 'TaskUpdate', { taskId: '4', status: 'completed' }),
+    ];
+    const expected = created.flatMap((entry, i) => deleted.includes(i) ? [] : [{
+      content: entry.message.content[0].input.subject, status: 'completed',
+    }]).concat({ content: 'New task', status: 'completed' });
+    assert.deepEqual((await parse([...created, ...removals, rewrite, ...updates])).todos, expected, 'full read');
+
+    const dir = await mkdtemp(path.join(tmpdir(), 'hud-task-delete-'));
+    try {
+      const file = path.join(dir, 'transcript.jsonl');
+      const jsonl = (entries) => entries.map((entry) => JSON.stringify(entry) + '\n').join('');
+      await writeFile(file, jsonl(created));
+      await parseTranscript(file, dir);
+      await appendFile(file, jsonl(removals));
+      assert.equal((await parseTranscript(file, dir)).todos.length, 3 - deleted.length, 'resumed deletion');
+      await appendFile(file, jsonl([rewrite]));
+      await parseTranscript(file, dir);
+      await appendFile(file, jsonl(updates));
+      assert.deepEqual((await parseTranscript(file, dir)).todos, expected, 'resumed updates');
+      assert.deepEqual((await parseTranscript(file, dir)).todos, expected, 'saved deletion state');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test('numeric task IDs follow their task through a TodoWrite reorder without any deletion', async () => {
+  const r = await parse([
+    toolUse('c1', 'TaskCreate', { subject: 'A' }),
+    toolUse('c2', 'TaskCreate', { subject: 'B' }),
+    toolUse('c3', 'TaskCreate', { subject: 'C' }),
+    toolUse('reorder', 'TodoWrite', { todos: [
+      { content: 'B', status: 'pending' }, { content: 'A', status: 'pending' }, { content: 'C', status: 'pending' },
+    ] }),
+    toolUse('a', 'TaskUpdate', { taskId: '1', status: 'completed' }),
+  ]);
+  assert.deepEqual(r.todos, [
+    { content: 'B', status: 'pending' }, { content: 'A', status: 'completed' }, { content: 'C', status: 'pending' },
+  ]);
+});
+
+test('numeric task IDs follow reordered tasks and are not reused after clearing todos', async () => {
+  const first = [
+    toolUse('c1', 'TaskCreate', { subject: 'Discarded' }),
+    toolUse('c2', 'TaskCreate', { subject: 'Ship' }),
+    toolUse('c3', 'TaskCreate', { subject: 'Docs' }),
+    toolUse('delete', 'TaskUpdate', { taskId: '1', status: 'deleted' }),
+    toolUse('reorder', 'TodoWrite', { todos: [
+      { content: 'Docs', status: 'pending' }, { content: 'Ship', status: 'pending' },
+    ] }),
+    toolUse('docs', 'TaskUpdate', { taskId: '3', status: 'in_progress' }),
+    toolUse('ship', 'TaskUpdate', { taskId: '2', status: 'completed' }),
+    toolUse('retired', 'TaskUpdate', { taskId: '1', status: 'completed', subject: 'Wrong' }),
+  ];
+  assert.deepEqual((await parse(first)).todos, [
+    { content: 'Docs', status: 'in_progress' }, { content: 'Ship', status: 'completed' },
+  ]);
+  const second = [
+    ...first,
+    toolUse('delete-ship', 'TaskUpdate', { taskId: '2', status: 'deleted' }),
+    toolUse('rewrite', 'TodoWrite', { todos: [{ content: 'Docs', status: 'in_progress' }] }),
+    toolUse('repeat-delete', 'TaskUpdate', { taskId: '2', status: 'deleted' }),
+    toolUse('c4', 'TaskCreate', { subject: 'New' }),
+    toolUse('new', 'TaskUpdate', { taskId: '4', status: 'completed' }),
+  ];
+  assert.deepEqual((await parse(second)).todos, [
+    { content: 'Docs', status: 'in_progress' }, { content: 'New', status: 'completed' },
+  ]);
+  const last = [
+    ...second, toolUse('clear', 'TodoWrite', { todos: [] }),
+    ...[1, 2, 3, 4].map((taskId) => toolUse('stale-' + taskId, 'TaskUpdate', { taskId, status: 'completed' })),
+    toolUse('c5', 'TaskCreate', { subject: 'Next' }),
+    toolUse('next', 'TaskUpdate', { taskId: '5', status: 'completed' }),
+  ];
+  assert.deepEqual((await parse(last)).todos, [{ content: 'Next', status: 'completed' }]);
+  const dir = await mkdtemp(path.join(tmpdir(), 'hud-task-reorder-'));
+  try {
+    const file = path.join(dir, 'transcript.jsonl');
+    await writeFile(file, '');
+    let seen = 0;
+    for (const entries of [first, second, last]) {
+      await appendFile(file, entries.slice(seen).map((entry) => JSON.stringify(entry) + '\n').join(''));
+      const expected = (await parse(entries)).todos;
+      assert.deepEqual((await parseTranscript(file, dir)).todos, expected, 'resumed reordering');
+      assert.deepEqual((await parseTranscript(file, dir)).todos, expected, 'saved reordering');
+      seen = entries.length;
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('deleting a named task keeps duplicate-content TaskCreate IDs through TodoWrite', async () => {
+  const deleted = [
+    toolUse('c1', 'TaskCreate', { taskId: 'a', subject: 'Ship' }),
+    toolUse('c2', 'TaskCreate', { taskId: 'b', subject: 'Ship' }),
+    toolUse('c3', 'TaskCreate', { taskId: 'c', subject: 'Write docs' }),
+    toolUse('delete', 'TaskUpdate', { taskId: 'b', status: 'deleted', subject: 'Removed' }),
+  ];
+  assert.deepEqual((await parse(deleted)).todos, [
+    { content: 'Ship', status: 'pending' },
+    { content: 'Write docs', status: 'pending' },
+  ]);
+  const r = await parse([
+    ...deleted,
+    toolUse('rewrite', 'TodoWrite', { todos: [
+      { content: 'Write docs', status: 'pending' },
+      { content: 'Ship', status: 'pending' },
+    ] }),
+    toolUse('stale', 'TaskUpdate', { taskId: 'b', status: 'completed', subject: 'Wrong task' }),
+    toolUse('docs', 'TaskUpdate', { taskId: 'c', status: 'running' }),
+    toolUse('ship', 'TaskUpdate', { taskId: 'a', status: 'completed' }),
+  ]);
+  assert.deepEqual(r.todos, [
+    { content: 'Write docs', status: 'in_progress' },
+    { content: 'Ship', status: 'completed' },
+  ]);
+});
+
+test('the CLI drops deleted tasks from progress and hides an empty task list', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hud-task-delete-cli-'));
+  try {
+    const configDir = path.join(dir, 'plugins', 'context-lens');
+    await mkdir(configDir, { recursive: true });
+    await writeFile(path.join(configDir, 'config.json'), JSON.stringify({
+      gitStatus: { enabled: false }, display: { showTodos: true, showTerminal: true },
+    }));
+    const file = path.join(dir, 'transcript.jsonl');
+    const jsonl = (entries) => entries.map((entry) => JSON.stringify(entry) + '\n').join('');
+    await writeFile(file, jsonl([
+      toolUse('c1', 'TaskCreate', { subject: 'Discarded draft' }),
+      toolUse('c2', 'TaskCreate', { subject: 'Ship fix' }),
+      toolUse('c3', 'TaskCreate', { subject: 'Verify tests' }),
+      toolUse('u0', 'TaskUpdate', { taskId: '2', status: 'in_progress' }),
+      toolUse('u1', 'TaskUpdate', { taskId: '3', status: 'completed' }),
+      toolUse('u2', 'TaskUpdate', { taskId: '1', status: 'deleted' }),
+    ]));
+    const render = () => {
+      const result = spawnSync(process.execPath, [fixture('../dist/index.js')], {
+        cwd: dir,
+        env: { ...process.env, CLAUDE_CONFIG_DIR: dir },
+        input: JSON.stringify({ transcript_path: file, cwd: dir }),
+        encoding: 'utf8',
+      });
+      assert.equal(result.error, undefined);
+      assert.equal(result.status, 0, result.stderr);
+      return stripVTControlCharacters(result.stdout);
+    };
+    assert.match(render(), /Ship fix \(1\/2\)/, 'fresh CLI process');
+    assert.match(render(), /Ship fix \(1\/2\)/, 'CLI process resuming the saved cursor');
+    await appendFile(file, jsonl([
+      toolUse('u3', 'TaskUpdate', { taskId: '2', status: 'deleted' }),
+      toolUse('u4', 'TaskUpdate', { taskId: '3', status: 'deleted' }),
+    ]));
+    assert.doesNotMatch(render(), /Ship fix|Discarded draft|Verify tests|todos complete/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('MCP errors follow each server\'s latest result and are sanitized and bounded', async () => {
@@ -251,4 +516,141 @@ test('model-written tool inputs are sanitized before display', async () => {
   ]);
   assert.equal(r.tools[0].target, '/repo/fix it.ts');
   assert.deepEqual(r.todos, [{ content: 'fix it', status: 'in_progress' }, { content: 'fix it', status: 'pending' }]);
+});
+
+test('subagent effort comes from the first assistant record of the subagent transcript', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hud-transcript-'));
+  try {
+    const file = path.join(dir, 'session.jsonl');
+    const launch = (id, agentId) => [toolUse(id, 'Agent', { subagent_type: id }), toolResult(id, { toolUseResult: { agentId } })];
+    await writeFile(file, [...launch('known', 'a1'), ...launch('unreplied', 'a2'), ...launch('missing', 'a3'), ...launch('long', 'a4'), ...launch('escape', '../a1'), toolUse('noid', 'Agent', {})]
+      .map((e) => JSON.stringify(e)).join('\n'));
+    const subagents = path.join(dir, 'session', 'subagents');
+    await mkdir(subagents, { recursive: true });
+    const lines = (...entries) => entries.map((e) => (typeof e === 'string' ? e : JSON.stringify(e))).join('\n');
+    await writeFile(path.join(subagents, 'agent-a1.jsonl'), lines({ type: 'user', effort: 'low' }, '{oops', { type: 'assistant', effort: 'medium' }, { type: 'assistant', effort: 'max' }));
+    await writeFile(path.join(subagents, 'agent-a2.jsonl'), lines({ type: 'user' }));
+    await writeFile(path.join(subagents, 'agent-a4.jsonl'), lines({ type: 'user', prompt: 'x'.repeat(3 << 20) }, { type: 'assistant', effort: 'high' }));
+    await writeFile(path.join(dir, 'agent-a1.jsonl'), lines({ type: 'assistant', effort: 'max' }));
+
+    const r = await parseTranscript(file, dir);
+    await addSubagentEfforts(file, r.agents);
+    assert.deepEqual(r.agents.map((a) => [a.type, a.agentId, a.effort]), [
+      ['known', 'a1', 'medium'],
+      ['unreplied', 'a2', undefined],
+      ['missing', 'a3', undefined],
+      ['long', 'a4', 'high'],
+      ['escape', '../a1', undefined],
+      ['agent', undefined, undefined],
+    ]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('each run reads only what was appended since the last, and gets the same result as a full read', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hud-transcript-'));
+  try {
+    const source = await readFile(fixture('./golden/transcript.jsonl'), 'utf8');
+    const expected = await parseTranscript(fixture('./golden/transcript.jsonl'), dir);
+    const file = path.join(dir, 'transcript.jsonl');
+    await writeFile(file, '');
+    // Uneven steps, so some runs end mid-line.
+    for (let at = 0; at < source.length; at += 997) {
+      await appendFile(file, source.slice(at, at + 997));
+      await parseTranscript(file, dir);
+    }
+    // Saved state drops undefined-valued keys, which nothing distinguishes from absent ones.
+    const plain = (value) => JSON.parse(JSON.stringify(value));
+    assert.deepEqual(plain(await parseTranscript(file, dir)), plain(expected));
+
+    // Same size and file, but earlier bytes changed: the saved state wins, so nothing was reread.
+    const sessionStart = /"timestamp":"[^"]+"/;
+    await writeFile(file, source.replace(sessionStart, `"timestamp":"${expected.sessionStart.toISOString().replace(/^\d{4}/, '1999')}"`), { flag: 'r+' });
+    assert.deepEqual((await parseTranscript(file, dir)).sessionStart, expected.sessionStart);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a replaced or shorter transcript is read from the start', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hud-transcript-'));
+  try {
+    const file = path.join(dir, 'transcript.jsonl');
+    const reads = (prefix, n) => Array.from({ length: n }, (_, i) => JSON.stringify(toolUse(`${prefix}${i}`, 'Read', {})) + '\n').join('');
+    const ids = async () => (await parseTranscript(file, dir)).tools.map((t) => t.id);
+    await writeFile(file, reads('a', 3));
+    assert.deepEqual(await ids(), ['a0', 'a1', 'a2']);
+
+    await writeFile(file, reads('b', 2));
+    assert.deepEqual(await ids(), ['b0', 'b1'], 'shorter');
+
+    // Kept open so the replacement can't reuse its inode.
+    const held = await open(file, 'r');
+    try {
+      await rm(file);
+      await writeFile(file, reads('c', 4));
+      assert.deepEqual(await ids(), ['c0', 'c1', 'c2', 'c3'], 'replaced');
+    } finally {
+      await held.close();
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('saved parser state is kept for the 32 most recent transcripts', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hud-transcript-'));
+  try {
+    for (let i = 0; i < 34; i++) {
+      const file = path.join(dir, `${i}.jsonl`);
+      await writeFile(file, JSON.stringify(toolUse('t', 'Read', {})) + '\n');
+      await parseTranscript(file, dir);
+    }
+    assert.equal((await readdir(path.join(dir, '.claude', 'plugins', 'context-lens', 'transcript-cursors'))).length, 32);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a background agent completes however many other tasks and agents send notices', async () => {
+  const notice = (id, timestamp) => ({ type: 'queue-operation', operation: 'enqueue', timestamp, content: `<task-notification><task-id>x</task-id><tool-use-id>${id}</tool-use-id></task-notification>` });
+  const launch = (id) => [toolUse(id, 'Agent', { run_in_background: true }), toolResult(id, { toolUseResult: { status: 'async_launched' } })];
+  const others = Array.from({ length: 70 }, (_, i) => i);
+  const r = await parse([
+    ...launch('bg'),
+    notice('bg', '2026-10-01T00:00:01.000Z'),
+    ...others.map((i) => notice(`bash${i}`, '2026-10-01T00:00:02.000Z')),
+  ]);
+  assert.equal(r.agents.find((a) => a.id === 'bg')?.status, 'completed');
+
+  // Past the tracked limit, the oldest agents go with their completions; the newest still complete.
+  const many = await parse([
+    ...others.flatMap((i) => launch(`a${i}`)),
+    ...others.map((i) => notice(`a${i}`, '2026-10-01T00:00:03.000Z')),
+  ]);
+  assert.equal(many.agents.length, 10);
+  assert.ok(many.agents.every((a) => a.status === 'completed'));
+});
+
+test('saved state that no longer parses is dropped and the transcript reread', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hud-transcript-'));
+  try {
+    const file = path.join(dir, 'transcript.jsonl');
+    await writeFile(file, JSON.stringify(toolUse('t1', 'Read', { file_path: '/a' })) + '\n');
+    const { version } = JSON.parse(await readFile(fixture('../package.json'), 'utf8'));
+    const cursors = path.join(dir, '.claude', 'plugins', 'context-lens', 'transcript-cursors');
+    await parseTranscript(file, dir);
+    const cursorFile = path.join(cursors, `${createHash('sha256').update(path.resolve(file)).digest('hex')}.json`);
+    const cursor = JSON.parse(await readFile(cursorFile, 'utf8'));
+    assert.equal(cursor.version, version);
+    await appendFile(file, JSON.stringify(toolUse('t2', 'Read', { file_path: '/b' })) + '\n');
+    for (const bad of [{ ...cursor, state: { ...cursor.state, tools: 5 } }, null]) {
+      await writeFile(cursorFile, JSON.stringify(bad));
+      assert.deepEqual((await parseTranscript(file, dir)).tools.map((t) => t.id), ['t1', 't2']);
+      assert.equal(JSON.parse(await readFile(cursorFile, 'utf8')).state.tools.length, 2, 'the bad cursor is replaced');
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

@@ -38,6 +38,20 @@ jobs:
           trap 'kill "$watchdog_pid" 2>/dev/null || true' EXIT
           wait "$test_pid"
       - run: codesign --verify --deep --strict 'desktop/build/Context Lens.app'
+      - name: 打包 macOS 应用并生成校验值
+        run: |
+          version=$(node -p "require('./package.json').version")
+          arch=$(node -p "process.arch")
+          archive="Context-Lens-${version}-mac-${arch}.zip"
+          ditto -c -k --sequesterRsrc --keepParent 'desktop/build/Context Lens.app' "desktop/build/$archive"
+          (cd desktop/build && shasum -a 256 "$archive" > SHA256SUMS-mac.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Context-Lens-macOS
+          compression-level: 0
+          path: |
+            desktop/build/Context-Lens-*-mac-*.zip
+            desktop/build/SHA256SUMS-mac.txt
   test:
     runs-on: ubuntu-latest
     strategy:

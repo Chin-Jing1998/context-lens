@@ -55,7 +55,7 @@ test("CLI renders expected output for a basic transcript", async (t) => {
       cwd: path.resolve(process.cwd()),
       input: stdin,
       encoding: "utf8",
-      env: { ...process.env, HOME: homeDir, LANG: "C" },
+      env: { ...process.env, HOME: homeDir, CLAUDE_CONFIG_DIR: "", LANG: "C" },
     });
 
     if (skipIfSpawnBlocked(result, t)) return;
@@ -110,7 +110,7 @@ test("CLI renders added_dirs basenames on the project line", async (t) => {
       cwd: path.resolve(process.cwd()),
       input: stdin,
       encoding: "utf8",
-      env: { ...process.env, HOME: homeDir, LANG: "C" },
+      env: { ...process.env, HOME: homeDir, CLAUDE_CONFIG_DIR: "", LANG: "C" },
     });
 
     if (skipIfSpawnBlocked(result, t)) return;
@@ -155,7 +155,7 @@ test("CLI omits added dirs section when array is empty", async (t) => {
       cwd: path.resolve(process.cwd()),
       input: stdin,
       encoding: "utf8",
-      env: { ...process.env, HOME: homeDir, LANG: "C" },
+      env: { ...process.env, HOME: homeDir, CLAUDE_CONFIG_DIR: "", LANG: "C" },
     });
 
     if (skipIfSpawnBlocked(result, t)) return;
@@ -194,7 +194,7 @@ test("CLI tolerates added_dirs: null without crashing", async (t) => {
       cwd: path.resolve(process.cwd()),
       input: stdin,
       encoding: "utf8",
-      env: { ...process.env, HOME: homeDir, LANG: "C" },
+      env: { ...process.env, HOME: homeDir, CLAUDE_CONFIG_DIR: "", LANG: "C" },
     });
 
     if (skipIfSpawnBlocked(result, t)) return;
@@ -243,7 +243,7 @@ test("CLI ignores non-string and post-sanitize-empty added_dirs entries", async 
       cwd: path.resolve(process.cwd()),
       input: stdin,
       encoding: "utf8",
-      env: { ...process.env, HOME: homeDir, LANG: "C" },
+      env: { ...process.env, HOME: homeDir, CLAUDE_CONFIG_DIR: "", LANG: "C" },
     });
 
     if (skipIfSpawnBlocked(result, t)) return;
@@ -293,7 +293,7 @@ test("CLI caps inline added_dirs at 5 with overflow indicator", async (t) => {
       cwd: path.resolve(process.cwd()),
       input: stdin,
       encoding: "utf8",
-      env: { ...process.env, HOME: homeDir, LANG: "C" },
+      env: { ...process.env, HOME: homeDir, CLAUDE_CONFIG_DIR: "", LANG: "C" },
     });
 
     if (skipIfSpawnBlocked(result, t)) return;
@@ -342,7 +342,7 @@ test("CLI truncates long inline added_dirs basenames", async (t) => {
       cwd: path.resolve(process.cwd()),
       input: stdin,
       encoding: "utf8",
-      env: { ...process.env, HOME: homeDir, LANG: "C" },
+      env: { ...process.env, HOME: homeDir, CLAUDE_CONFIG_DIR: "", LANG: "C" },
     });
 
     if (skipIfSpawnBlocked(result, t)) return;
@@ -398,7 +398,7 @@ test("CLI renders line layout 'Added dirs:' on a separate line", async (t) => {
       cwd: path.resolve(process.cwd()),
       input: stdin,
       encoding: "utf8",
-      env: { ...process.env, HOME: homeDir, LANG: "C" },
+      env: { ...process.env, HOME: homeDir, CLAUDE_CONFIG_DIR: "", LANG: "C" },
     });
 
     if (skipIfSpawnBlocked(result, t)) return;
@@ -448,7 +448,7 @@ test("CLI renders inline added_dirs even when showProject is false", async (t) =
       cwd: path.resolve(process.cwd()),
       input: stdin,
       encoding: "utf8",
-      env: { ...process.env, HOME: homeDir, LANG: "C" },
+      env: { ...process.env, HOME: homeDir, CLAUDE_CONFIG_DIR: "", LANG: "C" },
     });
 
     if (skipIfSpawnBlocked(result, t)) return;
@@ -498,7 +498,7 @@ test("CLI applies caps in line layout (overflow + truncation)", async (t) => {
       cwd: path.resolve(process.cwd()),
       input: stdin,
       encoding: "utf8",
-      env: { ...process.env, HOME: homeDir, LANG: "C" },
+      env: { ...process.env, HOME: homeDir, CLAUDE_CONFIG_DIR: "", LANG: "C" },
     });
     if (skipIfSpawnBlocked(result, t)) return;
     assert.equal(result.status, 0, result.stderr || "non-zero exit");
@@ -524,7 +524,7 @@ test("CLI applies caps in line layout (overflow + truncation)", async (t) => {
       cwd: path.resolve(process.cwd()),
       input: stdin,
       encoding: "utf8",
-      env: { ...process.env, HOME: homeDir, LANG: "C" },
+      env: { ...process.env, HOME: homeDir, CLAUDE_CONFIG_DIR: "", LANG: "C" },
     });
     if (skipIfSpawnBlocked(result, t)) return;
     assert.equal(result.status, 0, result.stderr || "non-zero exit");
@@ -546,7 +546,7 @@ test("CLI prints initializing message on empty stdin", async (t) => {
       cwd: path.resolve(process.cwd()),
       input: "",
       encoding: "utf8",
-      env: { ...process.env, HOME: homeDir, LANG: "C" },
+      env: { ...process.env, HOME: homeDir, CLAUDE_CONFIG_DIR: "", LANG: "C" },
     });
 
     if (skipIfSpawnBlocked(result, t)) return;

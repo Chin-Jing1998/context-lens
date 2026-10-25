@@ -66,7 +66,9 @@ Desktop / SDK 会话没有实时采样，并不等于状态栏命令未配置。
 
 ## 从源码构建
 
-桌面构建源码位于 [codex/hud-multi-client](https://github.com/Chin-Jing1998/context-lens/tree/codex/hud-multi-client) 分支。构建工具使用 Node.js 24。运行 `npm ci` 和 `npm run build` 后，macOS 执行 `node scripts/build-desktop.mjs`，Windows 执行 `npm run build:windows`。图标资源由 `npm run build:icons` 从同一个 SVG 生成。
+桌面构建源码位于 [main](https://github.com/Chin-Jing1998/context-lens/tree/main) 分支。构建工具使用 Node.js 24。运行 `npm ci` 和 `npm run build` 后，macOS 执行 `node scripts/build-desktop.mjs`，Windows 执行 `npm run build:windows`。图标资源由 `npm run build:icons` 从同一个 SVG 生成。
+
+GitHub Actions 的 CI 工作流提供 macOS ZIP，Windows desktop 工作流提供 Windows 安装版与便携版。构建产物均附带 SHA-256 校验文件，版本号来自 `package.json`。源码构建产物与 Releases 中的正式发布包分别提供。
 
 Windows 桌面基于 [Electron 的 Windows 10 及以上平台支持](https://github.com/electron/electron#platform-support)。构建流程生成 NSIS 安装版和便携版，并启动打包后的程序核验本地服务与界面入口。
 

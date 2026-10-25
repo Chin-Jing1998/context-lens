@@ -84,7 +84,7 @@ node scripts/context-lens.mjs codex
 | `pathLevels` | 1-3 \| `full` | 1 | 项目路径显示的目录层级数，或设为 `full` 显示完整绝对路径 |
 | `maxWidth` | number \| `null` | `null` | 可选的回退宽度，仅在终端宽度检测完全失败时使用 |
 | `forceMaxWidth` | boolean | false | 当设置了 `maxWidth` 时始终使用它，即使终端宽度检测返回更小的值 |
-| `elementOrder` | string[] | `["project","addedDirs","context","usage","promptCache","cacheHitRate","memory","environment","tools","skills","mcp","agents","todos","sessionTime"]` | 展开模式下元素的顺序。省略的条目在展开模式下隐藏。现有配置会保留其显式顺序直到更新 |
+| `elementOrder` | string[] | `["project","addedDirs","context","usage","promptCache","cacheHitRate","memory","environment","tools","skills","mcp","agents","todos","sessionTime"]` | 展开模式下元素的顺序。省略的条目在展开模式下隐藏。现有配置会保留其显式顺序直到更新。`sessionTokens` 不在默认顺序中：加入后即可像其他元素一样放置 `display.showSessionTokens` 的摘要，例如与 `project` 放进同一个 `display.mergeGroups` 分组。未加入时，它仍单独显示在最后一行。`cost` 同理：未加入时，费用仍显示在第一行（可用 `projectLineOrder` 调整位置）；加入后，它成为独立元素，例如在 `elementOrder` 中依次放入 `"context","usage","cost"`，并在 `display.mergeGroups` 中使用 `["context","usage","cost"]`，即可把它放在上下文和用量旁边。 |
 | `projectLineOrder` | string[] | `[]` | 可选的首行片段前置顺序，适用于两种布局。可见性仍由 `display.show*` 控制；省略的片段保持渲染器原有顺序。例如 `["project","model"]` 会将项目和 Git 放到模型徽标之前 |
 | `display.mergeGroups` | string[][] | `[["context","usage"]]` | 展开模式下相邻时应共享一行的元素分组。设为 `[]` 可禁用合并行 |
 | `display.rightAlign` | string[] | `[]` | 以合并行中第一个列出的元素作为右对齐后缀的起点，保持 `elementOrder` 并用空格填充间隔。锚点必须位于实际合并渲染的 `display.mergeGroups` 分组中。终端宽度未知、锚点位于首位或空间不足时回退到普通的 ` │ ` 连接。分组为 `["project","context","usage"]` 时设为 `["context"]`，项目/git 保持在左侧，context 与 usage 靠右对齐。 |
@@ -166,6 +166,7 @@ node scripts/context-lens.mjs codex
 | `display.showGitFilesInCompact` | boolean | false | 在 compact 布局中显示最近变更的 git 文件行（expanded 布局始终显示） |
 | `display.showEffortLevel` | boolean | false | 在模型徽章中显示当前推理力度。Ultracode 渲染为 `ultracode(xhigh)`，从会话 transcript 检测，因此能跟踪运行时的 `/effort` 变更 |
 | `display.effortFormat` | `full` \| `symbol` \| `text` | `full` | `showEffortLevel` 开启时的渲染方式：符号加级别文本（`◑ high`）、仅符号（`◑`）、或仅级别文本（`high`）。`symbol` 下 Ultracode 仍保持完整的 `◕ ultracode(xhigh)`，以免丢失标记；没有已知符号的级别回退到级别文本 |
+| `display.showAgentEffort` | boolean | false | 配合 `display.showAgents`，在每个子 Agent 的模型旁显示其推理力度，例如 `◐ code-reviewer [haiku-4.5 ◔ medium]`，格式遵循 `display.effortFormat`。从子 Agent 自己的 transcript 读取，因此要等 Claude Code 记录下该 Agent 的 id（后台 Agent 在启动时，其他 Agent 在结束时）且它已有第一条回复后才会出现 |
 | `display.showClaudeCodeVersion` | boolean | false | 显示当前运行的 Claude Code 版本，如 `CC v2.1.81` |
 | `display.showMemoryUsage` | boolean | false | 在展开布局中显示近似系统 RAM 使用行 |
 | `display.showPromptCache` | boolean | false | 显示主会话 prompt cache 的过期时刻 |

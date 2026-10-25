@@ -17,6 +17,10 @@ import { t } from '../i18n/index.js';
 
 const ACTIVITY = new Set<HudElement>(['tools', 'skills', 'mcp', 'agents', 'todos']);
 
+function elementOrder(f: Frame): HudElement[] {
+  return f.config?.elementOrder ?? DEFAULT_ELEMENT_ORDER;
+}
+
 function projectLine(f: Frame): string | null {
   const display = f.config?.display;
   const parts: Part[] = [];
@@ -31,7 +35,8 @@ function projectLine(f: Frame): string | null {
   add(versionPart(f), 'version');
   add(extraPart(f), 'extra');
   add(durationPart(f), 'duration');
-  add(costPart(f), 'cost');
+  // Until cost is placed in elementOrder, it stays on the first line.
+  if (!elementOrder(f).includes('cost')) add(costPart(f), 'cost');
   add(speedPart(f), 'speed');
   add(authPart(f), 'auth');
   add(customLinePart(f, 'last'));
@@ -50,6 +55,8 @@ function elementLine(f: Frame, element: HudElement, align: LabelAlign = {}): str
     case 'memory': return memoryLine(f, align);
     case 'environment': return environmentLine(f);
     case 'sessionTime': return sessionTimeLine(f);
+    case 'sessionTokens': return f.config?.display?.showSessionTokens && !f.config.display.defaultHideSessionTokens ? sessionTokensSummary(f, t('label.tokens')) : null;
+    case 'cost': return costPart(f);
     default: return activityLine(f, element);
   }
 }
@@ -71,7 +78,7 @@ interface Row {
 
 /** The expanded layout: one row per element in elementOrder, merging adjacent mergeGroups members. */
 export function expandedLines(f: Frame): string[] {
-  const order = f.config?.elementOrder ?? DEFAULT_ELEMENT_ORDER;
+  const order = elementOrder(f);
   const groups = new Map<HudElement, Set<HudElement>>();
   for (const group of f.config?.display?.mergeGroups ?? DEFAULT_MERGE_GROUPS) {
     const members = new Set(group);
@@ -134,9 +141,9 @@ export function expandedLines(f: Frame): string[] {
   const display = f.config?.display;
   const gitFiles = gitFilesLine(f);
   if (gitFiles) lines.push(gitFiles);
-  const hideTokens = display?.defaultHideSessionTokens ?? false;
-  if (display?.showSessionTokens && !hideTokens) {
-    const tokens = sessionTokensSummary(f, t('label.tokens'));
+  // 未指定排列位置时，词元汇总保持在末行。
+  if (!order.includes('sessionTokens')) {
+    const tokens = elementLine(f, 'sessionTokens');
     if (tokens) lines.push(tokens);
   }
   const showOnlyWhenPresent = display?.showCompactionsOnlyWhenPresent ?? true;

@@ -1,23 +1,20 @@
 import { DEFAULT_CONFIG } from '../config.js';
 import { formatAuthSegment } from '../auth.js';
+import { formatEffort } from '../effort.js';
 import { formatUsd } from '../cost.js';
 import { formatModelName, getProviderLabel, resolveModelName } from '../stdin.js';
 import { t } from '../i18n/index.js';
 import { formatTokens } from '../utils/format.js';
 import { getFileHref, safeHyperlink } from '../utils/hyperlinks.js';
 import { sanitizeDisplayText } from '../utils/sanitize.js';
+import { truncateString } from '../utils/truncate.js';
 import { custom, dim, label, model as modelColor, project as projectColor } from './colors.js';
 import { claudeCodeVersion, effort, sessionCostUsd, sessionDuration, sessionName } from './derive.js';
 import { vcsPart } from './vcs.js';
 function effortSuffix(f) {
     const display = f.config?.display;
     const info = display?.showEffortLevel ? effort(f) : null;
-    if (!info)
-        return '';
-    // The symbol alone can't carry the ultracode marker, so symbol mode keeps the full form.
-    if (display?.effortFormat === 'symbol' && info.symbol && !info.level.startsWith('ultracode('))
-        return ` ${info.symbol}`;
-    return display?.effortFormat === 'text' || !info.symbol ? ` ${info.level}` : ` ${info.symbol} ${info.level}`;
+    return info ? ` ${formatEffort(info, display?.effortFormat)}` : '';
 }
 /** `[Opus 5.5 ◑ high | Bedrock]`, or with the provider first when showProvider is on. */
 export function modelBadge(f) {
@@ -58,7 +55,7 @@ function addedDirNames(f) {
         .map((dir) => {
         const segments = dir.split(/[/\\]/).filter(Boolean);
         const name = sanitizeDisplayText(segments[segments.length - 1] ?? dir);
-        return { dir, name: name.length > ADDED_DIR_NAME_MAX ? `${name.slice(0, ADDED_DIR_NAME_MAX - 1)}…` : name };
+        return { dir, name: truncateString(name, ADDED_DIR_NAME_MAX, '…') };
     })
         .filter(({ name }) => name.length > 0);
 }

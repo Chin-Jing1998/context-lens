@@ -46,6 +46,8 @@ const ELEMENTS = [
   'agents',
   'todos',
   'sessionTime',
+  'sessionTokens',
+  'cost',
 ] as const;
 
 // Orderable segments of the first line, shared by the expanded and compact layouts.
@@ -99,7 +101,9 @@ export interface HudColorOverrides {
   barEmpty: string;
 }
 
-export const DEFAULT_ELEMENT_ORDER: HudElement[] = [...ELEMENTS];
+// sessionTokens and cost are left out so they keep their built-in place (the tokens summary's
+// last line, cost on the first line) until they're placed.
+export const DEFAULT_ELEMENT_ORDER: HudElement[] = ELEMENTS.filter(element => element !== 'sessionTokens' && element !== 'cost');
 export const DEFAULT_MERGE_GROUPS: HudElement[][] = [['context', 'usage']];
 // Empty keeps each renderer's native order until the user moves a segment.
 export const DEFAULT_PROJECT_LINE_ORDER: FirstLineSegment[] = [];
@@ -168,6 +172,7 @@ export interface HudConfig {
     showClaudeCodeVersion: boolean;
     showEffortLevel: boolean;
     effortFormat: EffortFormatMode;
+    showAgentEffort: boolean;
     showMemoryUsage: boolean;
     showPromptCache: boolean;
     showCacheHitRate: boolean;
@@ -273,6 +278,7 @@ export const DEFAULT_CONFIG: HudConfig = {
     showClaudeCodeVersion: false,
     showEffortLevel: false,
     effortFormat: 'full',
+    showAgentEffort: false,
     showMemoryUsage: false,
     showPromptCache: false,
     showCacheHitRate: false,

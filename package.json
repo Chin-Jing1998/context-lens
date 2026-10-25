@@ -1,6 +1,6 @@
 {
   "name": "context-lens",
-  "version": "0.11.0",
+  "version": "0.13.0",
   "description": "Context and usage HUD maintained by Chin-Jing1998, derived from Claude HUD",
   "type": "module",
   "main": "dist/index.js",
@@ -51,7 +51,7 @@
   },
   "devDependencies": {
     "@resvg/resvg-js": "2.6.2",
-    "@types/node": "^26.6.2",
+    "@types/node": "^26.6.5",
     "c8": "^11.0.0",
     "electron": "44.6.0",
     "electron-builder": "26.15.3",

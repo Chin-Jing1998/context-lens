@@ -15,7 +15,7 @@ declare const COLOR_NAMES: readonly ['dim', 'red', 'green', 'yellow', 'magenta',
 declare const CONTEXT_DETAIL_MODES: readonly ['always', 'warning', 'critical', 'never'];
 declare const USAGE_DETAIL_MODES: readonly ['always', 'threshold', 'never'];
 declare const COMPACT_CONTEXT_FORMATS: readonly ['full', 'minimal'];
-declare const ELEMENTS: readonly ['project', 'addedDirs', 'context', 'usage', 'promptCache', 'cacheHitRate', 'memory', 'environment', 'tools', 'skills', 'mcp', 'agents', 'todos', 'sessionTime'];
+declare const ELEMENTS: readonly ['project', 'addedDirs', 'context', 'usage', 'promptCache', 'cacheHitRate', 'memory', 'environment', 'tools', 'skills', 'mcp', 'agents', 'todos', 'sessionTime', 'sessionTokens', 'cost'];
 declare const FIRST_LINE_SEGMENTS: readonly ['model', 'project', 'advisor', 'sessionName', 'version', 'extra', 'duration', 'cost', 'speed', 'auth'];
 export type LineLayoutType = typeof LINE_LAYOUTS[number];
 export type PathLevels = typeof PATH_LEVELS[number];
@@ -116,6 +116,7 @@ export interface HudConfig {
         showClaudeCodeVersion: boolean;
         showEffortLevel: boolean;
         effortFormat: EffortFormatMode;
+        showAgentEffort: boolean;
         showMemoryUsage: boolean;
         showPromptCache: boolean;
         showCacheHitRate: boolean;
