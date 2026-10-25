@@ -26,7 +26,7 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           awk -v version="$version" '
             $0 ~ "^## \\[" version "\\]" { in_section = 1; next }
-            in_section && $0 ~ "^## \\[" { exit }
+            in_section && $0 ~ "^## " { exit }
             in_section { print }
           ' CHANGELOG.md > RELEASE_NOTES.md
 
@@ -34,7 +34,8 @@ jobs:
             echo "No changelog section found for version $version"
             exit 1
           fi
-      - name: Create release
+      - name: 创建发布草稿
         uses: softprops/action-gh-release@v2
         with:
           body_path: RELEASE_NOTES.md
+          draft: true

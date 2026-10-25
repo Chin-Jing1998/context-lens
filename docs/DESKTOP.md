@@ -8,15 +8,15 @@ Context Lens 以悬浮球和七个环形岛展示当前会话的上下文、用�
 
 | 平台 | 文件 | 系统要求 |
 | --- | --- | --- |
-| macOS | Context-Lens-0.11.0-mac-arm64.zip | macOS 13.5 及以上，Apple Silicon |
-| Windows 安装版 | Context-Lens-0.11.0-win-x64-setup.exe | Windows 10 及以上，x64 |
-| Windows 便携版 | Context-Lens-0.11.0-win-x64-portable.exe | Windows 10 及以上，x64 |
+| macOS | [Context-Lens-0.13.0-mac-arm64.zip](https://github.com/Chin-Jing1998/context-lens/releases/download/v0.13.0/Context-Lens-0.13.0-mac-arm64.zip) | macOS 13.5 及以上，Apple Silicon |
+| Windows 安装版 | [Context-Lens-0.13.0-win-x64-setup.exe](https://github.com/Chin-Jing1998/context-lens/releases/download/v0.13.0/Context-Lens-0.13.0-win-x64-setup.exe) | Windows 10 及以上，x64 |
+| Windows 便携版 | [Context-Lens-0.13.0-win-x64-portable.exe](https://github.com/Chin-Jing1998/context-lens/releases/download/v0.13.0/Context-Lens-0.13.0-win-x64-portable.exe) | Windows 10 及以上，x64 |
 
 macOS 将应用放入 Applications 后启动；需要读取前台会话时，在系统设置的“隐私与安全”中为实际安装的 Context Lens 授予辅助功能权限。源码安装运行 `npm ci`、`npm run build` 和 `node scripts/build-desktop.mjs --install`，该方式同时注册登录启动任务。
 
 ### macOS 首次打开
 
-v0.11.0 的 macOS 包使用临时签名，尚未通过 Apple 公证。浏览器下载后，macOS 会拦截首次启动并提示无法验证开发者；这与辅助功能授权是两项独立检查。
+v0.13.0 的 macOS 包使用临时签名，尚未通过 Apple 公证。浏览器下载后，macOS 会拦截首次启动并提示无法验证开发者；这与辅助功能授权是两项独立检查。
 
 1. 将 `Context Lens.app` 放入 Applications，尝试打开一次。
 2. 打开“系统设置 → 隐私与安全性”，在对应 Context Lens 的拦截记录处选择“仍要打开”，再确认“打开”。这是 [Apple 提供的单个应用启动例外流程](https://support.apple.com/zh-cn/102445)。

@@ -6,7 +6,7 @@ A local desktop monitor for Claude Code, Codex and other AI coding tools. A floa
 
 [中文文档](README.zh.md) · [Download](https://github.com/Chin-Jing1998/context-lens/releases/latest) · [Desktop guide](docs/DESKTOP.md) · [MIT license](LICENSE)
 
-The current stable release is **v0.11.0**. Desktop application source is on [main](https://github.com/Chin-Jing1998/context-lens/tree/main); the released source is at [v0.11.0](https://github.com/Chin-Jing1998/context-lens/tree/v0.11.0).
+The current stable release is **v0.13.0**. Desktop application source is on [main](https://github.com/Chin-Jing1998/context-lens/tree/main); the released source is at [v0.13.0](https://github.com/Chin-Jing1998/context-lens/tree/v0.13.0).
 
 ## Download and install
 
@@ -14,15 +14,15 @@ Desktop packages include their runtime. A separate Node.js installation is unnec
 
 | Platform | Download | Requirements |
 | --- | --- | --- |
-| macOS | [Apple Silicon ZIP](https://github.com/Chin-Jing1998/context-lens/releases/download/v0.11.0/Context-Lens-0.11.0-mac-arm64.zip) | macOS 13.5 or later, Apple Silicon |
-| Windows setup | [Setup exe](https://github.com/Chin-Jing1998/context-lens/releases/download/v0.11.0/Context-Lens-0.11.0-win-x64-setup.exe) | Windows 10 or later, x64 |
-| Windows portable | [Portable exe](https://github.com/Chin-Jing1998/context-lens/releases/download/v0.11.0/Context-Lens-0.11.0-win-x64-portable.exe) | Windows 10 or later, x64 |
+| macOS | [Apple Silicon ZIP](https://github.com/Chin-Jing1998/context-lens/releases/download/v0.13.0/Context-Lens-0.13.0-mac-arm64.zip) | macOS 13.5 or later, Apple Silicon |
+| Windows setup | [Setup exe](https://github.com/Chin-Jing1998/context-lens/releases/download/v0.13.0/Context-Lens-0.13.0-win-x64-setup.exe) | Windows 10 or later, x64 |
+| Windows portable | [Portable exe](https://github.com/Chin-Jing1998/context-lens/releases/download/v0.13.0/Context-Lens-0.13.0-win-x64-portable.exe) | Windows 10 or later, x64 |
 
-[SHA-256 checksums](https://github.com/Chin-Jing1998/context-lens/releases/download/v0.11.0/SHA256SUMS.txt) are included with the release.
+[SHA-256 checksums](https://github.com/Chin-Jing1998/context-lens/releases/download/v0.13.0/SHA256SUMS.txt) are included with the release.
 
 ### First launch on macOS
 
-Extract the ZIP and move `Context Lens.app` into Applications. **The v0.11.0 macOS package is ad-hoc signed and has not been notarized by Apple.** macOS may block its first launch. After checking the downloaded checksum, use System Settings → Privacy & Security → Open Anyway for Context Lens, then confirm Open. See [Apple's first-launch instructions](https://support.apple.com/102445).
+Extract the ZIP and move `Context Lens.app` into Applications. **The v0.13.0 macOS package is ad-hoc signed and has not been notarized by Apple.** macOS may block its first launch. After checking the downloaded checksum, use System Settings → Privacy & Security → Open Anyway for Context Lens, then confirm Open. See [Apple's first-launch instructions](https://support.apple.com/102445).
 
 The launch exception and Accessibility permission are separate. To identify foreground sessions, grant Accessibility or device-control permission to the actual installed application.
 
@@ -57,7 +57,7 @@ Only fields supplied by local logs and interfaces are displayed. Unused models a
 
 The app reads local Claude Code and Codex session records. Other integrated clients expose the fields available in their local data. Desktop, terminal and linked-agent sessions are associated through explicit process and session evidence; ambiguous matches remain in a waiting state.
 
-The Claude Code collector can supply live status. See the [setup command](https://github.com/Chin-Jing1998/context-lens/blob/v0.11.0/commands/setup.md). Collection is silent by default; `display.showTerminal: true` enables the optional terminal HUD.
+The Claude Code collector can supply live status. See the [setup command](https://github.com/Chin-Jing1998/context-lens/blob/v0.13.0/commands/setup.md). Collection is silent by default; `display.showTerminal: true` enables the optional terminal HUD.
 
 The source checkout includes a CLI for listing sessions, watching them or launching Codex:
 
