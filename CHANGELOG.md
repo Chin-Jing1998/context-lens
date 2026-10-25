@@ -17,6 +17,7 @@ All notable changes to Context Lens are documented in this file. Earlier Claude 
 - macOS 悬浮球拖动时收起展开窗口，吸附完成后保存位置，旧动画不能覆盖后续拖动。
 - 接入上游 Git 配置命令防护、并发费用记账、任务删除状态、重放工具记录过滤与 Unicode 截断修复。
 - 自定义词元排列继续遵守 Context Lens 的显式隐藏设置。
+- Windows 内置 Electron 更新至 44.9.3，并更新受安全公告影响的 brace-expansion、fast-uri 和 undici 构建依赖。
 
 ## Claude HUD [0.13.0] - 2026-10-24
 
