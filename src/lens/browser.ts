@@ -348,8 +348,8 @@ function render(snapshot: HudSnapshot): void {
   text($('context-used'), count(c.usedTokens)); text($('context-limit'), count(claude ? c.modelTokens : c.denominator));
   $('context-budget-info').hidden = !claude;
   if (claude) {
-    const budget = c.budget.tokens === null ? '未知' : count(c.budget.tokens) + ' tokens' + (c.budget.accuracy === 'estimated' ? '（估算）' : '');
-    text($('context-budget-info'), (c.budget.disabled ? '自动压缩已关闭' : '压缩预算：' + budget) + ' · 分类占比按' + (c.view === 'budget' ? '压缩预算' : '上下文窗口') + '计算');
+    const budget = c.budget.tokens === null ? '—' : (c.budget.accuracy === 'estimated' ? '≈ ' : '') + count(c.budget.tokens) + ' tokens';
+    text($('context-budget-info'), c.budget.disabled ? '自动压缩：关闭' : '压缩预算：' + budget);
   }
   const visible = c.segments.filter(s => s.tokens !== null && Number.isSafeInteger(s.tokens) && s.tokens > 0);
   const allocated = visible.filter(s => s.tokens !== null);
@@ -357,7 +357,6 @@ function render(snapshot: HudSnapshot): void {
   $('category-table').hidden = !visible.length;
   $('context-details').hidden = !visible.length;
   const notices = [
-    claude && primaryPercent === null ? c.modelTokens === null ? '当前会话未上报窗口容量或占用率' : '当前会话尚无有效上下文读数' : '',
     primaryPercent !== null && primaryPercent > 100 ? '已超出当前口径的容量' : '',
     !allocated.length ? '暂无分类数据' : '',
   ].filter(Boolean);
