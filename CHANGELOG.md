@@ -1,13 +1,26 @@
 # Changelog
 
-## 上游同步
-
-- 合入上游 `v0.15.3` 的终端渲染隔离、HUD 诊断、启动目录、周费用周期和显示修复。
-- Context Lens 继续通过现有状态栏入口静默采集。终端 HUD 需要 Node.js 22.18 或更新版本。
-
 All notable changes to Context Lens are documented in this file. Earlier Claude HUD history is retained below.
 
 ## [Unreleased]
+
+## [0.14.0] - 2026-11-19
+
+### 新增
+
+- 接入 macOS Antigravity 桌面端与 agy CLI，支持前台会话跟随、上下文分类、MCP、命令行和技能活动。
+- 更新 OpenAI、Anthropic、Google、DeepSeek、MiMo 和 Z.AI 的模型定价，保留自定义单价的优先级。
+
+### 修复
+
+- 修复 Claude Code 桌面端和 Codex 使用第三方模型时的会话识别与用量显示。模型窗口容量缺失时，详情仍显示已获取的 token 数。
+- 输入总量包含未缓存输入、缓存读取与缓存写入，各分项独立显示，计价按相应单价计算。
+- 修复设置窗口切换时逐步缩小的问题，以及 macOS 详情页首次点击失效的问题。
+
+### 上游同步
+
+- 合入 Claude HUD v0.15.3 的终端隔离渲染、HUD 诊断、启动目录显示和周费用周期选项。
+- 状态栏默认静默采集，终端 HUD 使用 Node.js 22.18 或更新版本。桌面安装包自带运行环境。
 
 ## [0.13.0] - 2026-10-25
 
