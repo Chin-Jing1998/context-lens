@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { normalizeUsage, mergeRequests, sumRequests, addTotals, estimateCost, cacheState } from '../dist/lens/usage.js';
 
 const row = (id, raw, client = 'claude', model = 'm') => normalizeUsage(client, raw, id, model, '2026-10-05T00:00:00Z');
-test('streaming duplicates use response maxima; main and agents have a weighted hit rate', () => {
-  const a = row('a', { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 90 });
-  const b = row('a', { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 90 });
-  const child = row('b', { input_tokens: 900, output_tokens: 50, cache_read_input_tokens: 0 });
+test('流式响应的输出采用累计值，主会话与子会话按输入量加权计算命中率', () => {
+  const a = row('a', { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 90, cache_creation_input_tokens: 0 });
+  const b = row('a', { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 90, cache_creation_input_tokens: 0 });
+  const child = row('b', { input_tokens: 900, output_tokens: 50, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 });
   const main = sumRequests([a, b, a]);
   assert.equal(main.input, 100);
   assert.equal(main.output, 20);

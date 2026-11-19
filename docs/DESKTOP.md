@@ -46,11 +46,27 @@ Windows 安装版可以选择安装目录并创建桌面及开始菜单快捷方
 
 会话详情按当前内容调整窗口高度；长记录通过页码、筛选和排序查询。用量页保持固定高度，费用默认展示当前会话，累计查询与逐请求账单各自独立。列表滚动条在操作时显示，停止操作后隐藏。“桌面行为”的减少动效设置适用于环形岛与详情切换。
 
+设置窗口在打开时按屏幕可用区域确定尺寸。切换设置分类和主题时，内容可在窗口内滚动。
+
+### Antigravity
+
+macOS 支持独立 Antigravity 应用和 `agy` CLI。桌面悬浮球跟随前台的 Antigravity 对话。终端内可通过进程会话锁自动识别唯一的 `agy` 会话，也可用 `context-lens list --client agy` 查找会话，再用 `context-lens watch --session agy:<ID>` 查看。源码环境的 AGY 读取使用 Node.js 24 的 SQLite 模块。
+
+会话数据库提供当前上下文预算。`agy` 的原生状态行提供完整窗口时，Context Lens 可读取该窗口和占用率。可在该次 CLI 启动中接入采样：
+
+```sh
+agy --settings '{"statusLine":{"type":"command","command":"context-lens agy-statusline","stack_with_default":true}}'
+```
+
+每次请求的输入总量包含未缓存输入、缓存读取和缓存写入。界面单列各分项，累计时每次请求只计一次。输出总量包含推理输出。Antigravity 的常规模型请求与压缩请求均计入会话累计。缺失字段显示 `—`。
+
+上下文页使用当前生成快照的分类，可查看系统提示词、系统工具、MCP 工具、技能、规则及对话内容等已上报的占用。对话内容可展开看用户消息、助手回复、工具交互与压缩摘要。命令行、MCP 和技能页按当前会话的执行记录展示调用数量、结果与可用耗时，技能读取按会话实际访问的 `SKILL.md` 计量。
+
 ### 第三方模型与单价
 
-Claude Code 兼容会话按实际响应中的模型标识统计，支持 `gemini-4-argon` 的 Standard token 计价，费用按每次请求的日期选取单价。上下文窗口只采用当前会话实际上报的容量，不以模型公开上限替代客户端或网关的有效窗口；模型映射与费用计算不参与窗口推断。
+自动计价使用 OpenAI、Anthropic、Google、DeepSeek、Xiaomi MiMo 和 Z.ai 的官方 API 美元单价，并按每次请求的模型、时间、服务档位及适用的输入量区间选择。官方仅公布日历日期时，按 UTC 日界线切换单价。费用逐项计算未缓存输入、缓存读取、缓存写入和输出。OpenAI 请求的缓存写入时长未记录时，费用按最低适用写入价计算下限。上下文容量采用当前会话实际上报的窗口。
 
-自定义单价保存在 `~/.config/context-lens/config.json` 的 `prices` 中；设置 `CONTEXT_LENS_HOME` 时使用该目录下的 `config.json`。按响应模型完整标识填写 `input`、`output`、`cacheRead`、`cacheWrite`，单位为每百万 token 的配置币种金额。精确模型单价优先于 `*` 通配单价；空对象不覆盖官方单价，显式 `0` 表示免费。
+自定义单价保存在 `~/.config/context-lens/config.json` 的 `prices` 中。设置 `CONTEXT_LENS_HOME` 时使用该目录下的 `config.json`。按响应模型完整标识填写 `input`、`output`、`cacheRead`、`cacheWrite`，每项单位为配置币种金额／百万 token。`input` 对应未缓存输入。计价依次匹配精确模型单价、`*` 通配单价和官方单价。显式 `0` 表示免费。
 
 若悬浮球显示“等待对话”，应先检查当前对话是否已被定位，而不是先修改模型名或单价。macOS 的 Claude Desktop 会话识别支持 `/code/local_…` 与 `/epitaxy/local_…` 路由，并排除本地桌面壳层；多个实际会话页面仍视为歧义，不会选择最近更新的日志代替当前对话。
 

@@ -5,12 +5,13 @@ import { execFileSync } from 'node:child_process';
 import { getClaudeConfigDir } from '../claude-config-dir.js';
 import { readDocument } from './settings.js';
 import { sessionKey, validId, type SessionFile } from './sessions.js';
-import { ClaudeDesktopSessions } from './claude-desktop.js';
+import { ClaudeDesktopSessions, claudeDesktopSessions } from './claude-desktop.js';
+import { agyId, agyRoots } from './agy.js';
 
 interface Running { key: string; pid: number; evidence: string }
 export interface ActiveResult { selected: string | null; reason: string; candidates: Running[] }
 export interface VisibleSessionHint { id?: string; title?: string; cwd?: string; tty?: string }
-export interface ActiveSessionInfo { id: string; client: string; parentId?: string; title?: string; cwd: string; lastUserAt?: number }
+export interface ActiveSessionInfo { id: string; client: string; surface?: 'desktop' | 'cli'; parentId?: string; title?: string; cwd: string; lastUserAt?: number }
 export interface WindowsProcess { ProcessId: number; ParentProcessId: number; Name: string; CommandLine?: string | null }
 export function isClaudeProcess(command: string): boolean {
   return /(?:^|\/|\s)claude(?:\.exe)?(?:$|\s)|@anthropic-ai\/claude-code(?:\/|$)/i.test(command.replaceAll('\\', '/'));
@@ -51,7 +52,21 @@ export function chooseActive(candidates: Running[], parents: Map<number, number>
     reason: unique.length === 1 ? `已定位运行中的会话 · ${unique[0].evidence}`
       : latest ? '已跟随最近交互的活跃对话'
       : unique.length ? '正在等待当前对话的活动记录'
-        : '等待 Claude / Codex 本机会话；不会绑定历史日志' };
+        : '等待本机活跃会话' };
+}
+
+export function agyLockCandidates(output: string, directory: string, commands: Map<number, string>): Running[] {
+  let pid = 0;
+  const result: Running[] = [];
+  for (const line of output.split('\n')) {
+    if (line.startsWith('p')) pid = Number(line.slice(1));
+    if (!line.startsWith('n') || !pid || path.basename(commands.get(pid) ?? '') !== 'agy') continue;
+    const file = line.slice(1), id = path.basename(file, '.lock');
+    if (path.dirname(file) === directory && file.endsWith('.lock') && agyId.test(id)) {
+      result.push({ key: `agy:${id}`, pid, evidence: 'Antigravity CLI 进程持有会话锁' });
+    }
+  }
+  return result;
 }
 
 /** Read live ownership evidence, never infer the active session from the newest historical log. */
@@ -63,10 +78,15 @@ export class ActiveSessions {
   private lastInteraction = new Map<string, number>();
   private desktop: ClaudeDesktopSessions;
   constructor(options: { claudeDesktopRoots?: string[]; now?: () => number } = {}) {
-    this.desktop = new ClaudeDesktopSessions(options.claudeDesktopRoots, options.now);
+    this.desktop = options.claudeDesktopRoots || options.now ? new ClaudeDesktopSessions(options.claudeDesktopRoots, options.now) : claudeDesktopSessions;
   }
 
   get(files: ActiveSessionInfo[], client?: string, targetPid?: number, hint?: VisibleSessionHint): ActiveResult {
+    if (client === 'agy') {
+      const desktop = files.filter(file => file.client === 'agy' && file.surface === 'desktop' && !file.parentId);
+      const selected = hint?.id && agyId.test(hint.id) ? visibleSession(desktop, client, { id: hint.id }) ?? null : null;
+      return { selected, candidates: [], reason: selected ? '已跟随 Antigravity 桌面对话' : '等待 Antigravity 桌面对话' };
+    }
     const visible = client === 'claude' ? this.desktop.resolve(files, hint) : visibleSession(files, client, hint);
     if (visible !== undefined) return { selected: visible, candidates: [], reason: visible ? '已跟随前台显示的对话' : '当前可见对话尚无本地记录，或标题无法唯一对应' };
     if (Date.now() - this.at > 2000) this.scan(files);
@@ -100,6 +120,9 @@ export class ActiveSessions {
       } catch { running = []; }
     }
     const result = chooseActive(running, this.parents, targetPid, activity);
+    if (result.candidates.length > 1 && result.candidates.some(candidate => candidate.key.startsWith('agy:'))) {
+      result.selected = null; result.reason = '等待唯一的前台终端会话';
+    }
     if (!result.candidates.length && this.error) result.reason = this.error;
     return result;
   }
@@ -143,6 +166,15 @@ export class ActiveSessions {
       }
     } catch { /* Claude does not expose a registry in every version. */ }
     if (process.platform === 'win32') return;
+    const agyPids = [...commands].filter(([, command]) => path.basename(command) === 'agy').map(([pid]) => pid);
+    if (agyPids.length && files.some(file => file.client === 'agy' && file.surface === 'cli')) {
+      try {
+        const directory = fs.realpathSync(path.join(agyRoots().cli, 'presence'));
+        const output = execFileSync('/usr/sbin/lsof', ['-p', agyPids.join(','), '-Fpn'],
+          { encoding: 'utf8', timeout: 1200, maxBuffer: 1024 * 1024 });
+        this.running.push(...agyLockCandidates(output, directory, commands));
+      } catch { /* 会话锁已释放或进程已退出。 */ }
+    }
     const locks = path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'thread-writer-locks');
     try {
       const paths = fs.readdirSync(locks).filter(f => f.endsWith('.lock') && validId(f.slice(0, -5)) && keys.has(`codex:${f.slice(0, -5)}`)).map(f => path.join(locks, f));

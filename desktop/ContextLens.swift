@@ -8,12 +8,13 @@ import CoreText
 }
 
 func validSession(_ value: String) -> Bool {
-    value.range(of: "^(claude|codex|opencode|mimocode|deepseek|zcode):[a-zA-Z0-9_-]{1,100}$", options: .regularExpression) != nil
+    value.range(of: "^(claude|codex|agy|opencode|mimocode|deepseek|zcode):[a-zA-Z0-9_-]{1,100}$", options: .regularExpression) != nil
 }
 
 func agentClient(bundle: String, name: String) -> String? {
     if bundle == "com.openai.codex" { return "codex" }
     if bundle == "com.anthropic.claudefordesktop" { return "claude" }
+    if bundle == "com.google.antigravity" { return "agy" }
     let lower = name.lowercased().replacingOccurrences(of: " ", with: "")
     if lower == "opencode" { return "opencode" }
     if lower == "mimocode" { return "mimocode" }
@@ -40,6 +41,14 @@ func visibleSessionId(_ value: String) -> String? {
           let match = expression.firstMatch(in: candidate, range: NSRange(candidate.startIndex..., in: candidate)),
           let range = Range(match.range(at: 1), in: candidate) else { return nil }
     return String(candidate[range])
+}
+func antigravitySessionId(_ value: String) -> String? {
+    guard !value.isEmpty, value.utf8.count <= 8192, !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
+          let url = URLComponents(string: value), ["http", "https"].contains(url.scheme ?? ""),
+          ["127.0.0.1", "localhost", "[::1]"].contains(url.host ?? ""), url.user == nil, url.password == nil,
+          url.percentEncodedPath.range(of: #"^/c/[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}/?$"#,
+                                       options: .regularExpression) != nil else { return nil }
+    return String(url.percentEncodedPath.dropFirst(3).prefix(36)).lowercased()
 }
 // Read navigation identity only. The injected reader is shared with native fixtures.
 typealias SessionAXRead = (error: AXError, value: CFTypeRef?)
@@ -68,6 +77,11 @@ func navigationSession(_ root: AXUIElement, pid: pid_t, client: String?, appName
     func urlString(_ value: CFTypeRef?) -> String {
         if let url = value as? URL { return url.absoluteString }; return (value as? String) ?? ""
     }
+    func navigationId(_ address: String) -> String? {
+        if client == "agy" { return antigravitySessionId(address) }
+        guard let id = visibleSessionId(address), client != "codex" || !id.hasPrefix("local_") else { return nil }
+        return id
+    }
     func title(_ value: String) -> String {
         let normalized = value.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty, value.count <= 200,
@@ -85,7 +99,8 @@ func navigationSession(_ root: AXUIElement, pid: pid_t, client: String?, appName
         window = found
     }
     var result = FrontmostSession()
-    let document = urlString(value(window, kAXDocumentAttribute)), documentId = visibleSessionId(document)
+    let document = urlString(value(window, kAXDocumentAttribute))
+    let documentId = navigationId(document)
     if let url = URL(string: document), url.isFileURL { result.cwd = url.path }
     let rawWindowTitle = string(window, kAXTitleAttribute)
     if let tty = rawWindowTitle.range(of: "ttys?\\d{1,6}", options: .regularExpression) { result.tty = String(rawWindowTitle[tty]) }
@@ -104,24 +119,33 @@ func navigationSession(_ root: AXUIElement, pid: pid_t, client: String?, appName
         if role == "AXWebArea" {
             if insideWeb { continue } // An embedded preview is not the main document.
             let address = urlString(value(node, kAXURLAttribute))
+            if client == "agy" {
+                if let id = navigationId(address) { ids.insert(id) }
+                continue
+            }
             // Claude 的本地桌面壳层不承载会话，其子树也不能提供会话身份。
             if client == "claude", let url = URL(string: address), url.isFileURL,
                url.path.hasSuffix(".app/Contents/Resources/app.asar/.vite/renderer/main_window/index.html"),
                url.query == nil, url.fragment == nil { continue }
-            mainWebAreas += 1; inWeb = true
-            if let id = visibleSessionId(address) {
+            if client != "codex" { mainWebAreas += 1 }
+            inWeb = true
+            if let id = navigationId(address) {
                 ids.insert(id)
+                if client == "codex" { mainWebAreas += 1 }
                 if client == "claude" { continue }
             }
         }
         if client == "codex", role == "AXRadioButton", parentRole == "AXTabGroup",
            flag(node, kAXSelectedAttribute) == true,
            string(node, "AXDOMIdentifier").hasSuffix("-chat-tab") {
+            let identifier = string(node, "AXDOMIdentifier")
+            let pattern = #"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}(?=-chat-tab$)"#
+            if let range = identifier.range(of: pattern, options: .regularExpression) { ids.insert(String(identifier[range])) }
             chatTabs.append(title(string(node, kAXTitleAttribute)))
         }
-        if depth <= 10 {
+        if depth <= 10 && client != "agy" {
             let identifier = string(node, kAXIdentifierAttribute), selected = flag(node, kAXSelectedAttribute) == true
-            if let id = visibleSessionId(identifier), selected || role == "AXHeading" && !inWeb { ids.insert(id) }
+            if let id = navigationId(identifier), selected || role == "AXHeading" && !inWeb { ids.insert(id) }
             if selected && (role == "AXRow" || parentRole == "AXOutline" || identifier.lowercased().contains("thread")) {
                 let current = title(string(node, kAXTitleAttribute)); if !current.isEmpty { selectedTitles.insert(current) }
             }
@@ -135,12 +159,18 @@ func navigationSession(_ root: AXUIElement, pid: pid_t, client: String?, appName
     }
     if cursor < queue.count || now() >= deadline { incomplete = true }
     guard foreground() == pid else { return FrontmostSession() }
+    if client == "agy" {
+        if ids.count == 1 && (documentId != nil || !incomplete) { result.id = ids.first! }
+        return result
+    }
     // Observed conflicts are never repaired by choosing the traversal's first match.
     guard mainWebAreas <= 1, chatTabs.count <= 1, ids.count <= 1 else { return FrontmostSession() }
-    if let tab = chatTabs.first, !tab.isEmpty, !windowTitle.isEmpty, tab != windowTitle { return FrontmostSession() }
+    if ids.isEmpty, let tab = chatTabs.first, !tab.isEmpty, !windowTitle.isEmpty, tab != windowTitle { return FrontmostSession() }
     if incomplete {
         // Direct window metadata does not depend on the uniqueness of a partial tree.
-        result.id = documentId ?? ""; result.title = documentId == nil ? windowTitle : ""; return result
+        result.id = documentId ?? ""
+        result.title = documentId == nil ? (client == "codex" ? chatTabs.first ?? windowTitle : windowTitle) : ""
+        return result
     }
     if let id = ids.first { result.id = id }
     else if let tab = chatTabs.first, !tab.isEmpty { result.title = tab }
@@ -657,6 +687,7 @@ struct LensVisibility {
     var entered: (() -> Void)?
     var dragStarted: (() -> Void)?
     var percent: Double?
+    var windowEstimated = false
     var usedTokens: Double?
     var style = LensUIStyle() { didSet { stopPulse(); needsDisplay = true; if let percent, percent >= 85 { startPulse() } } }
     var isPositionLocked = false
@@ -739,7 +770,7 @@ struct LensVisibility {
                            startAngle: 90, endAngle: 90 - CGFloat(min(100, max(0, p))) * 3.6, clockwise: true)
             (p >= 90 ? NSColor.systemRed : p >= 70 ? NSColor.systemOrange : material.accent).setStroke(); ring.stroke()
         }
-        let value = percent.map { String(format: "%.0f%%", $0) } ?? contextReading(nil, usedTokens: usedTokens)
+        let value = percent.map { (windowEstimated ? "≈" : "") + String(format: "%.0f%%", $0) } ?? contextReading(nil, usedTokens: usedTokens)
         let line = CTLineCreateWithAttributedString(style.typography.reading(value, size: value.count > 4 ? 12 : 16, color: material.ink))
         // Center the visible glyphs, rather than the font's ascent/descent line box.
         let ink = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
@@ -755,8 +786,21 @@ struct LensVisibility {
 
 @MainActor final class DetailPanel: NSPanel {
     var escape: (() -> Void)?
+    var pressed: (() -> Void)?
     override var canBecomeKey: Bool { true }
     override func cancelOperation(_ sender: Any?) { escape?() }
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown {
+            if !isKeyWindow { makeKey() }
+            pressed?()
+        }
+        super.sendEvent(event)
+    }
+}
+
+@MainActor final class DetailWebView: WKWebView {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var needsPanelToBecomeKey: Bool { true }
 }
 
 @MainActor final class LensApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKScriptMessageHandler, NSMenuDelegate {
@@ -781,7 +825,7 @@ struct LensVisibility {
     private var pinned = false
     private var activeIsland = LensIsland.context
     private var islandHeights: [LensIsland: CGFloat] = [:]
-    private var settingsHeight: CGFloat = 420
+    private let settingsHeight: CGFloat = 572
     private var detailTransition = 0
     private var detailSizing = false
     private var settingsPresented = false
@@ -830,7 +874,9 @@ struct LensVisibility {
         guard let auditURL else { return }
         let record: [String: Any] = ["at": Date().timeIntervalSince1970, "ball": visibility.ball,
                                     "panel": visibility.panel, "hidden": visibility.temporarilyHidden,
-                                    "ballVisible": ball.isVisible, "panelVisible": panel.isVisible, "ballAlpha": ball.alphaValue, "panelAlpha": panel.alphaValue,
+                                    "ballVisible": ball.isVisible, "panelVisible": panel.isVisible, "panelIsKey": panel.isKeyWindow,
+                                    "ballAlpha": ball.alphaValue, "panelAlpha": panel.alphaValue,
+                                    "settingsPresented": settingsPresented,
                                     "orbitVisible": orbit.isVisible, "orbitOpen": orbitOpen, "island": activeIsland.rawValue,
                                     "selection": selection, "targetPid": targetPid ?? 0,
                                     "ballWindow": ball.windowNumber, "orbitWindow": orbit.windowNumber, "panelWindow": panel.windowNumber,
@@ -921,8 +967,9 @@ struct LensVisibility {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentMinSize = NSSize(width: 280, height: 112); panel.isReleasedWhenClosed = false; panel.delegate = self
         panel.escape = { [weak self] in self?.escapeLayer() }
+        panel.pressed = { [weak self] in self?.pinned = true; self?.traceEvent("detail-press") }
         let config = WKWebViewConfiguration(); config.userContentController.add(self, name: "lens")
-        web = WKWebView(frame: NSRect(origin: .zero, size: size), configuration: config); web.navigationDelegate = self
+        web = DetailWebView(frame: NSRect(origin: .zero, size: size), configuration: config); web.navigationDelegate = self
         web.setValue(false, forKey: "drawsBackground"); web.autoresizingMask = [.width, .height]
         panel.contentView = glassContent(web, radius: 20)
     }
@@ -1167,7 +1214,7 @@ struct LensVisibility {
         if let mask = orbit.contentView?.layer?.mask as? CAShapeLayer { mask.path = orbitView.surfaceMask }
         if #available(macOS 26.0, *), let glass = panel.contentView as? NSGlassEffectView { glass.cornerRadius = uiStyle.theme.cardRadius }
         else { panel.contentView?.layer?.cornerRadius = uiStyle.theme.cardRadius }
-        if visibility.panel { fitDetail(height: settingsPresented ? settingsHeight : islandHeights[activeIsland] ?? activeIsland.height, width: settingsPresented ? uiStyle.theme.settingsWidth : uiStyle.theme.width(for: activeIsland), animated: false) }
+        if visibility.panel && !settingsPresented { fitDetail(height: islandHeights[activeIsland] ?? activeIsland.height, width: uiStyle.theme.width(for: activeIsland), animated: false) }
         for (preset,item) in uiThemeItems { item.state = preset == uiStyle.theme ? .on : .off }
         if webReady { dispatch("context-lens-ui-style", uiStyle.message) }
         traceEvent("ui-theme-" + uiStyle.theme.rawValue); recordUIAudit()
@@ -1337,7 +1384,7 @@ struct LensVisibility {
     }
     private func refreshBall() async {
         guard !loading, origin != nil else { return }
-        let refreshRevision = targetRevision
+        var refreshRevision = targetRevision
         var networkError = false
         loading = true; defer {
             loading = false; recordUIAudit()
@@ -1349,8 +1396,18 @@ struct LensVisibility {
         }
         if let app = NSWorkspace.shared.frontmostApplication, app.bundleIdentifier != Bundle.main.bundleIdentifier, supportedForeground, Int(app.processIdentifier) == targetPid {
             let hint = frontmostSession(app, client: targetClient)
-            if hint != visibleHint { visibleHint = hint; targetRevision += 1 }
+            if hint != visibleHint {
+                let identityChanged = hint.id != visibleHint.id || hint.id.isEmpty && hint.title != visibleHint.title
+                    || targetClient == nil && (hint.tty != visibleHint.tty || hint.cwd != visibleHint.cwd)
+                visibleHint = hint; targetRevision += 1
+                if identityChanged && !selection.isEmpty {
+                    selection = ""
+                    dispatch("context-lens-active", ["session": "", "reason": "正在定位当前对话"])
+                    updateBall(nil, client: "正在读取", help: "自动跟随活跃对话")
+                }
+            }
         }
+        refreshRevision = targetRevision
         if clearUnidentifiedDesktopSelection() { return }
         if supportedForeground || visibility.ball {
             let revision = targetRevision
@@ -1362,23 +1419,27 @@ struct LensVisibility {
             let data = try? await json(url.url!)
             networkError = data == nil
             guard revision == targetRevision else { return }
-            let next = data?["selected"] as? String ?? ""
+            guard let data else { return }
+            let next = data["selected"] as? String ?? ""
             if next != selection { updateBall(nil, client: "正在读取", help: "自动跟随活跃对话") }
             selection = next
-            let reason = data?["reason"] as? String ?? "无法定位活跃会话，请检查本地服务"
+            let reason = data["reason"] as? String ?? "正在定位当前对话"
             dispatch("context-lens-active", ["session": selection, "reason": reason])
         }
         guard validSession(selection) else { updateBall(nil, client: "等待对话", help: "自动跟随活跃对话"); return }
-        let key = selection, mode = view
+        let key = selection, mode = view, revision = targetRevision
         var url = URLComponents(url: origin.appendingPathComponent("api/snapshot"), resolvingAgainstBaseURL: false)!
         url.queryItems = [URLQueryItem(name: "session", value: key), URLQueryItem(name: "view", value: mode)]
         do {
             let data = try await json(url.url!)
-            guard key == selection && mode == view else { return }
+            guard key == selection, mode == view, revision == targetRevision,
+                  let session = data["session"] as? [String: Any], let client = session["client"] as? String,
+                  let id = session["id"] as? String, "\(client):\(id)" == key else { return }
             let context = data["context"] as? [String: Any] ?? [:]
             let value = contextPercent(context, client: key.split(separator: ":").first.map(String.init) ?? "")
             let totals = (data["totals"] as? [String: Any])?["all"] as? [String: Any] ?? [:]
-            if let input = totals["input"] as? Double, let output = totals["output"] as? Double { orbitView.labels[.usage]?.value = shortNumber(input + output) }
+            if let input = totals["input"] as? Double, let output = totals["output"] as? Double,
+               input + output > 0 || (totals["requests"] as? Int ?? 0) > 0 { orbitView.labels[.usage]?.value = shortNumber(input + output) }
             else { orbitView.labels[.usage]?.value = "—" }
             let cost = data["cost"] as? [String: Any] ?? [:]
             if let amount = cost["amount"] as? Double, amount.isFinite {
@@ -1396,25 +1457,29 @@ struct LensVisibility {
                 orbitView.labels[.runtime]?.value = (timing?["startAccuracy"] as? String == "observed" ? "≈" : "") + (hours > 0 ? String(format: "%dh %02dm", hours, seconds / 60 % 60) : String(format: "%dm %02ds", seconds / 60, seconds % 60))
                 orbitView.labels[.runtime]?.toolTip = String(format: "会话时长 %02d:%02d:%02d", hours, seconds / 60 % 60, seconds % 60)
             } else { orbitView.labels[.runtime]?.value = "—" }
-            let tool = key.split(separator: ":").first.map(String.init) ?? ""
-            let name = ["claude": "Claude", "codex": "Codex", "opencode": "OpenCode", "mimocode": "MiMo", "deepseek": "DeepSeek", "zcode": "ZCode"][tool] ?? tool
+            let tool = client
+            let name = ["claude": "Claude", "codex": "Codex", "agy": "Antigravity", "opencode": "OpenCode", "mimocode": "MiMo", "deepseek": "DeepSeek", "zcode": "ZCode"][tool] ?? tool
+            let model = (session["modelName"] ?? session["model"]) as? String ?? ""
+            let contextMode = context["view"] as? String ?? mode
+            let help = tool == "claude" ? "当前会话上下文窗口" : tool == "agy" && contextMode == "budget" ? "上下文预算" : contextMode == "budget" ? "压缩预算" : "模型窗口"
             updateBall(value, usedTokens: context["usedTokens"] as? Double, client: name,
-                       help: tool == "claude" ? "当前会话上下文窗口" : mode == "budget" ? "压缩预算" : "模型窗口")
-        } catch { networkError = true; if key == selection { updateBall(nil, client: "离线", help: "连接中断或会话已移除；点击展开检查") } }
+                       help: model.isEmpty || model == "unknown" ? help : "\(model)\n\(help)",
+                       estimated: context["windowEstimated"] as? Bool == true)
+        } catch { networkError = true }
     }
     @discardableResult private func clearUnidentifiedDesktopSelection() -> Bool {
-        guard ["codex", "claude"].contains(targetClient ?? ""), visibleHint.id.isEmpty, visibleHint.title.isEmpty else { return false }
+        guard ["codex", "claude", "agy"].contains(targetClient ?? ""), visibleHint.id.isEmpty, visibleHint.title.isEmpty else { return false }
         selection = ""
         dispatch("context-lens-active", ["session": "", "reason": "当前可见对话无法唯一对应"])
         updateBall(nil, client: "等待对话", help: "自动跟随活跃对话")
         return true
     }
-    private func updateBall(_ percent: Double?, usedTokens: Double? = nil, client: String, help: String) {
+    private func updateBall(_ percent: Double?, usedTokens: Double? = nil, client: String, help: String, estimated: Bool = false) {
         let readingTokens = client == "Claude" ? nil : usedTokens
-        let reading = contextReading(percent, usedTokens: readingTokens)
+        let reading = (estimated && percent != nil ? "≈" : "") + contextReading(percent, usedTokens: readingTokens)
         orbitView.labels[.context]?.value = reading
-        if percent == nil && !["Claude", "Codex", "OpenCode", "MiMo", "DeepSeek", "ZCode"].contains(client) { for island in LensIsland.allCases { orbitView.labels[island]?.value = "—" } }
-        ballView.percent = percent; ballView.usedTokens = readingTokens
+        if percent == nil && !["Claude", "Codex", "Antigravity", "OpenCode", "MiMo", "DeepSeek", "ZCode"].contains(client) { for island in LensIsland.allCases { orbitView.labels[island]?.value = "—" } }
+        ballView.percent = percent; ballView.usedTokens = readingTokens; ballView.windowEstimated = estimated
         ballView.toolTip = "\(client)\n\(help)"; ballView.needsDisplay = true
         let value = reading == "—" ? "\(client) 未知" : "\(client) \(reading)"
         ballView.setAccessibilityValue(value); status.button?.toolTip = "Context Lens · \(value)"
@@ -1442,15 +1507,9 @@ struct LensVisibility {
             openAccessibilitySettings()
         case "recognize": recognizeForeground()
         case "settings-open":
-            guard !positioning else { return }
+            guard !positioning, !settingsPresented else { return }
             pinned = true; settingsPresented = true
-            fitDetail(height: settingsHeight, width: uiStyle.theme.settingsWidth)
-        case "settings-layout":
-            guard settingsPresented, !detailSizing,
-                  let reportedWidth = body["width"].flatMap(Double.init), reportedWidth.isFinite, abs(reportedWidth - web.frame.width) < 1,
-                  let value = body["height"].flatMap(Double.init), value.isFinite, value > 0, value <= 100_000 else { return }
-            settingsHeight = CGFloat(value)
-            if visibility.panel { fitDetail(height: settingsHeight, width: uiStyle.theme.settingsWidth) }
+            fitDetail(height: settingsHeight, width: uiStyle.theme.settingsWidth, animated: false)
         case "settings-close":
             settingsPresented = false
             fitDetail(height: islandHeights[activeIsland] ?? activeIsland.height, width: uiStyle.theme.width(for: activeIsland))
@@ -1766,6 +1825,11 @@ struct LensVisibility {
             }
             precondition(visibleSessionId("file:///Users/workspace") == nil)
             precondition(agentClient(bundle: "com.openai.codex", name: "Codex") == "codex")
+            precondition(agentClient(bundle: "com.google.antigravity", name: "Antigravity") == "agy")
+            let agyFixture = "20000000-0000-0000-0000-000000000001"
+            precondition(antigravitySessionId("http://127.0.0.1:53492/c/\(agyFixture)?project=1") == agyFixture)
+            precondition(antigravitySessionId("https://example.com/c/\(agyFixture)") == nil)
+            precondition(antigravitySessionId("http://127.0.0.1/c/\(agyFixture)/preview") == nil)
             precondition(clampedOrigin(NSPoint(x: -10, y: 200), size: NSSize(width: 56, height: 56), screen: NSRect(x: 0, y: 0, width: 100, height: 100)) == NSPoint(x: 0, y: 44))
             precondition(clampedOrigin(NSPoint(x: -1400, y: -200), size: NSSize(width: 420, height: 620), screen: NSRect(x: -1920, y: 0, width: 1920, height: 1080)) == NSPoint(x: -1400, y: 0))
             precondition(fittedFrame(NSRect(x: 800, y: 300, width: 1440, height: 1200), screen: NSRect(x: 0, y: 24, width: 1024, height: 744)) == NSRect(x: 0, y: 24, width: 1024, height: 744))

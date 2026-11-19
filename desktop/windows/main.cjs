@@ -30,7 +30,8 @@ const widths = { context: 360, usage: 396, cost: 440, commands: 420, skills: 420
 const heights = { context: 320, usage: 520, cost: 420, commands: 500, skills: 500, mcp: 500, runtime: 500 };
 let ball, orbit, detail, tray, backend, origin, watcher, watcherStartup, pollTimer, foreground = null;
 let island = 'context', selection = '', snapshot = null, orbitOpen = false, pinned = false, settingsOpen = false, hidden = false, forced = false, refreshing = false, revision = 0, dragOrigin;
-let contentHeights = {}, settingsHeight = 420;
+const contentHeights = {};
+let settingsWidth = 420;
 let watcherAvailable = false;
 const validSession = value => typeof value === 'string' && /^(claude|codex|opencode|mimocode|deepseek|zcode):[a-zA-Z0-9_-]{1,100}$/.test(value);
 const emit = (window, name, data) => { if (window && !window.isDestroyed() && !window.webContents.isLoading()) window.webContents.send('lens-event', name, data); };
@@ -45,8 +46,8 @@ function placeOrbit() { const b = ball.getBounds(), area = screen.getDisplayMatc
 function fitDetail() {
   if (!detail) return;
   const b = ball.getBounds(), o = orbit.getBounds(), area = screen.getDisplayMatching(b).workArea;
-  const width = Math.min((settingsOpen ? 420 : widths[island]) + presets[preferences.uiTheme][4], area.width);
-  const height = Math.min(Math.max(112, settingsOpen ? settingsHeight : contentHeights[island] || heights[island]), 640, area.height);
+  const width = Math.min(settingsOpen ? settingsWidth : widths[island] + presets[preferences.uiTheme][4], area.width);
+  const height = Math.min(Math.max(112, settingsOpen ? 572 : contentHeights[island] || heights[island]), 640, area.height);
   const right = area.x + area.width - (o.x + o.width), left = o.x - area.x;
   const x = right >= width + 12 || right >= left ? o.x + o.width + 12 : o.x - width - 12;
   detail.setBounds(fit({ x, y: b.y + 38 - height / 2, width, height }, area));
@@ -75,7 +76,8 @@ function showIsland(name) {
   island = name; pinned = true; settingsOpen = false; forced = true; orbitOpen = true; placeOrbit(); orbit.showInactive(); fitDetail(); detail.show();
   emit(detail, 'context-lens-island', name); surface();
 }
-function settings() { hidden = false; forced = true; pinned = true; settingsOpen = true; fitDetail(); detail.show(); emit(detail, 'context-lens-command', 'settings'); }
+function enterSettings() { if (!settingsOpen) settingsWidth = 420 + presets[preferences.uiTheme][4]; settingsOpen = pinned = true; fitDetail(); }
+function settings() { hidden = false; forced = true; enterSettings(); detail.show(); emit(detail, 'context-lens-command', 'settings'); }
 function toolFor(name, title) {
   const value = (name + ' ' + title).toLowerCase();
   for (const tool of ['codex', 'claude', 'opencode', 'mimocode', 'deepseek', 'zcode']) if (value.includes(tool)) return tool;
@@ -109,7 +111,7 @@ async function refresh(manual = false) {
     const active = await read('/api/active?' + query);
     if (revision !== currentRevision) return;
     const next = validSession(active.selected) ? active.selected : '';
-    if (next !== selection) { selection = next; snapshot = null; emit(detail, 'context-lens-active', { session: selection, reason: active.reason }); }
+    if (next !== selection) { selection = next; snapshot = null; surface(); emit(detail, 'context-lens-active', { session: selection, reason: active.reason }); }
     if (selection) { const data = await read('/api/snapshot?' + new URLSearchParams({ session: selection, view: preferences.view })); if (revision !== currentRevision) return; snapshot = data; }
     surface(); if (manual) emit(detail, 'context-lens-detection', { state: selection ? 'recognized' : 'waiting' });
   } catch { if (manual) emit(detail, 'context-lens-detection', { state: 'failed' }); }
@@ -167,9 +169,8 @@ ipcMain.on('lens-action', (event, data) => {
     case 'state': if (!fromDetail) return; if (['budget', 'model'].includes(data.view)) preferences.view = data.view; if (['auto', 'light', 'dark'].includes(data.theme)) preferences.theme = data.theme; nativeTheme.themeSource = preferences.theme === 'auto' ? 'system' : preferences.theme; save(); surface(); void refresh(); break;
     case 'ui-style': if (!fromDetail || !presets[data.uiTheme]) return; preferences.uiTheme = data.uiTheme; save(); emit(detail, 'context-lens-ui-style', style()); fitDetail(); surface(); break;
     case 'motion-preference': if (!fromDetail) return; preferences.reduceMotion = data.reduceMotion === 'true'; save(); environment(); surface(); break;
-    case 'settings-open': if (!fromDetail) return; settingsOpen = pinned = true; fitDetail(); break;
+    case 'settings-open': if (!fromDetail) return; enterSettings(); break;
     case 'settings-close': if (!fromDetail) return; settingsOpen = false; fitDetail(); break;
-    case 'settings-layout': if (!fromDetail || !settingsOpen) return; if (Math.abs(Number(data.width) - detail.getContentBounds().width) > 1) return; if (Number.isFinite(Number(data.height)) && Number(data.height) > 0 && Number(data.height) < 10000) { settingsHeight = Math.ceil(Number(data.height)); fitDetail(); } break;
     case 'layout': if (!fromDetail || settingsOpen || data.island !== island) return; if (Math.abs(Number(data.width) - detail.getContentBounds().width) > 1) return; if (Number.isFinite(Number(data.height)) && Number(data.height) > 0 && Number(data.height) < 10000) { contentHeights[island] = Math.ceil(Number(data.height)); fitDetail(); } break;
     case 'recognize': case 'accessibility': if (!fromDetail) return; emit(detail, 'context-lens-detection', { state: 'loading' }); if (process.platform === 'win32' && !watcherAvailable) { void startWatcher().then(ok => { if (ok) void refresh(true); else emit(detail, 'context-lens-detection', { state: 'failed' }); }); } else if (refreshing) { const attempt = setInterval(() => { if (!refreshing) { clearInterval(attempt); void refresh(true); } }, 100); attempt.unref(); } else void refresh(true); break;
     case 'hide': hidden = true; collapse(); ball.hide(); break;

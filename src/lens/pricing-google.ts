@@ -1,28 +1,51 @@
-import type { OfficialPrice } from './pricing.js';
+import type { OfficialPrice, TierPrice } from './pricing.js';
 import type { Rate } from './types.js';
 
-/** Parse the bounded Gemini 4 Standard HTML table, never another model or tier. */
-export function parseGooglePrices(document: string): Record<string, OfficialPrice> {
-  const sections = [...document.matchAll(/<h2\b[^>]*\bid=["']gemini-4-argon["'][^>]*>[\s\S]*?<\/h2>([\s\S]*?)(?=<h2\b|$(?![\s\S]))/gi)];
-  if (sections.length !== 1) throw new Error('Gemini 4 official pricing section changed');
-  const table = sections[0][1].match(/<h3\b[^>]*>Standard<\/h3>\s*(<table\b[^>]*>[\s\S]*?<\/table>)/i)?.[1];
-  if (!table) throw new Error('Gemini Standard price table is missing');
-  const plain = (value: string) => value.replace(/<[^>]+>/g, ' ').replace(/&nbsp;|&#160;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
-  const rows = [...table.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
-    .map(row => [...row[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)].map(cell => plain(cell[1])));
-  if (rows[0]?.join('|') !== '|Free Tier|Paid Tier, per 1M tokens in USD') throw new Error('Gemini price columns changed');
+const labels = [
+  ['Input price', 'input'], ['Output price (including thinking tokens)', 'output'], ['Context caching price', 'cacheRead'],
+] as const;
+
+function readTier(tab: string): TierPrice {
+  const table = tab.match(/\{% table %\}([\s\S]*?)\{% \/table %\}/)?.[1];
+  const rows = table?.split(/^\s*---[ \t]*$/m).map(row => row.trim().split(/\n\s*\* /).map(cell => cell.trim().replace(/^\* /, '')));
+  if (rows?.[0]?.join('|') !== 'Feature|Free Tier|Paid Tier, per 1M tokens in USD') throw new Error('Gemini USD 价格表列已变化');
   const rates: Rate = {}, later: Rate = {};
-  for (const [label, field] of [['Input price', 'input'], ['Output price (including thinking tokens)', 'output'], ['Context caching price', 'cacheRead']] as const) {
-    const matches = rows.filter(row => row[0] === label);
-    const row = matches[0];
-    if (matches.length !== 1 || row.length !== 3 || row[1] !== 'Not available') throw new Error('Gemini price rows changed');
-    const policy = field === 'cacheRead' ? ' Implicit caching only (explicit caching is not supported).' : '';
-    if (!row[2].endsWith(policy)) throw new Error('Gemini implicit cache policy changed');
-    const value = policy ? row[2].slice(0, -policy.length) : row[2];
-    const prices = value.match(/^\$(\d+(?:\.\d+)?) through November 30, 2026\. \$(\d+(?:\.\d+)?) starting December 1, 2026\.$/);
-    if (!prices) throw new Error('Gemini dated price policy changed');
-    rates[field] = Number(prices[1]); later[field] = Number(prices[2]);
+  let effectiveAt = '';
+  for (const [label, field] of labels) {
+    const row = rows.find(row => row[0] === label);
+    if (row?.length !== 3) throw new Error('Gemini token 价格行已变化');
+    // 只读取按 token 计价的缓存读取行，存储按时长单独计价。
+    const value = field === 'cacheRead' ? row[2].split(/\n\s*(?=Implicit caching only|\$[\d.]+ \/ 1,000,000 tokens per hour \(storage price\))/)[0] : row[2];
+    const amount = value.replace(/\s+/g, ' ').trim();
+    const match = amount.match(/^\$(\d+(?:\.\d+)?)(?: through ([A-Za-z]+ \d{1,2}, \d{4})\. \$(\d+(?:\.\d+)?) starting ([A-Za-z]+ \d{1,2}, \d{4})\.)?$/);
+    if (!match) throw new Error('Gemini token 单价格式已变化');
+    rates[field] = Number(match[1]);
+    if (match[3] !== undefined) {
+      // 官网仅给出日历日期，按 UTC 的日界线应用。
+      const start = Date.parse(match[4] + ' UTC'), end = Date.parse(match[2] + ' UTC');
+      if (!Number.isFinite(start) || start - end !== 86_400_000) throw new Error('Gemini 单价切换日期无效');
+      const date = new Date(start).toISOString();
+      if (effectiveAt && date !== effectiveAt) throw new Error('Gemini token 分项的切换日期不一致');
+      effectiveAt = date;
+    }
+    later[field] = match[3] === undefined ? rates[field] : Number(match[3]);
   }
-  // Google publishes calendar dates; UTC is this application's explicit boundary convention.
-  return { 'gemini-4-argon': { rates, dateChange: { at: '2026-12-01T00:00:00.000Z', rates: later } } };
+  return { rates, ...(effectiveAt ? { dateChange: { at: effectiveAt, rates: later } } : {}) };
+}
+
+/** 读取 Gemini 文本模型的美元付费层，用量覆盖输入、输出及缓存读取。 */
+export function parseGooglePrices(document: string): Record<string, OfficialPrice> {
+  const models: Record<string, OfficialPrice> = Object.create(null);
+  const headings = /^## Gemini (?:4 [A-Za-z]+|3\.[68] Flash)\s+\{% id="(gemini-(?:4-[a-z]+|3\.[68]-flash))" %\}[ \t]*$([\s\S]*?)(?=^## |$(?![\s\S]))/gm;
+  for (const [, model, body] of document.matchAll(headings)) {
+    const tiers: Record<string, TierPrice> = Object.create(null);
+    for (const [, name, tab] of body.matchAll(/\{% tab title="(Standard|Batch|Flex|Priority)" %\}([\s\S]*?)\{% \/tab %\}/g)) {
+      tiers[name.toLowerCase()] = readTier(tab);
+    }
+    const { standard, ...other } = tiers;
+    if (!standard || models[model]) throw new Error('Gemini 标准价格缺失或重复');
+    models[model] = { ...standard, tiers: other };
+  }
+  if (!models['gemini-4-argon'] || Object.keys(models).length < 4) throw new Error('Gemini 官方价格表不完整');
+  return models;
 }

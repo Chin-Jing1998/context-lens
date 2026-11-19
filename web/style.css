@@ -350,20 +350,19 @@ input[type="radio"]{accent-color:var(--accent)}
 .settings-dialog .settings-tabs{border:0;border-bottom:1px solid var(--text);border-radius:0;padding:0;background:transparent;gap:16px}
 .settings-dialog .settings-tabs button{border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;padding:5px 8px 8px;color:var(--secondary)}
 .settings-dialog .settings-tabs button[aria-selected="true"]{color:var(--text);border-color:var(--accent);box-shadow:none}
-.settings-dialog{position:fixed;inset:0;margin:auto;height:540px;overflow:hidden}
-:root[data-desktop="true"]:has(.settings-dialog[open]),:root[data-desktop="true"] body:has(.settings-dialog[open]){overflow:hidden}
+.settings-dialog{position:fixed;inset:0;margin:auto;width:min(448px,calc(100vw - 24px));height:min(572px,calc(100dvh - 24px));overflow:hidden;overscroll-behavior:contain}
+.settings-dialog::backdrop{overflow:hidden;overscroll-behavior:contain}
 .settings-dialog[open]{display:grid;grid-template-rows:auto 36px minmax(0,1fr);gap:14px}
 :root[data-desktop="true"] .settings-dialog{width:100%;max-width:100%;height:100%;max-height:100%;margin:0;inset:0;border:0;border-radius:0;background:var(--surface);box-shadow:none}
 :root[data-desktop="true"] .settings-dialog::backdrop{background:transparent}
 .settings-dialog .dialog-heading{margin:0}
 .settings-dialog .settings-tabs{margin:0;padding:3px;border:0;gap:4px;border-radius:8px;background:var(--subtle)}
 .settings-dialog .settings-tabs button{flex:1;padding:3px 5px;border:0;border-radius:5px;font-size:12px;min-height:29px}
-.settings-dialog:not([data-page=prices])[open]{grid-template-rows:auto 38px auto}
-.settings-dialog:not([data-page=prices]) .settings-scroll{height:auto;overflow:visible}
-:root:not([data-desktop=true]) .settings-dialog:not([data-page=prices]){height:auto}
 .settings-dialog .settings-tabs button{font-size:13px;min-height:33px}
 .settings-dialog .settings-tabs button[aria-selected="true"]{background:var(--surface);box-shadow:0 1px 4px #0001;color:var(--text)}
-.settings-dialog .settings-scroll{height:100%;min-height:0;overflow:hidden}
+.settings-dialog .settings-scroll{min-height:0;min-width:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.settings-dialog[data-page=prices] .settings-scroll{overflow:clip;scrollbar-gutter:auto}
+#context-model{min-width:0;max-width:65%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #display-settings{display:flex;flex-direction:column;gap:17px}
 .settings-preview{display:flex;align-items:center;gap:18px;min-height:112px;padding:12px 18px;border:1px solid var(--line);border-radius:min(var(--radius),10px);background:linear-gradient(125deg,var(--subtle),var(--surface))}
 .settings-orbit-preview{position:relative;width:102px;height:86px;flex:0 0 102px}
@@ -404,7 +403,7 @@ input[type="radio"]{accent-color:var(--accent)}
 .settings-model-list{min-height:0;overflow-x:hidden;overflow-y:auto;scrollbar-gutter:stable;outline-offset:-2px;padding-right:3px}
 .settings-dialog .price-card{margin:0;padding:12px 0;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent}
 .settings-dialog .price-card>summary{min-height:42px;padding:0;align-items:center;gap:9px;display:grid;grid-template-columns:minmax(0,1fr) auto}.price-summary-text{display:grid;gap:4px;min-width:0}.price-summary-name{font-size:14px;font-weight:500;overflow-wrap:anywhere}.price-summary-rates{font-size:12px;color:var(--secondary)}.price-edit-label{color:var(--accent);font-size:12px}
-.settings-dialog .price-card[open]>.price-fields{position:absolute;inset:0;z-index:10;overflow:hidden;background:var(--surface);padding:var(--card-y) var(--card-x);display:flex;flex-direction:column;gap:12px;border-radius:var(--radius)}
+.settings-dialog .price-card[open]>.price-fields{position:absolute;inset:0;z-index:10;overflow:auto;overscroll-behavior:contain;background:var(--surface);padding:var(--card-y) var(--card-x);display:flex;flex-direction:column;gap:12px;border-radius:var(--radius)}
 .price-editor-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:12px;border-bottom:1px solid var(--text)}.price-editor-heading strong{font-size:16px;font-weight:500;min-width:0;overflow-wrap:anywhere}.price-editor-heading button{flex:0 0 auto;min-height:30px;padding:3px 8px;font-size:12px}
 .settings-dialog .price-fields>label{gap:6px;font-size:12px}.settings-dialog .price-fields>label>input{min-height:33px;font-family:var(--numbers)}
 .settings-dialog .rates-grid{gap:11px 12px;margin:0}.settings-dialog .rates-grid label{gap:5px;font-size:11px}.settings-dialog .rates-grid input{height:33px;min-width:0;padding:4px 7px;font-size:16px}
@@ -508,6 +507,11 @@ input[type="radio"]{accent-color:var(--accent)}
 .detail-row-value{display:flex;flex-direction:column;gap:6px;flex-shrink:0;align-items:flex-end;text-align:right;max-width:57%;min-width:0}
 .detail-row-value>strong{font-size:18px;font-weight:inherit;line-height:1.15;white-space:nowrap}
 .detail-row-value>span{font-size:11px;color:var(--secondary);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.detail-row.request-row{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:12px;row-gap:10px}
+.request-row .detail-row-value{max-width:none}.request-row .detail-row-value>span:empty{display:none}
+.request-metrics{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px 16px;margin:0;font-size:11px}
+.request-metrics>div{display:flex;justify-content:space-between;gap:6px;min-width:0}
+.request-metrics dt{color:var(--secondary)}.request-metrics dd{margin:0;white-space:nowrap}
 .detail-row[data-state=failed] .detail-row-value>span{color:var(--danger)}
 .detail-row[data-state=running] .detail-row-value>span{color:var(--accent)}
 .detail-pager{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--text);padding-top:10px;min-height:32px;flex-shrink:0}

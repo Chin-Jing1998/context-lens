@@ -18,9 +18,9 @@ after(() => {
 const at = '2026-10-06T00:00:00Z';
 const google = readFileSync(new URL('./fixtures/gemini-pricing.md', import.meta.url), 'utf8');
 const openai = ['Standard', 'Batch', 'Flex', 'Fast', 'Ultrafast'].map((tier, index) => `### ${tier} pricing data
-| Model | Short context input | Short context cached input | Short context cache writes | Short context output | Long context input | Long context cached input | Long context cache writes | Long context output |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-${['gpt-test-a', 'gpt-test-b', 'gpt-test-c'].map(model => `| ${model} | $${index + 1} | $0.1 | $1.25 | $10 | $2 | $0.2 | $2.5 | $15 |`).join('\n')}`).join('\n') + '\nShort context: ≤272K input tokens. Long context: >272K input tokens.\n';
+| Model | Short context input | Short context output | Short context cached input | Short context 30m write | Short context 12h write | Long context input | Long context output | Long context cached input | Long context 30m write | Long context 12h write |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+${['gpt-test-a', 'gpt-test-b', 'gpt-test-c'].map(model => `| ${model} | $${index + 1} | $10 | $0.1 | $1.25 | $2.50 | $2 | $15 | $0.2 | $2.5 | $5.00 |`).join('\n')}`).join('\n') + '\nShort context: ≤272K input tokens. Long context: >272K input tokens.\n';
 const anthropic = `## Model pricing
 | Model | Base input tokens | 5m cache writes | 1h cache writes | Cache hits and refreshes | Output tokens |
 | --- | --- | --- | --- | --- | --- |
@@ -33,6 +33,10 @@ const anthropic = `## Model pricing
 | --- | --- | --- |
 | Claude Opus 5.5 | $8 / MTok | $40 / MTok |
 | Claude Opus 5 / Claude Opus 4.8 | $10 / MTok | $50 / MTok |
+### Batch processing
+| Model | Batch input | Batch output |
+| --- | --- | --- |
+| Claude Opus 5.5 | $2 / MTok | $10 / MTok |
 ### Tool use pricing
 | Claude Opus 5.5 | 286 tokens | 400 tokens |
 `;
@@ -72,7 +76,7 @@ test('agent price parsers retain span alignment, USD region, paid ingestion and 
   const home = mkdtempSync(path.join(tmpdir(), 'lens-agent-pricing-'));
   try {
     const fetch = async url => new Response(url.includes('deepseek.com') ? deepseek : url.includes('mimo.mi.com') ? mimo : url.includes('docs.z.ai') ? zai : url.includes('openai.com') ? openai : anthropic);
-    const syncedAt = '2026-10-08T00:00:00.000Z';
+    const syncedAt = '2026-11-20T00:00:00.000Z';
     await refreshOfficialPrices({ home, fetch, force: true, now: Date.parse(syncedAt) });
     for (const provider of ['deepseek', 'mimo', 'zai']) {
       const saved = JSON.parse(readFileSync(path.join(home, `official-prices-${provider}.json`), 'utf8'));
@@ -89,6 +93,7 @@ test('official tables retain their columns, processing tiers, long-context bound
   assert.equal(a.models['gpt-test-a'].rates.input, 1);
   assert.equal(a.models['gpt-test-a'].tiers.fast.rates.input, 4);
   assert.equal(a.models['gpt-test-a'].longContext.output, 15);
+  assert.equal(a.models['gpt-test-a'].rates.cacheWrite12h, 2.5);
   assert.equal(a.models['gpt-test-a'].threshold, 272000);
   assert.equal(a.checkedAt, at);
   const b = parseOfficialPrices('anthropic', anthropic, at);
@@ -96,6 +101,7 @@ test('official tables retain their columns, processing tiers, long-context bound
   assert.equal(b.models['claude-opus-5-5'].rates.cacheWrite1h, 8);
   assert.equal(b.models['claude-opus-5-5'].tiers.fast.rates.cacheRead, 0.4);
   assert.equal(b.models['claude-opus-4-8'].tiers.fast.rates.cacheWrite1h, 20);
+  assert.equal(b.models['claude-opus-5-5'].tiers.batch.rates.cacheRead, 0.1);
 });
 
 test('changed or ambiguous official layouts fail closed', () => {
@@ -127,7 +133,7 @@ test('default official billing separates cached reads, TTL writes and output wit
   assert.ok(Math.abs(estimateCost([a, a], cfg).amount - 1.7) < 1e-10);
   assert.ok(Math.abs(estimateCost([b], cfg).amount - 1.64) < 1e-10);
   const cost = estimateCost([a, b], cfg);
-  assert.equal(cost.complete, true);
+  assert.equal(cost.complete, false);
   assert.equal(cost.pricing[0].source, PRICE_SOURCES.anthropic);
   assert.ok(cost.pricing[0].checkedAt);
   assert.equal(estimateCost([a], { currency: 'CNY', prices: {} }).amount, null);
@@ -153,14 +159,14 @@ test('official refresh is deduplicated, cached, bounded and preserves valid data
     const customPath = path.join(home, 'config.json');
     const customPrices = JSON.stringify({ currency: 'USD', prices: { 'claude-opus-5-5': { input: 1.25, output: 6 } } });
     writeFileSync(customPath, customPrices);
-    const options = { home, now: Date.parse(at), fetch, force: true };
+    const options = { home, now: Date.parse('2026-11-20T00:00:00.000Z'), fetch, force: true };
     await Promise.all([refreshOfficialPrices(options), refreshOfficialPrices(options)]);
     assert.equal(calls, Object.keys(PRICE_SOURCES).length);
     assert.equal(readFileSync(customPath, 'utf8'), customPrices, 'synchronization must preserve custom prices byte for byte');
     const cache = path.join(home, 'official-prices-anthropic.json');
     const before = readFileSync(cache, 'utf8');
     assert.equal(readOfficialPrices(home).openai.models['gpt-test-a'].rates.input, 1);
-    await refreshOfficialPrices({ home, now: Date.parse(at) + 7200000, fetch });
+    await refreshOfficialPrices({ home, now: options.now + 7200000, fetch });
     assert.equal(calls, Object.keys(PRICE_SOURCES).length);
     await refreshOfficialPrices({ ...options, fetch: async () => new Response('changed page') });
     assert.equal(readFileSync(cache, 'utf8'), before);
@@ -174,9 +180,10 @@ test('official refresh is deduplicated, cached, bounded and preserves valid data
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
-test('Google Standard prices parse only the verified model table and retain the dated change', () => {
+test('Google Markdown 价目读取已核验的文本模型和调价日期', () => {
   const parsed = parseOfficialPrices('google', google, at);
-  assert.deepEqual(Object.keys(parsed.models), ['gemini-4-argon']);
+  assert.deepEqual(Object.keys(parsed.models), ['gemini-4-carbon', 'gemini-4-argon', 'gemini-4-neon', 'gemini-4-hydrogen']);
+  assert.equal(parsed.models['gemini-4-hydrogen'].rates.cacheRead, .075);
   const price = parsed.models['gemini-4-argon'];
   assert.deepEqual(price.rates, { input: 2, output: 10, cacheRead: .1 });
   assert.deepEqual(price.dateChange, { at: '2026-12-01T00:00:00.000Z', rates: { input: 4, output: 20, cacheRead: .2 } });
@@ -198,7 +205,10 @@ test('Gemini Standard prices follow request timestamps with the internal UTC bou
     assert.equal(rate(at, { model }).rates.input, 2);
   }
   for (const model of ['gemini4', 'gemini-4-argon-20261018', 'proxy/gemini-4-argon', 'gemini-4-argon-extra']) assert.equal(rate(at, { model }), undefined);
-  for (const serviceTier of ['fast', 'batch', 'flex', 'priority', 'unknown']) assert.equal(rate(at, { serviceTier }), undefined);
+  assert.equal(rate(at, { serviceTier: 'batch' }).rates.input, 1);
+  assert.equal(rate(at, { serviceTier: 'flex' }).rates.input, 1);
+  assert.equal(rate(at, { serviceTier: 'priority' }).rates.input, 3.6);
+  for (const serviceTier of ['fast', 'unknown']) assert.equal(rate(at, { serviceTier }), undefined);
   assert.equal(rate(undefined), undefined);
   assert.equal(rate('not-a-date'), undefined);
   assert.equal(rate(at, { timestampKnown: false }), undefined);
@@ -225,26 +235,26 @@ test('Gemini input, implicit cache and inclusive thinking output are charged onc
   assert.equal(estimateCost([{ ...row, input: row.input + 1, cacheWrite: 1 }], { currency: 'USD', prices: {} }, true, BUNDLED_PRICES).complete, false);
 });
 
-test('Google refresh uses the original HTML page, saves verified prices and records failures without replacing them', async () => {
+test('从新官网 Markdown 刷新 Google 价目，失败时保留已核验数据', async () => {
   const home = mkdtempSync(path.join(tmpdir(), 'lens-google-pricing-'));
-  const now = Date.parse('2026-10-20T00:00:00Z'), urls = [];
+  const now = Date.parse('2026-11-20T00:00:00Z'), urls = [];
   const fetch = async url => {
     urls.push(url);
-    if (url.includes('ai.google.dev')) return new Response(google);
+    if (url === PRICE_SOURCES.google + '.md') return new Response(google);
     throw new Error('offline');
   };
   try {
     await refreshOfficialPrices({ home, now, force: true, fetch });
-    assert.ok(urls.includes(PRICE_SOURCES.google + '?hl=en'));
-    assert.equal(urls.some(url => url.includes('ai.google.dev') && url.includes('.md')), false);
+    assert.ok(urls.includes(PRICE_SOURCES.google + '.md'));
+    assert.equal(urls.some(url => url.includes('ai.google.dev')), false);
     const cache = path.join(home, 'official-prices-google.json');
     const before = readFileSync(cache, 'utf8');
     assert.equal(readOfficialPrices(home).google.checkedAt, new Date(now).toISOString());
-    await refreshOfficialPrices({ home, now: now + 1, force: true, fetch: async () => new Response('changed HTML') });
+    await refreshOfficialPrices({ home, now: now + 1, force: true, fetch: async () => new Response('价格表结构已变化') });
     assert.equal(readFileSync(cache, 'utf8'), before);
     const failure = JSON.parse(readFileSync(path.join(home, 'official-prices-google-status.json'), 'utf8'));
     assert.equal(failure.status, 'failed'); assert.equal(failure.source, PRICE_SOURCES.google);
-    const invalid = JSON.parse(before); delete invalid.models['gemini-4-argon'].dateChange;
+    const invalid = JSON.parse(before); invalid.models['gemini-4-argon'].dateChange.at = 'invalid-date';
     writeFileSync(cache, JSON.stringify(invalid));
     assert.deepEqual(readOfficialPrices(home).google, BUNDLED_PRICES.google);
     const incomplete = JSON.parse(before); delete incomplete.models['gemini-4-argon'].dateChange.rates.output;

@@ -55,7 +55,7 @@
 
 ## 会话数据接入
 
-应用优先读取本机 Claude Code、Codex 的会话记录；其他已接入客户端按已有本地数据提供统计。桌面端、终端和子代理会话通过明确的进程与会话关系关联，无法唯一匹配时显示等待状态。
+应用读取本机 Claude Code、Codex、Antigravity 独立桌面端和 `agy` CLI 的会话记录。前台窗口与终端进程通过会话身份关联，无法唯一匹配时显示等待状态。其他已接入客户端按已有本地数据提供统计。
 
 Claude Code 可配合本项目的采集插件补充实时状态。设置步骤见 [setup 命令](https://github.com/Chin-Jing1998/context-lens/blob/v0.13.0/commands/setup.md)；默认静默采集。原有终端 HUD 可通过 `display.showTerminal: true` 启用。
 

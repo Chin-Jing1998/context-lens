@@ -192,7 +192,7 @@ test('missing, invalid or explicitly uncertain request timestamps cannot select 
 });
 
 test('an unverified service tier cannot silently use Gemini Standard rates', () => {
-  for (const serviceTier of ['priority', 'fast', 'unrecognized']) {
+  for (const serviceTier of ['fast', 'unrecognized']) {
     const value = price(request({ serviceTier }));
     assert.equal(value.amount, null); assert.equal(value.complete, false);
   }

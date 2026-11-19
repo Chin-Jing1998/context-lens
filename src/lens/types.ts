@@ -1,7 +1,7 @@
-export type Client = 'claude' | 'codex';
+export type Client = 'claude' | 'codex' | 'agy';
 export type Accuracy = 'reported' | 'estimated' | 'configured' | 'derived' | 'unknown';
 export type Category = 'mcpTools' | 'systemTools' | 'skills' | 'systemPrompt' | 'memoryFiles'
-  | 'mcpInstructions' | 'messages' | 'unclassified' | 'buffer' | 'free';
+  | 'mcpInstructions' | 'rules' | 'subagents' | 'workflows' | 'plugins' | 'flows' | 'messages' | 'unclassified' | 'buffer' | 'free';
 export interface Measurement { tokens: number | null; source: string; accuracy: Accuracy; at?: string }
 export interface Segment extends Measurement { id: Category; label: string; color: string; percent: number | null }
 export interface Budget {
@@ -16,26 +16,31 @@ export interface Context {
   usedTokens: number | null; modelTokens: number | null; budget: Budget;
   denominator: number | null; percent: number | null; windowPercent: number | null; view: 'budget' | 'model';
   segments: Segment[]; warnings: string[]; updatedAt: string | null;
+  windowEstimated?: boolean;
   messageBreakdown?: MessageSegment[];
 }
-export type MessageKind = 'user' | 'assistant' | 'thinking' | 'toolCall' | 'toolResult' | 'file' | 'plan' | 'summary' | 'other';
+export type MessageKind = 'user' | 'assistant' | 'thinking' | 'toolCall' | 'toolResult' | 'tools' | 'system' | 'file' | 'plan' | 'summary' | 'other';
 export interface MessageSegment extends Measurement { id: MessageKind }
 export interface Tokens {
   input: number; output: number; cacheRead: number; cacheWrite: number;
   cacheWrite5m: number; cacheWrite1h: number; reasoning: number;
 }
-export interface RequestUsage extends Tokens {
+interface TokenCoverage {
+  missingTokens?: (keyof Tokens)[];
+  uncachedInput?: number;
+}
+export interface RequestUsage extends Tokens, TokenCoverage {
   timestampKnown?: boolean;
   id: string; model: string; at: string; complete: boolean;
   serviceTier?: string;
 }
-export interface Totals extends Tokens {
+export interface Totals extends Tokens, TokenCoverage {
   requests: number | null; cacheReadRequests: number | null;
   hitRate: number | null; complete: boolean;
 }
 export interface Rate {
   input?: number; output?: number; cacheRead?: number;
-  cacheWrite?: number; cacheWrite5m?: number; cacheWrite1h?: number;
+  cacheWrite?: number; cacheWrite5m?: number; cacheWrite1h?: number; cacheWrite12h?: number;
 }
 export interface LensConfig { currency: string; prices: Record<string, Rate> }
 export interface CostEstimate {
@@ -49,6 +54,8 @@ export interface CacheState {
 export interface SessionInfo {
   id: string; client: Client; cwd: string; model: string; updatedAt: string;
   parentId?: string; title?: string;
+  surface?: 'desktop' | 'cli';
+  modelName?: string;
 }
 export type ActivityKind = 'commands' | 'skills' | 'mcp';
 export type ActivityStatus = 'succeeded' | 'failed' | 'running' | 'unknown';

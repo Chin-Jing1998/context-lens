@@ -34,8 +34,18 @@ function row(title: string, subtitle: string, value: string, detail: string, sta
 }
 function format(section: DetailSection, item: Row): HTMLElement {
   const scope = item.scope === 'agent' ? '子代理' : '主会话';
-  if (section === 'requests') return row(item.model || '模型', time(item.at) + ' · ' + scope,
-    money(item.cost), '输入 ' + count(item.input) + ' / 输出 ' + count(item.output));
+  if (section === 'requests') {
+    const request = row(item.model || '模型', time(item.at) + ' · ' + scope, money(item.cost), '');
+    request.classList.add('request-row');
+    const metrics = node('dl', '', 'request-metrics');
+    for (const [label, key] of [['输入总量', 'input'], ['输出总量', 'output'], ['未缓存输入', 'uncachedInput'], ['缓存读取', 'cacheRead']]) {
+      const value = item.missingTokens?.includes(key) ? null : item[key];
+      const pair = node('div'), reading = node('dd', count(value), 'number');
+      if (numeric(value)) reading.title = value.toLocaleString('zh-CN');
+      pair.append(node('dt', label), reading); metrics.append(pair);
+    }
+    request.append(metrics); return request;
+  }
   if (section === 'compactions') return row(({ auto: '自动压缩', manual: '手动压缩' } as Record<string, string>)[item.trigger] || '压缩',
     time(item.at) + ' · ' + duration(item.durationMs), count(item.beforeTokens) + ' → ' + count(item.afterTokens),
     numeric(item.releasedTokens) ? '释放 ' + count(item.releasedTokens) + ' tokens' : '—');
@@ -95,9 +105,11 @@ export function createDetailsUI(options: Options) {
         host.removeAttribute('aria-busy');
         list.replaceChildren(); empty.textContent = '读取记录…'; empty.hidden = false; retry.hidden = true; total.textContent = ''; pager.hidden = true; },
       load(force = false) {
-        if (!options.session() || !this.host.getClientRects().length || this.loading || !force && Date.now() - this.fetchedAt < 5000) return;
+        if (!options.session() || !this.host.getClientRects().length || !force && (this.loading || Date.now() - this.fetchedAt < 5000)) return;
         const key = options.session(), revision = ++this.revision;
-        this.loading = true; previous.disabled = next.disabled = true; retry.hidden = true; host.setAttribute('aria-busy', 'true');
+        this.loading = true;
+        if (force || !this.response) previous.disabled = next.disabled = true;
+        retry.hidden = true; host.setAttribute('aria-busy', 'true');
         const query = new URLSearchParams({ session: key, ...Object.fromEntries(Object.entries(this.query).filter(([, value]) => value !== undefined).map(([key, value]) => [key, String(value)])), page: String(this.page) });
         void options.request<Page>('/api/details?' + query).then(data => {
           if (revision !== this.revision || key !== options.session()) return;
@@ -194,13 +206,15 @@ export function createDetailsUI(options: Options) {
         available('runtime-stops-tab', data.total > 0); updateGroups(); options.fit();
       }).catch(() => {}).finally(() => { if (revision === stopsRevision) { stopsLoading = false; stopsAt = Date.now(); } });
     }
-    const native = ['claude', 'codex'].includes(snapshot.session.client); available('cost-requests-tab', native && (snapshot.totals.all.requests ?? 0) > 0);
+    const native = ['claude', 'codex', 'agy'].includes(snapshot.session.client);
+    available('cost-requests-tab', native && ((snapshot.totals.all.requests ?? 0) > 0 || snapshot.totals.all.input > 0));
     if ($('cost-requests-tab').hidden && $('cost-requests-tab').getAttribute('aria-selected') === 'true') options.currentCost();
     updateGroups();
     const signature = JSON.stringify(messages);
     if (signature !== messageSignature) {
       messageSignature = signature; const sum = messages.reduce((sum, item) => sum + (item.tokens ?? 0), 0);
-      const names: Record<string, string> = { user: '用户消息', assistant: '助手回复', thinking: '明文推理', toolCall: '工具调用', toolResult: '工具返回', file: '文件正文', plan: '计划正文', summary: '压缩摘要', other: '其他文本' };
+      const names: Record<string, string> = { user: '用户消息', assistant: '助手回复', thinking: '明文推理', toolCall: '工具调用', toolResult: '工具返回',
+        tools: '工具调用与返回', system: '系统消息', file: '文件正文', plan: '计划正文', summary: '压缩摘要', other: '其他文本' };
       $('message-total').textContent = (messages.some(item => item.accuracy === 'estimated') ? '≈' : '') + count(sum);
       $('message-rows').replaceChildren(...messages.map(item => { const line = node('tr'); const label = node('th', names[item.id]); label.scope = 'row';
         line.append(label, node('td', (item.accuracy === 'estimated' ? '≈' : '') + count(item.tokens), 'number'), node('td', sum ? (item.accuracy === 'estimated' ? '≈' : '') + ((item.tokens ?? 0) / sum * 100).toFixed(1) + '%' : '—', 'number')); return line; }));

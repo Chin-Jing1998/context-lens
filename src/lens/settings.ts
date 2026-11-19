@@ -36,7 +36,7 @@ export function validatePrices(value: unknown): LensConfig {
   if (!/^[A-Z]{3}$/.test(raw.currency) || typeof raw.currency !== 'string') throw new Error('Currency must be three uppercase letters');
   if (!raw.prices || typeof raw.prices !== 'object' || Array.isArray(raw.prices)) throw new Error('Prices must be a model-to-rate object');
   const prices: Record<string, Rate> = Object.create(null);
-  const fields = ['input', 'output', 'cacheRead', 'cacheWrite', 'cacheWrite5m', 'cacheWrite1h'];
+  const fields = ['input', 'output', 'cacheRead', 'cacheWrite', 'cacheWrite5m', 'cacheWrite1h', 'cacheWrite12h'];
   if (Object.keys(raw.prices).length > 200) throw new Error('At most 200 model prices are supported');
   for (const [model, value] of Object.entries(raw.prices)) {
     if (!model || model.length > 160 || /[\x00-\x1f\x7f]/.test(model) || ['__proto__', 'constructor', 'prototype'].includes(model)) throw new Error('Invalid model name');

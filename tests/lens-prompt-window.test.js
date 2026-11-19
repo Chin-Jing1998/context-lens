@@ -87,14 +87,14 @@ test('Codex model changes keep the replacement history and fresh instructions em
   assert.equal(parsed.categories.mcpTools, undefined, 'opaque compaction content is not a tool definition');
 });
 
-test('Codex model changes without compaction preserve the measured window and carried conversation', async () => {
+test('Codex 切换模型后等待新用量，并将原对话计入下一次有效快照', async () => {
   const entries = [{ type: 'turn_context', payload: { model: 'old-model' } },
     message('u', 'user', ['hello']), message('a', 'assistant', ['world']), usage('before')];
-  const before = await parseEvents(info, entries);
   const change = { type: 'turn_context', payload: { model: 'new-model' } };
   const pending = await parseEvents(info, [...entries, change, message('unsent', 'user', ['pending '.repeat(100)])]);
-  assert.deepEqual(pending.categories, before.categories, 'changing models does not erase the last measured categories');
-  assert.equal(pending.used, before.used);
+  assert.deepEqual(pending.categories, {});
+  assert.equal(pending.used, null);
+  assert.equal(pending.info.model, 'new-model');
   const after = await parseEvents(info, [...entries, change, message('next', 'user', ['result']), usage('after')]);
   assert.equal(after.categories.messages?.tokens, 3);
 });

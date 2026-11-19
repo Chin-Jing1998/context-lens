@@ -4,19 +4,21 @@ import { spawn, execFileSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { createInterface } from 'node:readline/promises';
 import { SessionCollector } from './snapshot.js';
-import { sessionKey } from './sessions.js';
+import { nativeClients, sessionKey } from './sessions.js';
 import type { LaunchSettings } from './settings.js';
 import { renderLensLines } from './terminal.js';
 import { startServer } from './server.js';
 import { sanitizeDisplayText } from '../utils/sanitize.js';
+import { captureAgyStatusline } from './agy.js';
 
 const help = `Context Lens
   context-lens desktop [--port 47831] [--install]
   context-lens serve [--port 47831]
-  context-lens list [--client claude|codex] [--json]
+  context-lens list [--client claude|codex|agy] [--json]
   context-lens watch --session codex:<session-id> [--view budget|model] [--once] [--json]
-  context-lens watch [--client claude|codex] [--cwd <project>]  (interactive selector)
+  context-lens watch [--client claude|codex|agy] [--cwd <project>]  (interactive selector)
   context-lens codex -- <native Codex arguments>
+  context-lens agy-statusline
 
 Settings: ~/.config/context-lens/config.json (or CONTEXT_LENS_HOME)
 Desktop: independent macOS floating ball; --install adds the app and its login watcher.
@@ -25,7 +27,7 @@ The watcher exits with q / Ctrl+C; it does not terminate the native CLI.
 `;
 
 async function chooseSession(collector: SessionCollector, client?: string, cwd?: string): Promise<string> {
-  if (!process.stdin.isTTY) throw new Error('Specify --session claude:<id> or codex:<id>; use "context-lens list" to find it');
+  if (!process.stdin.isTTY) throw new Error('请使用 context-lens list 查找会话，再传入 --session <客户端:ID>');
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
     for (;;) {
@@ -57,8 +59,9 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   } });
   const command = positionals[0];
   if (values.help || !command) { console.log(help); return; }
-  if (values.client && !['claude', 'codex'].includes(values.client)) throw new Error('--client must be claude or codex');
+  if (values.client && !nativeClients.some(client => client === values.client)) throw new Error('--client 支持 claude、codex 或 agy');
   if (values.view && !['budget', 'model'].includes(values.view)) throw new Error('--view must be budget or model');
+  if (command === 'agy-statusline') { await captureAgyStatusline(); return; }
   if (command === 'codex') { await launchCodex(native); return; }
   if (command === 'desktop') {
     const script = fileURLToPath(new URL('../../scripts/build-desktop.mjs', import.meta.url));
@@ -72,7 +75,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   const collector = new SessionCollector();
   if (command === 'list') {
     const sessions = collector.list().filter(s => !values.client || s.client === values.client)
-      .map(({ id, client, cwd, updatedAt, parentId }) => ({ key: sessionKey({ id, client }), client, cwd, updatedAt, parentId }));
+      .map(({ id, client, cwd, updatedAt, parentId, surface }) => ({ key: sessionKey({ id, client }), client, cwd, updatedAt, parentId, surface }));
     console.log(values.json ? JSON.stringify(sessions) : sessions.map(s => `${s.key}\t${sanitizeDisplayText(s.cwd)}${s.parentId ? ` (agent of ${s.parentId})` : ''}`).join('\n')); return;
   }
   if (command !== 'watch') throw new Error(`Unknown command.\n${help}`);

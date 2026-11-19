@@ -23,19 +23,19 @@ function duration(value: unknown): number | null {
   const v = record(value), secs = finite(v.secs), nanos = finite(v.nanos);
   return secs === null ? null : secs * 1000 + (nanos ?? 0) / 1e6;
 }
-function skillName(value: unknown, cwd?: string): string {
+export function skillName(value: unknown, cwd?: string): string {
   let file = clean(value, 4096).replaceAll('\\', '/');
   if (file === 'SKILL.md' && cwd) file = cwd.replaceAll('\\', '/') + '/' + file;
   return /\/SKILL\.md$/i.test(file) ? clean(path.posix.basename(path.posix.dirname(file))) : '';
 }
-function commandName(value: unknown): string {
+export function commandName(value: unknown): string {
   const command = Array.isArray(value) ? value.map(String) : [clean(value, 4096)];
   const source = command.length > 2 && /^-.*c$/.test(command[1]) ? command[2] : command.join(' ');
   const match = /^\s*(?:[A-Za-z_][\w]*=(?:'[^']*'|"[^"]*"|[^\s]+)\s+)*(?:([\w./~-]+)|'([^']+)'|"([^"]+)")/.exec(source);
   const executable = match && path.posix.basename(match[1] || match[2] || match[3]);
   return executable && !['for', 'if', 'while', 'function', 'do', 'case'].includes(executable) ? clean(executable) : 'shell';
 }
-function mcpTarget(server: unknown, tool: unknown, args: unknown): { name: string; detail: string } {
+export function mcpTarget(server: unknown, tool: unknown, args: unknown): { name: string; detail: string } {
   const input = object(args);
   return server === 'hub' && tool === 'call_tool' && clean(input.server) && clean(input.tool)
     ? { name: clean(input.server), detail: clean(input.tool) }
