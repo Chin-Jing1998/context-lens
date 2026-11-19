@@ -15,16 +15,16 @@ Context Lens 由 Chin-Jing1998 维护，派生自 [jarrodwatts/claude-hud](https
 
 ## 同步上游 main
 
-2026-11-19 同步基准为上游 `v0.15.3`（`9d2b6fa`）。采用上游终端渲染隔离和诊断功能，继续使用本项目的设置、静默采集、桌面构建和发布流程。终端 HUD 要求 Node.js 22.18 或更新版本。
+2026-11-19 同步基准为上游 `v0.15.3`（`9d2b6fa4df43c8ced61c0c23956fd291551726ac`）。合入父提交为 `5402e8059ccd5b06d0c040e641f9035d9abe7bdc`，保留上游源码、作者和提交结构，清理了 AI 共同作者条目。清理产生了新的提交哈希，GitHub 的提交落后数按原始提交哈希计算。终端 HUD 要求 Node.js 22.18 或更新版本。
 
-先确认工作区没有未提交的修改，然后依次运行：
+先确认工作区没有未提交的修改。后续同步以前述上游原始基准定位增量，从对应的合入父提交接续。将本轮准备合入的上游引用设为 `context_lens_upstream_ref`，再执行以下命令。
 
 ```bash
 git status --short
 git switch main
 git pull --ff-only origin main
 git fetch upstream main
-git merge --no-edit upstream/main
+git merge --no-edit "$context_lens_upstream_ref"
 npm ci
 npm test
 git push origin main

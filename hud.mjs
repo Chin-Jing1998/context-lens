@@ -12,7 +12,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as collector from './collector.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const LOGIC = path.join(ROOT, 'src', 'main.ts');
+const SOURCE_ENTRY = path.join(ROOT, 'src', 'main.ts');
+const LOGIC = fs.existsSync(SOURCE_ENTRY) ? SOURCE_ENTRY : path.join(ROOT, 'dist', 'main.js');
 const FENCE = pathToFileURL(path.join(ROOT, 'fence.mjs')).href;
 const MAX_OUTPUT_BYTES = 64 * 1024;
 // The cage's wall stops runaway logic, not slow probes, so it sits well above them. Each probe has its
@@ -175,7 +176,7 @@ export async function runCage({ stdin = null, now = Date.now(), probes = async (
   // A subcommand's project is the folder Claude Code ran it in.
   const named = collector.logicPaths(paths, command ? { ...stdin, cwd: command.facts.cwd } : stdin);
   if (dataDir) named.data = dataDir;
-  const stripped = collector.stripLogic(paths.strippedDir, ROOT);
+  const stripped = LOGIC === SOURCE_ENTRY ? collector.stripLogic(paths.strippedDir, ROOT) : null;
   const grants = collector.readGrants(ROOT, { ...named, stripped: stripped?.dir });
 
   return new Promise((resolve, reject) => {

@@ -38,8 +38,12 @@ export async function buildDesktop(port = 47831) {
   cpSync(path.join(root, 'desktop/assets/ContextLens.icns'), path.join(app, 'Contents/Resources/ContextLens.icns'));
   const runtime = path.join(app, 'Contents/Resources/runtime');
   mkdirSync(path.join(runtime, 'scripts'), { recursive: true });
-  for (const file of ['dist', 'web', 'package.json', 'LICENSE']) cpSync(path.join(root, file), path.join(runtime, file), { recursive: true });
-  cpSync(path.join(root, 'scripts/context-lens.mjs'), path.join(runtime, 'scripts/context-lens.mjs'));
+  for (const file of ['dist', 'web', 'package.json', 'LICENSE', 'hud.mjs', 'collector.mjs', 'fence.mjs', 'install.mjs']) {
+    cpSync(path.join(root, file), path.join(runtime, file), { recursive: true });
+  }
+  for (const file of ['scripts/context-lens.mjs', 'scripts/statusline.mjs']) {
+    cpSync(path.join(root, file), path.join(runtime, file));
+  }
   cpSync(process.execPath, path.join(runtime, 'node'), { dereference: true });
   const licensePath = path.join(runtime, `Node-${process.versions.node}-LICENSE.txt`);
   if (!existsSync(licensePath)) {

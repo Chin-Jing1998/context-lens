@@ -35,10 +35,10 @@ function withHome(fn) {
 // This Node first on PATH, so the Node that Bun hands the render to is the one under test.
 const envFor = (home, configDir) => ({ PATH: [path.dirname(process.execPath), process.env.PATH].join(path.delimiter), HOME: home, USERPROFILE: home, SystemRoot: process.env.SystemRoot, CLAUDE_CONFIG_DIR: configDir, COLUMNS: '104' });
 
-function render(runtime, args) {
+function render(runtime, args, files = INSTALLED) {
   return withHome((home, configDir) => {
     const version = path.join(configDir, 'plugins', 'cache', 'context-lens', 'context-lens', '0.14.2');
-    for (const name of INSTALLED) fs.cpSync(path.join(root, name), path.join(version, name), { recursive: true });
+    for (const name of files) fs.cpSync(path.join(root, name), path.join(version, name), { recursive: true });
     const launcher = path.join(configDir, 'plugins', 'context-lens', 'statusline.mjs');
     fs.cpSync(path.join(root, 'scripts', 'statusline.mjs'), launcher);
     fs.writeFileSync(path.join(configDir, 'context-lens.json'), '{"display":{"showTerminal":true}}');
@@ -54,6 +54,9 @@ if (supported) {
   check(`Node ${process.version}: today's launcher prints the upgrade line`,
     node.status === 0 && node.stdout === `context-lens needs Node 22.18+ (this is ${process.version}). Type /context-lens:hud to fix it.\n`, node);
 }
+
+const compiled = render(process.execPath, [], INSTALLED.filter(name => name !== 'src'));
+check('桌面包可从已编译的入口渲染状态栏', compiled.status === 0 && compiled.stdout === node.stdout, compiled);
 
 // /hud runs `node hud.mjs doctor` with whatever node is on PATH, so it must answer on old Node too.
 const doctor = withHome((home, configDir) => spawnSync(process.execPath, [path.join(root, 'hud.mjs'), 'doctor'], { encoding: 'utf8', env: envFor(home, configDir) }));
