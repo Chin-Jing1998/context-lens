@@ -2,6 +2,14 @@ name: CI
 
 on:
   workflow_dispatch:
+    inputs:
+      macos_runner:
+        description: macOS 复测运行器
+        type: choice
+        default: macos-15
+        options:
+          - macos-15
+          - macos-26-intel
   pull_request:
   push:
     branches: [main]
@@ -10,7 +18,7 @@ on:
 
 jobs:
   macos-desktop:
-    runs-on: macos-15
+    runs-on: ${{ inputs.macos_runner || 'macos-15' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
