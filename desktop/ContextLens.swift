@@ -1547,7 +1547,7 @@ struct LensVisibility {
         decisionHandler(url?.scheme == "http" && url?.host == "127.0.0.1" && url?.port == origin?.port ? .allow : .cancel)
     }
 
-    static func checkDragLifecycle() {
+    static func checkDragLifecycle() async {
         _ = NSApplication.shared
         let suite = "context-lens-drag-test-" + UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!
@@ -1675,7 +1675,7 @@ struct LensVisibility {
         app.showIsland(.cost, pin: false); app.pinned = true; aligned()
         let reopenedPanel = app.panel.frame
         app.hoverTimer?.invalidate()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.4))
+        try? await Task.sleep(nanoseconds: 400_000_000)
         check(app.orbit.isVisible && app.panel.isVisible && app.panel.frame == reopenedPanel, "Old show, fade and size completions cannot disturb the reopened geometry")
         aligned()
 
@@ -1702,9 +1702,14 @@ struct LensVisibility {
         app.positionClock = { ProcessInfo.processInfo.systemUptime }
         drag(NSPoint(x: screen.minX + 15, y: screen.midY), delta: NSPoint(x: 4, y: 0))
         check(app.positionTimer?.isValid == true, "The actual run-loop timer starts for animated snapping")
-        RunLoop.current.run(until: Date().addingTimeInterval(0.45))
-        check(!app.positioning && app.positionTimer == nil && defaults.string(forKey: "position") == NSStringFromPoint(app.ball.frame.origin),
-              "The actual timer finishes and persists the settled position")
+        let expected = app.positionSnap!.to
+        let deadline = ProcessInfo.processInfo.systemUptime + 2
+        while app.positioning && ProcessInfo.processInfo.systemUptime < deadline {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        check(!app.positioning && app.positionTimer == nil, "实际吸附计时器应结束并释放位置控制")
+        check(app.ball.frame.origin == expected && defaults.string(forKey: "position") == NSStringFromPoint(expected),
+              "实际吸附计时器应将目标位置写入设置")
         app.closeOrbit(restore: false, immediately: true)
         let originalToggle = app.ballView.toggle
         var toggles = 0
@@ -1852,7 +1857,16 @@ struct LensVisibility {
             checkpoint("bounded navigation fixtures")
             checkNavigationFixtures()
             checkpoint("actual drag lifecycle")
-            LensApp.checkDragLifecycle()
+            _ = NSApplication.shared
+            var finished = false
+            Task { @MainActor in
+                await LensApp.checkDragLifecycle()
+                finished = true
+                CFRunLoopStop(CFRunLoopGetMain())
+            }
+            // 主线程事件循环继续处理实际的计时器回调，测试在主 Actor 上让出执行权。
+            CFRunLoopRun()
+            precondition(finished, "原生拖动自检提前退出")
             print("Context Lens desktop checks passed: seven islands, nine fixed themes, persistence, four Times New Roman faces, hit regions, identity, bounds and visibility")
         } else {
             let app = NSApplication.shared
