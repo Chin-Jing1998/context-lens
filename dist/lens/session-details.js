@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { sessionKey } from './sessions.js';
-import { estimateCost, sumRequests, TOKEN_KEYS } from './usage.js';
+import { estimateCost, sumRequests, TOKEN_KEYS, uncachedInput } from './usage.js';
 import { readOfficialPrices } from './pricing.js';
 import { sessionTiming } from './timing.js';
 export function validateDetailQuery(query) {
@@ -45,7 +45,7 @@ export function buildSessionDetails(key, sources, prices, query = {}, unavailabl
         if (section === 'requests') {
             complete &&= requestCoverage(source);
             for (const row of ownRequests.get(file.id))
-                add({ ...row, cost: estimateCost([row], prices, row.complete, catalog) }, row.timestampKnown === false || !Number.isFinite(Date.parse(row.at)) ? null : row.at);
+                add({ ...row, uncachedInput: uncachedInput(row), cost: estimateCost([row], prices, row.complete, catalog) }, row.timestampKnown === false || !Number.isFinite(Date.parse(row.at)) ? null : row.at);
         }
         else if (section === 'activity') {
             complete &&= parsed.activity?.complete === true;

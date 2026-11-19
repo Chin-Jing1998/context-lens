@@ -5,8 +5,9 @@ import { spawnSync } from 'node:child_process';
 import { getClaudeConfigDir } from '../claude-config-dir.js';
 import { sanitizeDisplayText } from '../utils/sanitize.js';
 import { atomicJson, lensHome, record, launchSettings } from './settings.js';
-import { mergeRequests, TOKEN_KEYS } from './usage.js';
+import { mergeCumulative, mergeRequests, TOKEN_KEYS } from './usage.js';
 import { percentageNumber, tokenNumber } from './context.js';
+export const nativeClients = ['claude', 'codex', 'agy'];
 export const validId = (id) => typeof id === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(id);
 export const sessionKey = (s) => `${s.client}:${s.id}`;
 export const dataPath = (kind, s) => {
@@ -76,7 +77,9 @@ export function discoverSessions(roots = {}) {
     const claude = roots.claude ?? path.join(getClaudeConfigDir(os.homedir()), 'projects');
     const codex = roots.codex ?? path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'sessions');
     const titles = codexTitles(codex);
-    for (const [client, root] of [['claude', claude], ['codex', codex]]) {
+    const desktopClaude = path.join(os.homedir(), '.claude', 'projects');
+    const claudeRoots = !roots.claude && process.platform === 'darwin' && claude !== desktopClaude ? [claude, desktopClaude] : [claude];
+    for (const [client, root] of [...claudeRoots.map(root => ['claude', root]), ['codex', codex]]) {
         for (const file of logFiles(root)) {
             try {
                 const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
@@ -124,8 +127,10 @@ export function discoverSessions(roots = {}) {
                     continue;
                 const title = client === 'codex' ? titles.get(id) || titleText(meta.title)
                     : titleText(entries.filter(e => e?.type === 'custom-title' && (!e.sessionId || e.sessionId === id)).at(-1)?.customTitle);
+                const turn = client === 'codex' ? entries.filter(e => e?.type === 'turn_context' && typeof e.payload?.model === 'string' && e.payload.model).at(-1) : undefined;
                 const value = { id: uniqueId, client, file, cwd: typeof meta.cwd === 'string' ? sanitizeDisplayText(meta.cwd) : '',
-                    model: '', updatedAt: stat.mtime.toISOString(), size: stat.size, mtimeMs: stat.mtimeMs,
+                    model: typeof turn?.payload.model === 'string' ? sanitizeDisplayText(turn.payload.model).slice(0, 160) : '',
+                    updatedAt: stat.mtime.toISOString(), size: stat.size, mtimeMs: stat.mtimeMs,
                     title: title || '未命名对话', lastUserAt: lastUserActivity(entries, client),
                     ...(validId(parentId) ? { parentId } : {}) };
                 if (discoveryCache.size >= 1000)
@@ -219,8 +224,9 @@ export function checkpoint(session, rows, cumulative) {
             }
         }
         catch { /* First scan or interrupted checkpoint: the append-only log remains the source. */ }
-        const requests = mergeRequests([...prior, ...rows]);
-        const total = cumulative ? mergeRequests([...(previousTotal ? [previousTotal] : []), cumulative])[0] : previousTotal;
+        const currentIds = new Set(rows.map(row => row.id));
+        const requests = mergeRequests([...prior.filter(row => !currentIds.has(row.id)), ...rows]);
+        const total = cumulative ? mergeCumulative(previousTotal, cumulative) : previousTotal;
         const merged = { requests, cumulative: total };
         if (lock !== undefined && JSON.stringify({ requests: prior, cumulative: previousTotal }) !== JSON.stringify(merged))
             atomicJson(file, merged);

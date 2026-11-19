@@ -2,6 +2,8 @@ export const CATEGORIES = [
     ['mcpTools', 'MCP tools', '#287be3'], ['systemTools', 'System tools', '#ef6834'],
     ['skills', 'Skills', '#11ae79'], ['systemPrompt', 'System prompt', '#e4a000'],
     ['memoryFiles', 'Memory files', '#83817b'], ['mcpInstructions', 'MCP server instructions', '#987caf'],
+    ['rules', 'Rules', '#83817b'], ['subagents', 'Subagents', '#987caf'], ['workflows', 'Workflows', '#5973b7'],
+    ['plugins', 'Plugins', '#a97b4c'], ['flows', 'Flows', '#677f50'],
     ['messages', 'Conversation', '#00a0ad'], ['unclassified', 'Unclassified', '#64748b'],
     ['buffer', 'Autocompact buffer', '#c1bfb2'], ['free', 'Free space', '#e7e7e7'],
 ];
@@ -40,7 +42,7 @@ export function buildContext(args) {
     if (usedTokens !== null) {
         if (known > usedTokens)
             warnings.push(`Category conflict: ${known} > context ${usedTokens}; values are not rescaled`);
-        categories.unclassified = { tokens: Math.max(0, usedTokens - known), accuracy: 'derived', source: 'Reported total minus known categories' };
+        categories.unclassified = { tokens: Math.max(0, usedTokens - known), accuracy: args.windowEstimated ? 'estimated' : 'derived', source: 'Reported total minus known categories' };
     }
     let buffer = args.buffer;
     if (!buffer && modelTokens && budget.tokens !== null && budget.scope === 'total' && !budget.disabled && ['reported', 'configured'].includes(budget.accuracy)) {
@@ -64,6 +66,7 @@ export function buildContext(args) {
         return { ...m, tokens, id, label, color, percent: tokens !== null && denominator ? tokens / denominator * 100 : null };
     });
     return { usedTokens, modelTokens, budget, denominator, view, segments, warnings, windowPercent,
+        ...(args.windowEstimated ? { windowEstimated: true } : {}),
         percent: view === 'model' ? windowPercent : usedTokens !== null && denominator ? usedTokens / denominator * 100 : null, updatedAt: args.at ?? null };
 }
 //# sourceMappingURL=context.js.map

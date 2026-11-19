@@ -13,5 +13,6 @@ export declare function buildContext(args: {
     view?: 'budget' | 'model';
     at?: string;
     reportedPercent?: number | null;
+    windowEstimated?: boolean;
 }): Context;
 //# sourceMappingURL=context.d.ts.map

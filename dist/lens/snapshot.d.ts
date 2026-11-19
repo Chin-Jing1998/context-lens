@@ -1,6 +1,7 @@
 import { type SessionFile, type LiveClaude } from './sessions.js';
 import { type LaunchSettings } from './settings.js';
 import { type DetailQuery } from './session-details.js';
+import { type AgyRoots } from './agy.js';
 import type { HudSnapshot } from './types.js';
 export declare class SessionCollector {
     private roots?;
@@ -10,9 +11,11 @@ export declare class SessionCollector {
     constructor(roots?: {
         claude?: string;
         codex?: string;
+        agy?: AgyRoots;
     } | undefined);
     list(refresh?: boolean): SessionFile[];
     private read;
+    private saveParsed;
     get(key: string, options?: {
         view?: 'budget' | 'model';
         launch?: LaunchSettings;

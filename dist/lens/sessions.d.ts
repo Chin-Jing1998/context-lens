@@ -7,6 +7,7 @@ export interface SessionFile extends SessionInfo {
     mtimeMs: number;
     lastUserAt?: number;
 }
+export declare const nativeClients: readonly ['claude', 'codex', 'agy'];
 export declare const validId: (id: unknown) => id is string;
 export declare const sessionKey: (s: {
     client: string;

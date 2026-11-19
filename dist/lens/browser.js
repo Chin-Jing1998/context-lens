@@ -1,13 +1,16 @@
 import { createDetailsUI } from './desktop-details.js';
+import { priceModelIds } from './model-metadata.js';
 const $ = (id) => document.getElementById(id);
 const el = (tag, text = '') => { const node = document.createElement(tag); node.textContent = text; return node; };
 const text = (node, value) => { if (node.textContent !== value)
     node.textContent = value; };
 const count = (n) => n === null ? '—' : n >= 1000000 ? (n / 1000000).toFixed(2) + 'M' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : n.toLocaleString('zh-CN');
+const usageValue = (totals, field) => totals.missingTokens?.includes(field) ? null : totals[field];
 const pct = (n) => n === null ? '—' : n.toFixed(1) + '%';
-const fields = ['input', 'output', 'cacheRead', 'cacheWrite', 'cacheWrite5m', 'cacheWrite1h'];
-const fieldNames = ['输入', '输出', '缓存读取', '缓存写入', '写入 5 分钟', '写入 1 小时'];
-const categoryNames = { mcpTools: 'MCP 工具', systemTools: '系统工具', skills: '技能', systemPrompt: '系统提示词', memoryFiles: '记忆文件', mcpInstructions: 'MCP 服务指令', messages: '对话内容', unclassified: '未分类占用', buffer: '压缩缓冲', free: '可用空间' };
+const fields = ['input', 'output', 'cacheRead', 'cacheWrite', 'cacheWrite5m', 'cacheWrite1h', 'cacheWrite12h'];
+const fieldNames = ['未缓存输入', '输出', '缓存读取', '缓存写入', '写入 5 分钟', '写入 1 小时', '写入 12 小时'];
+const categoryNames = { mcpTools: 'MCP 工具', systemTools: '系统工具', skills: '技能', systemPrompt: '系统提示词', memoryFiles: '记忆文件', mcpInstructions: 'MCP 服务指令',
+    rules: '规则', subagents: '子代理', workflows: '工作流', plugins: '插件', flows: '自动化流程', messages: '对话内容', unclassified: '未分类占用', buffer: '压缩缓冲', free: '可用空间' };
 const bridge = window.webkit?.messageHandlers?.lens;
 const desktopHost = window.contextLensHost;
 desktopHost?.onEvent((name, detail) => window.dispatchEvent(new CustomEvent(name, { detail })));
@@ -340,11 +343,11 @@ function renderRuntime(reset = false) {
             text($(id), value || '—');
         $(id).title = value || '';
     }
-    text($('runtime-client'), latest ? clientName(latest.session.client) : '—');
+    text($('runtime-client'), latest ? clientName(latest.session.client) + (latest.session.surface === 'cli' ? ' CLI' : '') : '—');
 }
 setInterval(() => { if (!document.documentElement.dataset.island || document.documentElement.dataset.island === 'runtime')
     renderRuntime(); }, 1000);
-for (const node of [document.documentElement, $('model-cost-details'), $('price-list')])
+for (const node of [document.documentElement, $('model-cost-details'), $('price-list'), document.querySelector('.settings-scroll')])
     autoScrollbar(node);
 let layoutFrame = 0, lastLayout = '', cardTransition = false;
 let cardAnimation = null;
@@ -363,24 +366,7 @@ function fitDesktopDetail() {
     layoutFrame = requestAnimationFrame(() => {
         layoutFrame = 0;
         const island = document.documentElement.dataset.island;
-        if (cardTransition)
-            return;
-        if (settingsDialog.open) {
-            const page = settingsDialog.dataset.page || 'display';
-            const style = getComputedStyle(settingsDialog), gap = parseFloat(style.rowGap) || 0;
-            const pane = $(page === 'prices' ? 'price-settings' : page + '-settings');
-            const natural = settingsDialog.querySelector('.dialog-heading').getBoundingClientRect().height
-                + settingsDialog.querySelector('.settings-tabs').getBoundingClientRect().height + pane.scrollHeight
-                + gap * 2 + (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
-            const height = String(page === 'prices' ? 572 : Math.ceil(Math.max(200, natural)));
-            const layout = ['settings', innerWidth, height].join(':');
-            if (layout === lastLayout)
-                return;
-            lastLayout = layout;
-            bridge.postMessage({ action: 'settings-layout', height, width: String(innerWidth) });
-            return;
-        }
-        if (!island)
+        if (cardTransition || settingsDialog.open || !island)
             return;
         // Measure the content, not the viewport, so cards can shrink after a disclosure closes.
         const height = island === 'usage' ? '520' : String(Math.ceil(document.querySelector('main').getBoundingClientRect().height));
@@ -476,7 +462,7 @@ $('segments').onkeydown = event => { if (event.key === 'Escape') {
     hideContextSegment();
     event.stopPropagation();
 } };
-const usageMetrics = [['输入 tokens', 'input'], ['输出 tokens', 'output'], ['缓存写入', 'cacheWrite'], ['写入 5 分钟', 'cacheWrite5m'], ['写入 1 小时', 'cacheWrite1h'], ['缓存读取', 'cacheRead'], ['读取次数', 'cacheReadRequests'], ['命中率', 'hitRate'], ['推理输出', 'reasoning'], ['请求次数', 'requests']];
+const usageMetrics = [['输入总量', 'input'], ['未缓存输入', 'uncachedInput'], ['输出总量', 'output'], ['缓存读取', 'cacheRead'], ['读取次数', 'cacheReadRequests'], ['缓存写入', 'cacheWrite'], ['写入 5 分钟', 'cacheWrite5m'], ['写入 1 小时', 'cacheWrite1h'], ['命中率', 'hitRate'], ['推理输出', 'reasoning'], ['请求次数', 'requests']];
 const usageCells = usageMetrics.map(([label]) => {
     const row = el('tr');
     const heading = el('th', label);
@@ -497,14 +483,20 @@ function render(snapshot) {
     updateSelection();
     const c = snapshot.context, claude = snapshot.session.client === 'claude';
     const primaryPercent = claude ? c.windowPercent ?? null : c.percent;
-    const approximate = !claude && c.budget.accuracy === 'estimated' ? '≈' : '';
-    text($('context-title'), claude ? '上下文窗口' : '上下文');
+    const approximate = c.windowEstimated || (!claude && c.view === 'budget' && c.budget.accuracy === 'estimated') ? '≈' : '';
+    text($('context-title'), claude ? '上下文窗口' : snapshot.session.client === 'agy' ? (c.view === 'model' ? '上下文窗口' : '上下文预算') : '上下文');
+    const model = snapshot.session.modelName || (snapshot.session.model === 'unknown' ? '' : snapshot.session.model);
+    text($('context-model'), model);
+    $('context-model').hidden = !model;
+    $('context-model').title = model;
     text($('context-percent'), (primaryPercent === null ? '' : approximate) + pct(primaryPercent));
     text($('settings-preview-percent'), primaryPercent === null ? '—' : approximate + Math.round(primaryPercent) + '%');
     $('settings-preview-percent').title = $('context-percent').textContent || '—';
     $('settings-preview-percent').parentElement.style.setProperty('--preview-usage', Math.max(0, Math.min(100, primaryPercent ?? 0)) * 3.6 + 'deg');
-    text($('context-used'), count(c.usedTokens));
-    text($('context-limit'), count(claude ? c.modelTokens : c.denominator));
+    const limit = claude ? c.modelTokens : c.denominator;
+    text($('context-used'), (c.windowEstimated && c.usedTokens !== null ? '≈' : '') + count(c.usedTokens));
+    text($('context-limit'), count(limit));
+    $('context-capacity').hidden = !limit;
     $('context-budget-info').hidden = !claude;
     if (claude) {
         const budget = c.budget.tokens === null ? '—' : (c.budget.accuracy === 'estimated' ? '≈ ' : '') + count(c.budget.tokens) + ' tokens';
@@ -588,13 +580,14 @@ function render(snapshot) {
     $('segments').setAttribute('aria-label', allocated.map(s => (categoryNames[s.id] || s.label) + ' ' + (s.accuracy === 'estimated' ? '≈' : '') + count(s.tokens) + ' tokens ' + pct(s.percent)).join('；') || '暂无分类数据');
     if (activeContextSegment)
         showContextSegment(activeContextSegment, contextSegmentAnchor);
-    text($('input-total'), count(snapshot.totals.all.input));
-    text($('output-total'), count(snapshot.totals.all.output));
+    const all = snapshot.totals.all;
+    text($('input-total'), count(usageValue(all, 'input')));
+    text($('output-total'), count(usageValue(all, 'output')));
     text($('cache-rate'), pct(snapshot.totals.all.hitRate === null ? null : snapshot.totals.all.hitRate * 100));
     text($('agents-heading'), '子代理 (' + snapshot.totals.agentCount + ')');
     usageMetrics.forEach(([, key], i) => {
         [snapshot.totals.main, snapshot.totals.agents, snapshot.totals.all].forEach((totals, j) => {
-            const value = totals[key];
+            const value = totals.missingTokens?.includes(key) ? null : totals[key] ?? null;
             text(usageCells[i][j], key === 'hitRate' ? pct(value === null ? null : value * 100) : count(value));
             usageCells[i][j].title = (value?.toLocaleString('zh-CN') ?? '无法确定') + (totals.complete ? '' : ' · 记录不完整');
         });
@@ -607,18 +600,20 @@ function render(snapshot) {
     $('cost').classList.toggle('number', snapshot.cost.amount !== null);
     text($('cost-current-currency'), snapshot.cost.currency);
     text($('cost-session-title'), snapshot.session.title || snapshot.session.id);
-    text($('cost-session-model'), snapshot.session.model || '—');
+    text($('cost-session-model'), model || '—');
     $('cost-session-title').title = snapshot.session.title || snapshot.session.id;
     $('cost-session-model').title = snapshot.session.model || '';
     text($('cost-session-client'), clientName(snapshot.session.client));
-    text($('cost-session-input'), count(snapshot.totals.all.input));
-    text($('cost-session-output'), count(snapshot.totals.all.output));
+    text($('cost-session-input'), count(usageValue(all, 'input')));
+    text($('cost-session-output'), count(usageValue(all, 'output')));
+    text($('cost-session-uncached'), count(all.uncachedInput ?? null));
+    text($('cost-session-cache-read'), count(usageValue(all, 'cacheRead')));
     text($('cost-session-requests'), count(snapshot.totals.all.requests));
     text($('cost-session-hit'), pct(snapshot.totals.all.hitRate === null ? null : snapshot.totals.all.hitRate * 100));
 }
-function clientName(value) { return { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode', mimocode: 'MiMo Code', deepseek: 'DeepSeek', zcode: 'ZCode' }[value] || value; }
+function clientName(value) { return { claude: 'Claude Code', codex: 'Codex', agy: 'Antigravity', opencode: 'OpenCode', mimocode: 'MiMo Code', deepseek: 'DeepSeek', zcode: 'ZCode' }[value] || value; }
 function clearCurrentCost() {
-    for (const id of ['cost', 'cost-current-currency', 'cost-session-model', 'cost-session-client', 'cost-session-input', 'cost-session-output', 'cost-session-requests', 'cost-session-hit'])
+    for (const id of ['cost', 'cost-current-currency', 'cost-session-model', 'cost-session-client', 'cost-session-input', 'cost-session-output', 'cost-session-uncached', 'cost-session-cache-read', 'cost-session-requests', 'cost-session-hit'])
         text($(id), '—');
     $('cost').title = '';
     text($('cost-session-title'), '暂无活跃对话');
@@ -632,12 +627,12 @@ async function refreshSnapshot() {
         $('empty').hidden = false;
         hideContextSegment();
         clearCurrentCost();
-        text($('empty-message'), '等待 Claude 或 Codex 的当前活跃对话。');
+        text($('empty-message'), '等待当前活跃对话。');
         return;
     }
     try {
         const data = await api('/api/snapshot?session=' + encodeURIComponent(key) + '&view=' + mode);
-        if (request !== version || key !== selected || mode !== view)
+        if (request !== version || key !== selected || mode !== view || `${data.session.client}:${data.session.id}` !== key)
             return;
         render(data);
         status('已连接 · 本机');
@@ -668,7 +663,6 @@ async function refreshActive() {
     }
     catch {
         activeStatus('自动定位连接中断');
-        selectSession('');
     }
 }
 function selectSession(key) {
@@ -871,6 +865,8 @@ function settingsTab(page) {
         $(panes[name]).hidden = !chosen;
     }
     settingsDialog.dataset.page = page;
+    if (changed)
+        settingsDialog.querySelector('.settings-scroll').scrollTop = 0;
     settingsTabAnimation?.cancel();
     settingsTabAnimation = null;
     const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.dataset.reduceMotion === 'true';
@@ -881,10 +877,8 @@ function settingsTab(page) {
         void loadPrices();
     if (page === 'updates' && $('app-version').textContent === '—')
         void loadUpdateInfo();
-    lastLayout = '';
-    fitDesktopDetail();
 }
-function openSettings(prices = false, trigger = $('settings-trigger')) { hideContextSegment(); notifyDesktop('settings-open'); settingsTab(prices ? 'prices' : 'display'); openLayer(settingsDialog, trigger); fitDesktopDetail(); }
+function openSettings(prices = false, trigger = $('settings-trigger')) { hideContextSegment(); notifyDesktop('settings-open'); settingsTab(prices ? 'prices' : 'display'); openLayer(settingsDialog, trigger); }
 for (const dialog of [settingsDialog]) {
     dialog.addEventListener('cancel', event => { event.preventDefault(); closeLayer(); });
     dialog.addEventListener('close', () => {
@@ -1090,8 +1084,8 @@ function fieldError(input, message) {
         input.removeAttribute('aria-invalid');
 }
 function autoRates(model) {
-    const id = Object.hasOwn(officialRates, model) ? model : model.replace(/-\d{4}-\d{2}-\d{2}$|-\d{8}$/, '');
-    return Object.hasOwn(officialRates, id) ? officialRates[id] : undefined;
+    const id = priceModelIds(model).find(id => Object.hasOwn(officialRates, id));
+    return id ? officialRates[id] : undefined;
 }
 function rateSignature(model, rates) { return JSON.stringify([model, ...fields.map(field => rates[field] ?? null)]); }
 function addPrice(model = '', rates = {}, expanded = false, automatic = false) {
@@ -1218,11 +1212,13 @@ function addPrice(model = '', rates = {}, expanded = false, automatic = false) {
     priceListState();
 }
 async function loadPrices() {
+    if ($('price-rows').querySelector('details[open]:not([hidden])'))
+        return;
     const request = ++priceLoadVersion, edit = editVersion;
     try {
         const query = new URLSearchParams({ period: 'today', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
         const [config, official, usage] = await Promise.all([api('/api/config'), api('/api/pricing'), api('/api/costs?' + query).catch(() => null)]);
-        if (request !== priceLoadVersion || edit !== editVersion || priceDirty)
+        if (request !== priceLoadVersion || edit !== editVersion || priceDirty || $('price-rows').querySelector('details[open]:not([hidden])'))
             return;
         officialRates = official.prices;
         $('currency').value = config.currency;
@@ -1402,7 +1398,6 @@ if (bridge) {
     document.documentElement.dataset.island = 'context';
     const observer = new ResizeObserver(fitDesktopDetail);
     observer.observe(document.querySelector('main'));
-    observer.observe(settingsDialog);
     window.addEventListener('resize', () => { lastLayout = ''; fitDesktopDetail(); });
 }
 async function poll() {

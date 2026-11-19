@@ -43,7 +43,7 @@ export function validatePrices(value) {
     if (!raw.prices || typeof raw.prices !== 'object' || Array.isArray(raw.prices))
         throw new Error('Prices must be a model-to-rate object');
     const prices = Object.create(null);
-    const fields = ['input', 'output', 'cacheRead', 'cacheWrite', 'cacheWrite5m', 'cacheWrite1h'];
+    const fields = ['input', 'output', 'cacheRead', 'cacheWrite', 'cacheWrite5m', 'cacheWrite1h', 'cacheWrite12h'];
     if (Object.keys(raw.prices).length > 200)
         throw new Error('At most 200 model prices are supported');
     for (const [model, value] of Object.entries(raw.prices)) {

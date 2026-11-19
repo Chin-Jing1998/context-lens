@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import { record } from './settings.js';
 import { tokenNumber } from './context.js';
 import { sanitizeDisplayText } from '../utils/sanitize.js';
-import { ZERO_TOKENS, mergeRequests, normalizeUsage } from './usage.js';
+import { measured, mergeRequests, normalizeUsage, TOKEN_KEYS, uncachedInput, ZERO_TOKENS } from './usage.js';
 const text = (v, max = 200) => typeof v === 'string' ? sanitizeDisplayText(v).slice(0, max) : '';
 const at = (v) => (typeof v === 'number' || typeof v === 'string') && Number.isFinite(new Date(v).getTime()) ? new Date(v).toISOString() : '';
 const n = (v) => tokenNumber(v) ?? 0;
@@ -126,13 +126,27 @@ export function validateCostSession(value) {
             || (r.at !== '' && !Number.isFinite(Date.parse(r.at))) || typeof r.complete !== 'boolean')
             throw new Error('Invalid request');
         const row = { ...ZERO_TOKENS, id: r.id, model: r.model, at: r.at ? new Date(r.at).toISOString() : '', complete: r.complete, timestampKnown: r.timestampKnown !== false && !!r.at };
-        for (const field of Object.keys(ZERO_TOKENS)) {
+        for (const field of TOKEN_KEYS) {
             if (tokenNumber(r[field]) === null)
                 throw new Error('Invalid token count');
             row[field] = r[field];
         }
-        if (row.cacheRead + row.cacheWrite > row.input || row.cacheWrite5m + row.cacheWrite1h > row.cacheWrite)
+        if (r.missingTokens !== undefined) {
+            if (!Array.isArray(r.missingTokens) || r.missingTokens.length > TOKEN_KEYS.length || r.missingTokens.some(field => !TOKEN_KEYS.includes(field)))
+                throw new Error('Invalid token coverage');
+            row.missingTokens = [...new Set(r.missingTokens)];
+        }
+        if (measured(row, 'input') && row.cacheRead + row.cacheWrite > row.input
+            || measured(row, 'cacheWrite') && row.cacheWrite5m + row.cacheWrite1h > row.cacheWrite)
             throw new Error('Invalid token buckets');
+        if (r.uncachedInput !== undefined) {
+            if (tokenNumber(r.uncachedInput) === null)
+                throw new Error('Invalid uncached token count');
+            row.uncachedInput = r.uncachedInput;
+        }
+        const uncached = uncachedInput(row);
+        if (uncached !== undefined)
+            row.uncachedInput = uncached;
         if (valid(r.serviceTier, 80))
             row.serviceTier = r.serviceTier;
         return row;

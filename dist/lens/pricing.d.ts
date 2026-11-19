@@ -5,21 +5,24 @@ export declare const PRICE_SOURCES: {
     readonly deepseek: 'https://api-docs.deepseek.com/quick_start/pricing/';
     readonly mimo: 'https://mimo.mi.com/static/docs/price/pay-as-you-go.md';
     readonly zai: 'https://docs.z.ai/guides/overview/pricing';
-    readonly google: 'https://ai.google.dev/gemini-api/docs/pricing';
+    readonly google: 'https://aistudio.google.com/docs/pricing';
 };
 type Provider = keyof typeof PRICE_SOURCES;
-interface TierPrice {
+export interface TierPrice {
     rates: Rate;
     longContext?: Rate;
+    dateChange?: {
+        at: string;
+        rates: Rate;
+        longContext?: Rate;
+    };
+    expiresAt?: string;
 }
 export interface OfficialPrice extends TierPrice {
     threshold?: number;
     tiers?: Record<string, TierPrice>;
     timePolicy?: 'deepseek';
-    dateChange?: {
-        at: string;
-        rates: Rate;
-    };
+    checkedAt?: string;
 }
 export interface ProviderPrices {
     source: string;
@@ -27,10 +30,11 @@ export interface ProviderPrices {
     models: Record<string, OfficialPrice>;
 }
 export type PriceCatalog = Record<Provider, ProviderPrices>;
-/** Parse only the documented text-token tables; never infer prices from model names. */
+/** 仅解析官方文本 token 价格表。 */
 export declare function parseOfficialPrices(provider: Provider, document: string, checkedAt: string): ProviderPrices;
 export declare function readOfficialPrices(home?: string): PriceCatalog;
-export declare function officialPrice(row: Pick<RequestUsage, 'model' | 'input' | 'serviceTier'> & Partial<Pick<RequestUsage, 'at' | 'timestampKnown'>>, catalog: PriceCatalog): {
+export declare function referenceRates(catalog: PriceCatalog, now?: number): Record<string, Rate>;
+export declare function officialPrice(row: Pick<RequestUsage, 'model' | 'input' | 'serviceTier'> & Partial<Pick<RequestUsage, 'at' | 'timestampKnown' | 'missingTokens'>>, catalog: PriceCatalog): {
     rates: Rate;
     source: string;
     checkedAt: string;

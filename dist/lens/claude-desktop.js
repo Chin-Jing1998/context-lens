@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { sessionKey, validId } from './sessions.js';
+import { sanitizeDisplayText } from '../utils/sanitize.js';
 const fileName = /^(local_[a-zA-Z0-9_-]{1,94})\.json$/;
 const normalizeTitle = (value) => value.replace(/\s+/g, ' ').trim();
 const genericTitle = /^(?:Claude(?: Code)?|Code|New (?:chat|conversation|session)|Untitled(?: (?:chat|conversation|session))?|新(?:建)?(?:对话|会话)|未命名(?:对话|会话)?)$/i;
@@ -19,6 +20,30 @@ export class ClaudeDesktopSessions {
     constructor(roots = defaultRoots(), now = Date.now) {
         this.roots = roots;
         this.now = now;
+    }
+    describe(files) {
+        if (!files.some(file => file.client === 'claude' && !file.parentId))
+            return files;
+        this.refresh();
+        if (!this.complete)
+            return files;
+        const byCli = new Map();
+        for (const row of this.rows) {
+            if (this.blocked.has(row.sessionId))
+                continue;
+            const matches = byCli.get(row.cliSessionId) ?? [];
+            matches.push(row);
+            byCli.set(row.cliSessionId, matches);
+        }
+        return files.map(file => {
+            const matches = file.client === 'claude' && !file.parentId ? byCli.get(file.id) : undefined;
+            if (!matches?.length || new Set(matches.map(row => row.sessionId)).size !== 1)
+                return file;
+            const titles = new Set(matches.map(row => row.title).filter(Boolean));
+            const models = new Set(matches.map(row => row.model).filter(Boolean));
+            return { ...file, surface: 'desktop', title: (!file.title || file.title === '未命名对话') && titles.size === 1 ? [...titles][0] : file.title,
+                model: file.model || (models.size === 1 ? [...models][0] : '') };
+        });
     }
     resolve(files, hint) {
         if (!hint?.id && !hint?.title)
@@ -124,7 +149,8 @@ export class ClaudeDesktopSessions {
                                 if (data.sessionId !== id || !validId(data.cliSessionId))
                                     throw new Error('Invalid desktop identity');
                                 row = { sessionId: id, cliSessionId: data.cliSessionId,
-                                    title: typeof data.title === 'string' && data.title.length <= 200 ? normalizeTitle(data.title) : '' };
+                                    title: typeof data.title === 'string' && data.title.length <= 200 ? normalizeTitle(sanitizeDisplayText(data.title)) : '',
+                                    model: typeof data.model === 'string' && data.model.length <= 160 ? sanitizeDisplayText(data.model) : '' };
                             }
                             catch {
                                 this.blocked.add(id);
@@ -156,4 +182,5 @@ export class ClaudeDesktopSessions {
         }
     }
 }
+export const claudeDesktopSessions = new ClaudeDesktopSessions();
 //# sourceMappingURL=claude-desktop.js.map

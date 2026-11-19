@@ -2,20 +2,30 @@ import * as http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { SessionCollector } from './snapshot.js';
 import { atomicJson, configPath, readPrices, validatePrices } from './settings.js';
-import { sessionKey } from './sessions.js';
+import { nativeClients, sessionKey, validId } from './sessions.js';
 import { ActiveSessions } from './active.js';
-import { readOfficialPrices, refreshOfficialPrices } from './pricing.js';
+import { readOfficialPrices, referenceRates, refreshOfficialPrices } from './pricing.js';
 import { CostHistory } from './cost-history.js';
 import { costRange } from './cost-report.js';
 import { validateDetailQuery } from './session-details.js';
 import { checkUpdates, updateInfo } from './updates.js';
+const costClients = ['opencode', 'mimocode', 'deepseek', 'zcode'];
+const nativeKey = (key) => {
+    const [client, id, extra] = key.split(':');
+    return extra === undefined && nativeClients.some(value => value === client) && validId(id);
+};
+const costKey = (key) => {
+    const [client, id, extra] = key.split(':');
+    return extra === undefined && costClients.includes(client) && validId(id);
+};
 export async function startServer(options = {}) {
     const collector = options.collector ?? new SessionCollector();
-    const costs = options.costHistory ?? new CostHistory(options.collector ? { native: () => collector.list(), sources: [] } : {});
+    const costs = options.costHistory ?? new CostHistory(options.collector ? { native: () => collector.list().filter(file => file.client !== 'agy'), sources: [] } : {});
     const active = new ActiveSessions();
     const assets = {
         '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'],
         '/desktop-details.js': ['desktop-details.js', 'text/javascript; charset=utf-8'],
+        '/model-metadata.js': ['model-metadata.js', 'text/javascript; charset=utf-8'],
         '/app-icon.svg': ['app-icon.svg', 'image/svg+xml'],
     };
     const server = http.createServer(async (req, res) => {
@@ -52,7 +62,7 @@ export async function startServer(options = {}) {
                 const client = url.searchParams.get('client') || undefined;
                 const rawPid = url.searchParams.get('pid');
                 const pid = rawPid === null ? undefined : Number(rawPid);
-                if ((client && !['claude', 'codex', 'opencode', 'mimocode', 'deepseek', 'zcode'].includes(client)) || (pid !== undefined && (!Number.isSafeInteger(pid) || pid < 2 || pid > 2147483647))) {
+                if ((client && ![...nativeClients, ...costClients].includes(client)) || (pid !== undefined && (!Number.isSafeInteger(pid) || pid < 2 || pid > 2147483647))) {
                     json(400, { error: 'Invalid active-session target' });
                     return;
                 }
@@ -65,16 +75,16 @@ export async function startServer(options = {}) {
                 json(200, active.get([...collector.list(), ...costs.activeFiles()], client, pid, { id, title, cwd, tty }));
             }
             else if (req.method === 'GET' && url.pathname === '/api/sessions') {
-                json(200, collector.list(true).map(({ id, client, cwd, model, updatedAt, parentId, title }) => ({ id, key: sessionKey({ client, id }), client, cwd, model, updatedAt, parentId, title })));
+                json(200, collector.list(true).map(({ id, client, cwd, model, updatedAt, parentId, title, surface }) => ({ id, key: sessionKey({ client, id }), client, cwd, model, updatedAt, parentId, title, surface })));
             }
             else if (req.method === 'GET' && url.pathname === '/api/snapshot') {
                 const key = url.searchParams.get('session') || '';
-                if (!/^(claude|codex|opencode|mimocode|deepseek|zcode):[a-zA-Z0-9_-]{1,100}$/.test(key)) {
+                if (!nativeKey(key) && !costKey(key)) {
                     json(400, { error: 'Select a valid session' });
                     return;
                 }
                 const view = url.searchParams.get('view') === 'model' ? 'model' : 'budget';
-                if (!/^(claude|codex):/.test(key)) {
+                if (costKey(key)) {
                     const snapshot = costs.snapshot(key, view);
                     json(snapshot ? 200 : 404, snapshot ?? { error: 'Session is no longer available' });
                     return;
@@ -87,8 +97,8 @@ export async function startServer(options = {}) {
             }
             else if (req.method === 'GET' && url.pathname === '/api/details') {
                 const key = url.searchParams.get('session') || '';
-                if (!/^(claude|codex):[a-zA-Z0-9_-]{1,100}$/.test(key)) {
-                    json(400, { error: 'Select a Claude Code or Codex session' });
+                if (!nativeKey(key)) {
+                    json(400, { error: '请选择有本地日志的会话' });
                     return;
                 }
                 const query = Object.fromEntries(['section', 'scope', 'status', 'kind', 'sort'].flatMap(name => url.searchParams.has(name) ? [[name, url.searchParams.get(name)]] : []));
@@ -149,7 +159,7 @@ export async function startServer(options = {}) {
             }
             else if (req.method === 'GET' && url.pathname === '/api/pricing') {
                 const catalog = readOfficialPrices();
-                json(200, { currency: 'USD', prices: Object.fromEntries(Object.values(catalog).flatMap(provider => Object.entries(provider.models).map(([model, value]) => [model, value.rates]))), catalog });
+                json(200, { currency: 'USD', prices: referenceRates(catalog), catalog });
             }
             else if (req.method === 'PUT' && url.pathname === '/api/config') {
                 if (!/^application\/json(?:;|$)/i.test(req.headers['content-type'] || '')) {

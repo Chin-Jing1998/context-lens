@@ -1,6 +1,6 @@
-export type Client = 'claude' | 'codex';
+export type Client = 'claude' | 'codex' | 'agy';
 export type Accuracy = 'reported' | 'estimated' | 'configured' | 'derived' | 'unknown';
-export type Category = 'mcpTools' | 'systemTools' | 'skills' | 'systemPrompt' | 'memoryFiles' | 'mcpInstructions' | 'messages' | 'unclassified' | 'buffer' | 'free';
+export type Category = 'mcpTools' | 'systemTools' | 'skills' | 'systemPrompt' | 'memoryFiles' | 'mcpInstructions' | 'rules' | 'subagents' | 'workflows' | 'plugins' | 'flows' | 'messages' | 'unclassified' | 'buffer' | 'free';
 export interface Measurement {
     tokens: number | null;
     source: string;
@@ -32,9 +32,10 @@ export interface Context {
     segments: Segment[];
     warnings: string[];
     updatedAt: string | null;
+    windowEstimated?: boolean;
     messageBreakdown?: MessageSegment[];
 }
-export type MessageKind = 'user' | 'assistant' | 'thinking' | 'toolCall' | 'toolResult' | 'file' | 'plan' | 'summary' | 'other';
+export type MessageKind = 'user' | 'assistant' | 'thinking' | 'toolCall' | 'toolResult' | 'tools' | 'system' | 'file' | 'plan' | 'summary' | 'other';
 export interface MessageSegment extends Measurement {
     id: MessageKind;
 }
@@ -47,7 +48,11 @@ export interface Tokens {
     cacheWrite1h: number;
     reasoning: number;
 }
-export interface RequestUsage extends Tokens {
+interface TokenCoverage {
+    missingTokens?: (keyof Tokens)[];
+    uncachedInput?: number;
+}
+export interface RequestUsage extends Tokens, TokenCoverage {
     timestampKnown?: boolean;
     id: string;
     model: string;
@@ -55,7 +60,7 @@ export interface RequestUsage extends Tokens {
     complete: boolean;
     serviceTier?: string;
 }
-export interface Totals extends Tokens {
+export interface Totals extends Tokens, TokenCoverage {
     requests: number | null;
     cacheReadRequests: number | null;
     hitRate: number | null;
@@ -68,6 +73,7 @@ export interface Rate {
     cacheWrite?: number;
     cacheWrite5m?: number;
     cacheWrite1h?: number;
+    cacheWrite12h?: number;
 }
 export interface LensConfig {
     currency: string;
@@ -99,6 +105,8 @@ export interface SessionInfo {
     updatedAt: string;
     parentId?: string;
     title?: string;
+    surface?: 'desktop' | 'cli';
+    modelName?: string;
 }
 export type ActivityKind = 'commands' | 'skills' | 'mcp';
 export type ActivityStatus = 'succeeded' | 'failed' | 'running' | 'unknown';
@@ -281,4 +289,5 @@ export interface SessionInsights {
     };
     metadata?: ClaudeDetails['metadata'];
 }
+export {};
 //# sourceMappingURL=types.d.ts.map

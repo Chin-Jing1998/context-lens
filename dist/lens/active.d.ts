@@ -17,6 +17,7 @@ export interface VisibleSessionHint {
 export interface ActiveSessionInfo {
     id: string;
     client: string;
+    surface?: 'desktop' | 'cli';
     parentId?: string;
     title?: string;
     cwd: string;
@@ -32,6 +33,7 @@ export declare function isClaudeProcess(command: string): boolean;
 export declare function windowsResumeCandidates(files: ActiveSessionInfo[], processes: WindowsProcess[]): Running[];
 export declare function visibleSession(files: ActiveSessionInfo[], client?: string, hint?: VisibleSessionHint): string | null | undefined;
 export declare function chooseActive(candidates: Running[], parents: Map<number, number>, targetPid?: number, activity?: Map<string, number>): ActiveResult;
+export declare function agyLockCandidates(output: string, directory: string, commands: Map<number, string>): Running[];
 /** Read live ownership evidence, never infer the active session from the newest historical log. */
 export declare class ActiveSessions {
     private at;

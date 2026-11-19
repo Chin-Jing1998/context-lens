@@ -3,6 +3,12 @@ export interface ActivityLog {
     calls: ActivityCall[];
     complete: boolean;
 }
+export declare function skillName(value: unknown, cwd?: string): string;
+export declare function commandName(value: unknown): string;
+export declare function mcpTarget(server: unknown, tool: unknown, args: unknown): {
+    name: string;
+    detail: string;
+};
 /** Count execution records, never JavaScript source text or installed tool inventories. */
 export declare class ActivityReader {
     private info;

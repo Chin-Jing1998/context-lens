@@ -3,7 +3,7 @@ import * as readline from 'node:readline';
 import { createRequire } from 'node:module';
 import { sanitizeDisplayText } from '../utils/sanitize.js';
 import { CATEGORIES, tokenNumber } from './context.js';
-import { mergeRequests, normalizeUsage } from './usage.js';
+import { mergeCumulative, mergeRequests, normalizeUsage, TOKEN_KEYS } from './usage.js';
 import { record } from './settings.js';
 import { ClaudeContext } from './claude-context.js';
 import { ActivityReader } from './activity.js';
@@ -19,7 +19,11 @@ function estimate(text, source, at) {
     return { tokens: tokenizer.encode(text, [], []).length, accuracy: 'estimated', source: `${source}; approximate o200k_base encoding`, at };
 }
 const display = (value, max = 160) => typeof value === 'string' ? sanitizeDisplayText(value).slice(0, max) : '';
-const timestamp = (value, fallback) => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : fallback;
+const timestamp = (value, fallback) => {
+    const reported = typeof value === 'string' ? Date.parse(value) : NaN;
+    const time = Number.isFinite(reported) ? reported : Date.parse(fallback);
+    return Number.isFinite(time) ? new Date(time).toISOString() : fallback;
+};
 /** Only a local /context command's output is a diagnostic, never assistant/tool prose. */
 function contextDiagnostic(text, at) {
     if (typeof text !== 'string' || !text.trimStart().startsWith('<local-command-stdout>'))
@@ -41,7 +45,8 @@ function contextDiagnostic(text, at) {
 export async function parseEvents(info, events, options = {}) {
     const result = { info: { ...info }, requests: [], used: null, capacity: null,
         categories: {}, runtime: {}, warnings: [], complete: true, compacted: false };
-    let model = info.model === '<synthetic>' || info.model === 'unknown' ? '' : info.model;
+    const fallbackModel = info.model === '<synthetic>' || info.model === 'unknown' ? '' : info.model;
+    let model = '';
     const claudeContext = new ClaudeContext(estimate);
     const activity = options.usageOnly ? undefined : new ActivityReader(info);
     const timing = options.usageOnly ? undefined : new TimingReader(info);
@@ -56,6 +61,7 @@ export async function parseEvents(info, events, options = {}) {
     const seen = new Set();
     let lastContextId = '';
     let claudeContextId = '';
+    let awaitingCodexUsage = false;
     for await (const value of events) {
         const entry = record(value);
         const at = timestamp(entry.timestamp, info.updatedAt);
@@ -110,7 +116,7 @@ export async function parseEvents(info, events, options = {}) {
             }
             if (!options.usageOnly && entry.type === 'system' && entry.subtype === 'local_command' && record(entry.commandRun).command === 'context') {
                 const diagnostic = record(entry.contextUsage);
-                if (tokenNumber(diagnostic.total_tokens) !== null && Array.isArray(diagnostic.categories)) {
+                if (tokenNumber(diagnostic.total_tokens) !== null) {
                     if (diagnostic.model && model && diagnostic.model !== model)
                         claudeContext.reset(result.categories);
                     result.categories = {};
@@ -122,7 +128,7 @@ export async function parseEvents(info, events, options = {}) {
                     result.at = at;
                     result.compacted = false;
                     model = display(diagnostic.model) || model;
-                    for (const item of diagnostic.categories) {
+                    for (const item of Array.isArray(diagnostic.categories) ? diagnostic.categories : []) {
                         const category = CATEGORIES.find(([id, label]) => label.toLowerCase() === String(item?.name).toLowerCase()
                             || (id === 'messages' && item?.name === 'Messages'));
                         if (!category || tokenNumber(item.tokens) === null)
@@ -153,28 +159,27 @@ export async function parseEvents(info, events, options = {}) {
             const message = record(entry.message);
             if (message.model === '<synthetic>' || entry.isApiErrorMessage === true || entry.error)
                 continue;
-            if (!message.usage || !Object.keys(record(message.usage)).length) {
-                prompt?.claude(entry, at);
-                continue;
-            }
             const id = display(message.id || entry.requestId, 200);
-            if (!id) {
-                result.complete = false;
-                result.warnings.push('Assistant usage without a response ID was excluded from deduplicated totals');
-                continue;
+            const nextModel = display(message.model) || model || fallbackModel;
+            const usage = record(message.usage);
+            const row = Object.keys(usage).length ? normalizeUsage('claude', usage, `claude:${id}`, nextModel, at) : undefined;
+            if (row) {
+                row.timestampKnown = timestampKnown;
+                if (id)
+                    result.requests.push(row);
+                else {
+                    result.complete = false;
+                    result.warnings.push('缺少响应标识的记录仅用于当前上下文');
+                }
             }
-            const nextModel = display(message.model) || model;
-            const row = normalizeUsage('claude', record(message.usage), `claude:${id}`, nextModel, at);
-            row.timestampKnown = timestampKnown;
-            result.requests.push(row);
-            if ((!seen.has(id) || claudeContextId === id) && (entry.isSidechain !== true || info.parentId)) {
+            if ((!id || !seen.has(id) || claudeContextId === id) && (entry.isSidechain !== true || info.parentId)) {
                 claudeContextId = id;
                 // Routed providers can return a different model name for the same prompt.
                 // The observed prompt remains valid; only its model-specific capacity changes.
                 if (model && nextModel !== model) {
                     result.capacity = null;
                     result.buffer = undefined;
-                    if (!row.input) {
+                    if (!row?.input) {
                         result.used = null;
                         result.at = at;
                         prompt?.invalidate();
@@ -182,15 +187,17 @@ export async function parseEvents(info, events, options = {}) {
                 }
                 model = nextModel;
                 // Some providers emit zero placeholders even when message content exists.
-                if (row.input > 0) {
+                if (row && row.input > 0) {
                     result.used = row.input;
                     result.at = at;
                     result.compacted = false;
-                    prompt?.mark(at, id);
+                    if (id)
+                        prompt?.mark(at, id);
                 }
             }
             prompt?.claude(entry, at);
-            seen.add(id);
+            if (id)
+                seen.add(id);
             result.info.cwd = display(entry.cwd, 4096) || result.info.cwd;
         }
         else {
@@ -203,14 +210,29 @@ export async function parseEvents(info, events, options = {}) {
                 if (payload.id && payload.id !== info.id)
                     continue;
                 result.info.cwd = display(payload.cwd, 4096) || result.info.cwd;
+                if (!model)
+                    model = display(payload.model);
             }
             if (entry.type === 'turn_context') {
+                if (payload.thread_id && payload.thread_id !== info.id)
+                    continue;
                 ownTurn = true;
                 const nextModel = display(payload.model) || model;
-                // Model changes retain the conversation and can follow freshly loaded
-                // instructions. Explicit compaction events replace the prompt window.
+                if (model && nextModel !== model) {
+                    result.used = null;
+                    result.capacity = null;
+                    result.at = at;
+                    result.runtime = {};
+                    result.categories = {};
+                    lastContextId = '';
+                    awaitingCodexUsage = true;
+                    prompt?.invalidate();
+                }
                 model = nextModel;
-                for (const key of ['model_auto_compact_token_limit', 'model_auto_compact_token_limit_scope', 'model_context_window'])
+                const capacity = tokenNumber(payload.model_context_window) || null;
+                if (capacity !== null)
+                    result.capacity = capacity;
+                for (const key of ['model_auto_compact_token_limit', 'model_auto_compact_token_limit_scope'])
                     if (Object.hasOwn(payload, key))
                         result.runtime[key] = payload[key];
             }
@@ -219,6 +241,8 @@ export async function parseEvents(info, events, options = {}) {
                 result.at = at;
                 result.categories = {};
                 result.compacted = true;
+                awaitingCodexUsage = true;
+                lastContextId = '';
             }
             if (entry.type === 'token_usage_record' && (!payload.thread_id || payload.thread_id === info.id)) {
                 const id = display(payload.response_id, 200);
@@ -226,33 +250,40 @@ export async function parseEvents(info, events, options = {}) {
                     result.complete = false;
                     continue;
                 }
-                const row = normalizeUsage('codex', { ...record(payload.usage), service_tier: payload.usage?.service_tier ?? payload.service_tier }, `codex:${id}`, display(payload.model) || model, at);
+                const row = normalizeUsage('codex', { ...record(payload.usage), service_tier: payload.usage?.service_tier ?? payload.service_tier }, `codex:${id}`, display(payload.model) || model || fallbackModel, at);
                 row.timestampKnown = timestampKnown;
                 result.requests.push(row);
-                if (!seen.has(id) || (lastContextId === id && !result.compacted)) {
+                if (ownTurn && (row.input > 0 || row.output > 0) && (!result.at || at >= result.at)
+                    && (!seen.has(id) || (lastContextId === id && !result.compacted))) {
+                    if (!model)
+                        model = row.model;
                     result.used = row.input + row.output;
                     result.at = at;
                     result.compacted = false;
                     lastContextId = id;
+                    awaitingCodexUsage = false;
                     prompt?.mark(at);
                 }
                 seen.add(id);
                 if (payload.thread_token_usage) {
                     const total = normalizeUsage('codex', payload.thread_token_usage, 'cumulative', '', at);
-                    modernTotal = mergeRequests([...(modernTotal ? [modernTotal] : []), total])[0];
+                    modernTotal = mergeCumulative(modernTotal, total);
                 }
             }
-            if (entry.type === 'event_msg' && payload.type === 'token_count' && payload.info) {
+            if (entry.type === 'event_msg' && payload.type === 'token_count' && payload.info && (!payload.thread_id || payload.thread_id === info.id)) {
                 const usage = record(payload.info);
-                const last = normalizeUsage('codex', record(usage.last_token_usage), 'last', model, at);
-                const advanced = legacy && (Number(usage.total_token_usage?.input_tokens) > legacy.input || Number(usage.total_token_usage?.output_tokens) > legacy.output);
-                if (ownTurn && usage.last_token_usage && (!result.compacted || advanced) && (!result.at || at >= result.at)) {
+                const last = normalizeUsage('codex', record(usage.last_token_usage), 'last', model || fallbackModel, at);
+                const advanced = !legacy || Number(usage.total_token_usage?.input_tokens) > legacy.input || Number(usage.total_token_usage?.output_tokens) > legacy.output;
+                const eligible = ownTurn && (!result.at || at >= result.at) && (!awaitingCodexUsage || advanced);
+                if (eligible && (last.input > 0 || last.output > 0)) {
                     result.used = last.input + last.output;
                     result.at = at;
                     result.compacted = false;
+                    awaitingCodexUsage = false;
                     prompt?.mark(at);
                 }
-                result.capacity = tokenNumber(usage.model_context_window) ?? result.capacity;
+                if (eligible)
+                    result.capacity = tokenNumber(usage.model_context_window) || result.capacity;
                 if (usage.total_token_usage) {
                     const total = normalizeUsage('codex', usage.total_token_usage, 'cumulative', '', at);
                     if (options.usageOnly && ownTurn && !info.parentId && usage.last_token_usage && (!legacy || advanced)) {
@@ -267,7 +298,7 @@ export async function parseEvents(info, events, options = {}) {
                     if (info.parentId && !legacyBaseline) {
                         // A child's copied prefix is not billed again. Without request IDs this boundary is only an estimate.
                         legacyBaseline = { ...total };
-                        for (const key of ['input', 'output', 'cacheRead', 'cacheWrite', 'reasoning'])
+                        for (const key of TOKEN_KEYS)
                             legacyBaseline[key] = Math.max(0, total[key] - (ownTurn ? last[key] : 0));
                     }
                     legacy = total;
@@ -275,7 +306,7 @@ export async function parseEvents(info, events, options = {}) {
             }
         }
     }
-    result.info.model = model || 'unknown';
+    result.info.model = model || fallbackModel || 'unknown';
     result.messageBreakdown = prompt?.publish(result.categories);
     if (options.usageOnly && !result.requests.length) {
         result.requests = legacyRequests;
@@ -286,7 +317,8 @@ export async function parseEvents(info, events, options = {}) {
     result.cumulative = modernTotal ?? legacy;
     if (!modernTotal && legacy && legacyBaseline) {
         result.cumulative = { ...legacy, complete: false };
-        for (const key of ['input', 'output', 'cacheRead', 'cacheWrite', 'reasoning'])
+        delete result.cumulative.uncachedInput;
+        for (const key of TOKEN_KEYS)
             result.cumulative[key] = Math.max(0, legacy[key] - legacyBaseline[key]);
         result.warnings.push('Legacy child totals use an estimated inherited-history baseline');
     }

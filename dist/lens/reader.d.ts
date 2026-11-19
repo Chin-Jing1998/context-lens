@@ -16,6 +16,7 @@ export interface ParsedSession {
     warnings: string[];
     complete: boolean;
     compacted: boolean;
+    windowEstimated?: boolean;
     activity?: ActivityLog;
     timing?: TimingLog;
     details?: ClaudeDetails;
