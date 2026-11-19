@@ -2,13 +2,12 @@
 // clock-relative activity, and sanitization. Every case renders through renderLines.
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { renderLines } from '../dist/render/index.js';
-import { mergeConfig } from '../dist/config.js';
-import { setLanguage } from '../dist/i18n/index.js';
-import { textWidth } from '../dist/render/ansi.js';
+import { renderLines } from '../src/render/index.ts';
+import { mergeConfig } from '../src/config.ts';
+import { setLanguage } from '../src/i18n/index.ts';
+import { textWidth } from '../src/render/ansi.ts';
 
 const NOW = new Date(2026, 9, 1, 12, 0).getTime();
 const SECOND = 1000;
@@ -177,6 +176,24 @@ test('project paths keep the configured trailing segments on POSIX and Windows',
   assert.equal(project('\\\\server\\share\\app', 'full'), '//server/share/app');
 });
 
+test('showLaunchDir prefixes the launch directory once the shown path no longer includes it', () => {
+  const project = (cwd, project_dir, pathLevels = 1, showLaunchDir = true) => (
+    lines(ctx({ stdin: { cwd, workspace: { project_dir } }, config: { pathLevels, display: { showLaunchDir } } }))[0].replace('[Opus] │ ', '')
+  );
+  assert.equal(project('/w/repo', '/w/repo'), 'repo');
+  assert.equal(project('/w/repo/src', '/w/repo'), 'repo › src');
+  assert.equal(project('/w/repo/src', '/w/repo', 2), 'repo/src');
+  assert.equal(project('/w/repo/src/lib', '/w/repo', 2), 'repo › src/lib');
+  assert.equal(project('/w/repo/src', '/w/repo', 'full'), '/w/repo/src');
+  assert.equal(project('/w/repox/src', '/w/repo', 2), 'repo › repox/src', 'compares whole segments');
+  assert.equal(project('/tmp', '/w/repo'), 'repo › tmp');
+  assert.equal(project('C:\\w\\repo\\src', 'C:\\w\\repo'), 'repo › src');
+  assert.equal(project('/w/repo/src', '/w/re\x1b[31mpo'), 'repo › src', 'sanitized');
+  assert.equal(project('/w/repo/src', ''), 'src');
+  assert.equal(project('/w/repo/src', '/'), 'src');
+  assert.equal(project('/w/repo/src', '/w/repo', 1, false), 'src');
+});
+
 test('the model badge keeps effort on the model and places the provider by showProvider', () => {
   const badge = (stdin, display = {}, transcript = {}) => lines(ctx({ stdin: { model: { display_name: 'Opus', id: 'opusplan' }, ...stdin }, transcript, config: { display } }))[0].split(' │ ')[0];
   const xhigh = { effort: { level: 'xhigh' } };
@@ -194,6 +211,7 @@ test('the advisor shows a readable model name or the override, capped', () => {
   assert.equal(advisor('claude-custom-x'), 'Advisor: custom-x');
   assert.equal(advisor('claude-opus-4-7', { advisorOverride: 'Reviewer' }), 'Advisor: Reviewer');
   assert.equal(advisor('x'.repeat(80)), `Advisor: ${'x'.repeat(64)}`);
+  assert.equal(advisor('claude-opus-4-7', { advisorOverride: 'A'.repeat(63) + '😀' + 'B' }), `Advisor: ${'A'.repeat(63)}`);
   assert.equal(advisor(undefined), 'my-project');
 });
 
@@ -230,27 +248,19 @@ test('jj has its own toggle, a conflict marker, and no git-only details', () => 
   assert.equal(lines(ctx({ gitStatus: jj, config: { jjStatus: { enabled: true, showConflicts: false, showDirty: false } } }))[0], '[Opus] │ my-project jj:(main)');
 });
 
-test('the git files line lists the newest files first and hides below 60 columns', () => {
-  const cwd = mkdtempSync(path.join(tmpdir(), 'hud-files-'));
-  try {
-    const names = ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts', 'g.ts'];
-    names.forEach((name, index) => {
-      writeFileSync(path.join(cwd, name), '');
-      utimesSync(path.join(cwd, name), new Date(2026, 0, 1 + index), new Date(2026, 0, 1 + index));
-    });
-    const trackedFiles = [
-      ...names.map((name) => ({ basename: name, fullPath: name, type: 'modified', lineDiff: { added: 1, deleted: 0 } })),
-      { basename: 'outside.ts', fullPath: '../outside.ts', type: 'added' },
-    ];
-    const status = { ...gitStatus, fileStats: { ...gitStatus.fileStats, trackedFiles } };
-    const c = ctx({ gitStatus: status, stdin: { cwd }, config: gitConfig });
-    const files = raw(c, 120).at(-1);
-    assert.equal(plain(files), '~g.ts(+1)  ~f.ts(+1)  ~e.ts(+1)  ~d.ts(+1)  ~c.ts(+1)  ~b.ts(+1)  +2 more  ?3');
-    assert.ok(files.includes(`file://${cwd}/g.ts`));
-    assert.ok(!lines(c, 59).some((line) => line.includes('g.ts')));
-  } finally {
-    rmSync(cwd, { recursive: true, force: true });
-  }
+test("the git files line keeps git's order and hides below 60 columns", () => {
+  const cwd = path.join(tmpdir(), 'hud-files');
+  const names = ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts', 'g.ts'];
+  const trackedFiles = [
+    ...names.map((name) => ({ basename: name, fullPath: name, type: 'modified', lineDiff: { added: 1, deleted: 0 } })),
+    { basename: 'outside.ts', fullPath: '../outside.ts', type: 'added' },
+  ];
+  const status = { ...gitStatus, fileStats: { ...gitStatus.fileStats, trackedFiles } };
+  const c = ctx({ gitStatus: status, stdin: { cwd }, config: gitConfig });
+  const files = raw(c, 120).at(-1);
+  assert.equal(plain(files), '~a.ts(+1)  ~b.ts(+1)  ~c.ts(+1)  ~d.ts(+1)  ~e.ts(+1)  ~f.ts(+1)  +2 more  ?3');
+  assert.ok(files.includes(`file://${cwd}/a.ts`));
+  assert.ok(!lines(c, 59).some((line) => line.includes('a.ts')));
 });
 
 test('showSeparators puts a rule before the first activity line, clamped to the width', () => {
@@ -354,6 +364,14 @@ test('the environment line names failing MCP servers and respects environmentThr
   assert.equal(lines(ctx({ ...counts, transcript, config: { display: { showConfigCounts: true } } }))[2], '2 CLAUDE.md | 3 rules | 4 MCPs ⚠ github, linear, slack +1 | 1 hooks');
   assert.equal(lines(ctx({ claudeMdCount: 2, config: { display: { showConfigCounts: true, environmentThreshold: 5 } } })).length, 2);
   assert.equal(lines(ctx({ transcript: { mcpErrors: ['github'] }, config: { display: { showMcp: true } } }))[2], '⚠ github');
+});
+
+test('a failing MCP server name is cut on a grapheme boundary', () => {
+  const name = 'A'.repeat(63) + '😀' + 'B';
+  assert.equal(
+    lines(ctx({ transcript: { mcpErrors: [name] }, config: { display: { showMcp: true } } }))[2],
+    `⚠ ${'A'.repeat(63)}`,
+  );
 });
 
 test('the session time line shows the start date and how long ago the last reply was', () => {

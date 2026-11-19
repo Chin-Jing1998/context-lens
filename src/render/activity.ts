@@ -1,10 +1,10 @@
-import type { AgentEntry } from '../types.js';
-import { effortInfo, formatEffort } from '../effort.js';
-import { t } from '../i18n/index.js';
-import { sanitizeDisplayText } from '../utils/sanitize.js';
-import { truncateString } from '../utils/truncate.js';
-import type { Frame } from './frame.js';
-import { cyan, green, label, magenta, yellow } from './colors.js';
+import type { AgentEntry } from '../types.ts';
+import { effortInfo, formatEffort } from '../effort.ts';
+import { t } from '../i18n/index.ts';
+import { displayLabel, sanitizeDisplayText } from '../utils/sanitize.ts';
+import { truncateString } from '../utils/truncate.ts';
+import type { Frame } from './frame.ts';
+import { cyan, green, label, magenta, yellow } from './colors.ts';
 
 export type ActivityElement = 'tools' | 'skills' | 'mcp' | 'agents' | 'todos';
 
@@ -57,10 +57,7 @@ const ACTIVITY_NAME_MAX = 64;
 /** `✓ Skills (5): a, b, c, d, +1 more`. */
 function namesLine(f: Frame, title: string, names: string[], maxVisible: number): string | null {
   const colors = f.config?.colors;
-  const safe = names
-    .map((name) => sanitizeDisplayText(name).trim())
-    .filter(Boolean)
-    .map((name) => truncateString(name, ACTIVITY_NAME_MAX, '…'));
+  const safe = names.map((name) => displayLabel(name, ACTIVITY_NAME_MAX, '…')).filter(Boolean);
   if (safe.length === 0) return null;
   const shown = (maxVisible === 0 ? safe : safe.slice(0, maxVisible)).map((name) => cyan(name));
   if (safe.length > shown.length) shown.push(label(`+${safe.length - shown.length} more`, colors));
@@ -114,7 +111,7 @@ function agentsLine(f: Frame): string | null {
   const shown = shownAgents(f.transcript.agents, f.now);
   if (shown.length === 0) return null;
 
-  const clean = (value: unknown, max: number): string => (typeof value === 'string' ? truncateString(sanitizeDisplayText(value).trim(), max) : '');
+  const clean = (value: unknown, max: number): string => displayLabel(value, max, '...');
   const display = f.config?.display;
   return shown.map((agent) => {
     const icon = agent.status === 'running' ? yellow('◐') : green('✓');

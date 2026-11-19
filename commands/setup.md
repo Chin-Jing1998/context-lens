@@ -21,13 +21,12 @@ With `gitbash`, use bash syntax in every step: bash expands PowerShell's `$env:.
 
 | `{SHELL}` | Command |
 |---|---|
-| `posix` | `command -v bun 2>/dev/null \|\| command -v node 2>/dev/null` |
+| `posix` | `command -v node 2>/dev/null` |
 | `gitbash` | `command -v node 2>/dev/null` (Windows needs Node.js; don't use Bun) |
 | `powershell` | `(Get-Command node -ErrorAction SilentlyContinue).Source` |
 
-The result is `{RUNTIME}`. The status line will run on the same runtime as the helper in the next steps.
+Use the absolute path to Node.js 22.18 or later as `{RUNTIME}`. Check it with `"{RUNTIME}" --version`. If no supported Node.js is found on the current shell's PATH, `/context-lens:hud` can list installed runtimes, or the user can install the current Node.js LTS and run setup again.
 
-If nothing is found, stop. Tell the user the current shell can't find Node.js (or Bun), even if Claude Code itself is installed. Point them to Node.js LTS from https://nodejs.org (`winget install OpenJS.NodeJS.LTS` on Windows) or Bun from https://bun.sh (macOS and Linux only). Then ask them to restart their shell and run `/context-lens:setup` again.
 
 ## Step 3: Inspect the current settings
 

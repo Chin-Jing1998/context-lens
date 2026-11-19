@@ -102,6 +102,7 @@ node scripts/context-lens.mjs codex
 | `display.showTerminal` | boolean | false | 终端 HUD 总开关；关闭时初始化及异常均静默，Claude 实时采集独立运行。 |
 | `display.showModel` | boolean | true | 显示模型名称 `[Opus]` |
 | `display.showProject` | boolean | true | 显示项目路径 |
+| `display.showLaunchDir` | boolean | `false` | 当 Claude Code 的启动目录与当前工作目录不同时，显示启动目录。 |
 | `display.modelSource` | `stdin` \| `auto` \| `transcript` | `stdin` | 控制模型名称来源。`stdin` 保持默认行为；`auto` 仅在 transcript 返回非 Claude 模型时切换，用于检测代理路由；`transcript` 始终使用 API 响应中的模型。Transcript 模型值会清理终端转义字符并截断为 80 个字符 |
 | `display.modelFormat` | `full` \| `compact` \| `short` | `full` | `compact` 去掉 `(1M context)` 这类上下文窗口后缀；`short` 还会去掉开头的 `Claude ` |
 | `display.modelOverride` | string | `""` | 用这段文字代替模型名称（最多 80 个字符） |
@@ -119,6 +120,7 @@ node scripts/context-lens.mjs codex
 | `display.showRoutedCost` | boolean | false | 同时为 Bedrock 和 Vertex 会话显示费用。它们通过云服务商计费，因此 `showCost` 默认隐藏其费用。需同时开启 `showCost` |
 | `display.showDailyCost` | boolean | false | 显示当天跨会话累计花费，格式为 `Today $12.34`，从原生 `cost.total_cost_usd` 写入插件数据目录中的按日账本。本地午夜重置。与 `showCost` 独立 |
 | `display.showWeeklyCost` | boolean | false | 显示自每周额度窗口开始以来的累计花费，格式为 `Week $123.45`，与 `showDailyCost` 使用同一账本。仅订阅用户可用：需要 7 天用量窗口 |
+| `display.weeklyCostPeriod` | string | `"quota"` | 按 7 天配额窗口统计费用，或指定 `monday` 至 `sunday` 中的一天，以该日本地零点起算。 |
 | `display.showOutputStyle` | boolean | false | 显示当前输出风格，格式为 `style: <名称>` |
 | `display.showDuration` | boolean | false | 显示会话已运行的时长，例如 `⏱️ 5m` |
 | `display.showSpeed` | boolean | false | 显示最近一次响应的输出 Token 速度 `out: 42.1 tok/s` |
@@ -156,6 +158,7 @@ node scripts/context-lens.mjs codex
 | `display.showLens` | boolean | false | showTerminal 开启时显示完整分类、主会话及子代理累计和费用；实时采集独立运行。 |
 | `display.showAuth` | boolean | false | 在第一行末尾显示当前登录的认证方式（订阅计划），例如 `Claude Max 20x`。来自 `~/.claude.json`（或覆盖配置目录时的 `$CLAUDE_CONFIG_DIR/.claude.json`）的 `oauthAccount`；无 OAuth 但设置了 `ANTHROPIC_API_KEY` 时显示 `API Key` |
 | `display.showAuthUser` | boolean | false | 在认证方式旁显示已登录账号（邮箱本地部分，回退到资料显示名） |
+| `display.authUserFullEmail` | boolean | `false` | 启用 `display.showAuthUser` 时显示完整邮箱地址。 |
 | `display.authUserLength` | number | `8` | 账号名截断前的最大字符数，超出以 `…` 截断。`0` 显示全名 |
 | `display.showAdvisor` | boolean | false | 在 project 行内联显示 Claude Code `/advisor` 配置的顾问模型，例如 `Advisor: Opus 4.7`。来自 Claude Code 写入每条 assistant transcript 记录的 `advisorModel` 字段；渲染前会做控制字符/双向标记/ANSI 过滤并截断到 64 字符 |
 | `display.advisorOverride` | string | `""` | 手动覆盖顾问显示文本。非空时优先于 transcript 检测，同样会做过滤和截断 |
@@ -190,6 +193,8 @@ node scripts/context-lens.mjs codex
 颜色可以是名称（`dim`、`red`、`green`、`yellow`、`magenta`、`cyan`、`brightBlue`、`brightMagenta`）、256 色编号（`0-255`）或十六进制（`#rrggbb`）。`colors.barFilled` 和 `colors.barEmpty` 只接受单个可见字符；emoji 等宽字符在部分终端中可能影响进度条对齐。
 
 </details>
+
+终端 HUD 使用 Node.js 22.18 或更新版本。可运行 `/context-lens:hud` 查看诊断、预览和配置项。数据采集仍可通过 `/context-lens:setup` 启用。终端渲染在独立的受限进程中运行。
 
 ## 从源码构建
 

@@ -1,4 +1,4 @@
-// End-to-end golden output: runs dist/index.js for every case in
+// End-to-end golden output: runs hud.mjs for every case in
 // tests/golden/cases.mjs and compares stdout with tests/golden/expected.txt.
 // Regenerate with `npm run test:update-snapshots`.
 import { test } from 'node:test';
@@ -51,7 +51,7 @@ async function runCase(spec) {
     await mkdir(project, { recursive: true });
     await mkdir(path.dirname(transcript), { recursive: true });
     await copyFile(path.join(goldenDir, spec.transcript ?? 'transcript.jsonl'), transcript);
-    { // Legacy layout cases explicitly opt in; the silent default is covered by index.test.js.
+    { // Legacy layout cases explicitly opt in; the silent default is covered by hud.test.js.
       const pluginDir = path.join(configDir, 'plugins', 'context-lens');
       await mkdir(pluginDir, { recursive: true });
       await writeFile(path.join(pluginDir, 'config.json'), JSON.stringify({ ...spec.config, display: { showTerminal: true, ...spec.config?.display } }));
@@ -76,7 +76,7 @@ async function runCase(spec) {
       .replaceAll('<TRANSCRIPT>', transcript);
 
     const stdout = await new Promise((resolve, reject) => {
-      const child = spawn(process.execPath, ['--import', freezeTime, path.join(root, 'dist', 'index.js')], {
+      const child = spawn(process.execPath, ['--import', freezeTime, path.join(root, 'hud.mjs')], {
         cwd: project,
         env,
       });

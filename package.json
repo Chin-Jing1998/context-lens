@@ -26,13 +26,18 @@
     ".claude-plugin/",
     "desktop/assets/",
     "desktop/windows/",
-    "scripts/build-icons.mjs"
+    "scripts/build-icons.mjs",
+    "hud.mjs",
+    "collector.mjs",
+    "fence.mjs",
+    "install.mjs",
+    "skills/"
   ],
   "scripts": {
     "build": "node scripts/clean-dist.mjs && tsc",
     "dev": "tsc --watch",
-    "test": "npm run build && node --test",
-    "test:coverage": "npm run build && c8 --reporter=text --reporter=lcov node --test",
+    "test": "npm run build && node --import ./tests/clean-env.js --test",
+    "test:coverage": "npm run build && c8 --reporter=text --reporter=lcov node --import ./tests/clean-env.js --test",
     "test:update-snapshots": "UPDATE_SNAPSHOTS=1 npm test",
     "test:stdin": "npm run build && echo '{\"model\":{\"display_name\":\"Opus\"},\"context_window\":{\"current_usage\":{\"input_tokens\":45000},\"context_window_size\":200000},\"transcript_path\":\"/tmp/test.jsonl\"}' | node dist/index.js",
     "build:icons": "node scripts/build-icons.mjs",
@@ -47,11 +52,11 @@
   "author": "Jarrod Watts",
   "license": "MIT",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.18.0"
   },
   "devDependencies": {
     "@resvg/resvg-js": "2.6.2",
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "c8": "^11.0.0",
     "electron": "44.9.3",
     "electron-builder": "26.15.3",

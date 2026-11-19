@@ -1,4 +1,4 @@
-// Golden cases: each renders `node dist/index.js` end to end. Placeholders
+// Golden cases: each renders `node hud.mjs` end to end. Placeholders
 // <PROJECT>, <TRANSCRIPT>, and <HOME> are filled in by golden.test.js.
 export const NOW_MS = Date.parse('2026-10-01T12:00:00.000Z');
 const NOW = NOW_MS / 1000;
@@ -94,6 +94,7 @@ const stdin = {
   weeklyHigh: merge(typical, { rate_limits: { seven_day: { used_percentage: 85, resets_at: NOW + 86_400 } } }),
   spendLimit: merge(typical, { rate_limits: { spend_limit: { used_percentage: 62.8, resets_at: NOW + 20 * 86_400 } } }),
   addedDirs: merge(typical, { workspace: { added_dirs: ['/work/shared-lib', '/work/docs'] } }),
+  movedCwd: merge(typical, { cwd: '<PROJECT>/src/lib', workspace: { current_dir: '<PROJECT>/src/lib' } }),
   bedrock: merge(apiUserBase(), { model: { id: 'us.anthropic.claude-opus-5-5-v1:0', display_name: 'Opus 5.5' } }),
 };
 
@@ -216,6 +217,8 @@ for (const [name, config] of Object.entries(options)) {
 for (const [name, config] of SINGLE_TOGGLES) add(`toggle/${name}`, { stdin: rich, config });
 add('toggle/showRoutedCost+bedrock', { stdin: stdin.bedrock, config: { display: { showCost: true, showRoutedCost: true } } });
 add('toggle/showCost+bedrock', { stdin: stdin.bedrock, config: { display: { showCost: true } } });
+add('toggle/showWeeklyCost+apiUser', { stdin: stdin.apiUser, config: { display: { showWeeklyCost: true } } });
+add('toggle/weeklyCostPeriod=monday+apiUser', { stdin: stdin.apiUser, config: { display: { showWeeklyCost: true, weeklyCostPeriod: 'monday' } } });
 
 for (const columns of [undefined, 60, 120]) {
   const at = columns ? `@${columns}` : '';
@@ -260,6 +263,7 @@ add('option/oneRow+rightAlign=context@120', {
   config: { ...ONE_ROW, display: { ...ONE_ROW.display, rightAlign: ['context'] } },
   columns: 120,
 });
+add('option/showLaunchDir+movedCwd', { stdin: stdin.movedCwd, config: { pathLevels: 2, display: { showLaunchDir: true } } });
 const PUSH_THRESHOLDS = { gitStatus: { showAheadBehind: true, pushWarningThreshold: 1, pushCriticalThreshold: 3 } };
 add('git/ahead+pushThresholds', { stdin: typical, config: PUSH_THRESHOLDS, git: 'ahead' });
 add('compact/ahead+pushThresholds', { stdin: typical, config: { ...PUSH_THRESHOLDS, lineLayout: 'compact' }, git: 'ahead' });

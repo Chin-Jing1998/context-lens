@@ -8,11 +8,11 @@ import {
   getProviderLabel,
   getUsageFromStdin,
   isContextUnreported,
-  readStdin,
   resolveModelName,
   stdinText,
-} from '../dist/stdin.js';
-import { formatUsd, getNativeCostUsd } from '../dist/cost.js';
+} from '../src/stdin.ts';
+import { readStdin } from '../hud.mjs';
+import { formatUsd, getNativeCostUsd } from '../src/cost.ts';
 
 const usage = (input, cacheWrite = 0, cacheRead = 0) => ({
   input_tokens: input,
@@ -126,6 +126,16 @@ test('stdinText sanitizes and bounds free text', () => {
   assert.equal(stdinText('abcdef', 3), 'abc');
   assert.equal(stdinText('   '), undefined);
   assert.equal(stdinText(42), undefined);
+});
+
+test('stdinText cuts free text on a grapheme boundary', () => {
+  const emoji = '😀';
+  // A session name long enough for the emoji to straddle the 80-unit cap.
+  assert.equal(stdinText('A'.repeat(79) + emoji + 'B'.repeat(5)), 'A'.repeat(79));
+  assert.equal(stdinText('A'.repeat(78) + emoji, 80), 'A'.repeat(78) + emoji);
+  // A flag is two regional indicators, so it must not be cut either.
+  assert.equal(stdinText('A'.repeat(78) + '🇬🇧', 80), 'A'.repeat(78));
+  assert.equal(stdinText('A'.repeat(79) + emoji, 80), 'A'.repeat(79));
 });
 
 test('getNativeCostUsd hides routed providers unless opted in', () => {

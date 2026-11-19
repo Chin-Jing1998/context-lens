@@ -102,6 +102,7 @@ Terminal HUD configuration is separate from desktop theme settings.
 | `display.showTerminal` | boolean | false | Enable terminal HUD output. Live Claude counters are captured independently; false also suppresses initialization and error output. |
 | `display.showModel` | boolean | true | Show model name `[Opus]` |
 | `display.showProject` | boolean | true | Show the project path |
+| `display.showLaunchDir` | boolean | `false` | Show the directory where Claude Code was launched when it differs from the current working directory. |
 | `display.modelSource` | `stdin` \| `auto` \| `transcript` | `stdin` | Controls which source the model name comes from. `stdin` preserves the default behavior and always uses what Claude Code reports. `auto` opts into proxy redirect detection by using transcript models only for non-Claude models. `transcript` always uses the model from the API response. Transcript model values are terminal-sanitized and capped at 80 characters |
 | `display.modelFormat` | `full` \| `compact` \| `short` | `full` | `compact` drops a context-window suffix such as `(1M context)`; `short` also drops a leading `Claude ` |
 | `display.modelOverride` | string | `""` | Show this text instead of the model name (80 characters max) |
@@ -119,6 +120,7 @@ Terminal HUD configuration is separate from desktop theme settings.
 | `display.showRoutedCost` | boolean | false | Also show cost for Bedrock and Vertex sessions, which `showCost` hides because they bill through the cloud provider. Requires `showCost` |
 | `display.showDailyCost` | boolean | false | Show today's cumulative spend across sessions as `Today $12.34`, accumulated from the native `cost.total_cost_usd` into a small per-day ledger in the plugin data directory. Resets at local midnight. Independent of `showCost` |
 | `display.showWeeklyCost` | boolean | false | Show spend since the weekly quota window opened as `Week $123.45`, from the same ledger as `showDailyCost`. Subscribers only: needs the 7-day usage window |
+| `display.weeklyCostPeriod` | string | `"quota"` | Use the 7-day quota window or start the cost week at local midnight on a weekday from `monday` to `sunday`. |
 | `display.showOutputStyle` | boolean | false | Show the current output style as `style: <name>` |
 | `display.showDuration` | boolean | false | Show how long the session has been running, e.g. `⏱️ 5m` |
 | `display.showSpeed` | boolean | false | Show the latest response's output speed `out: 42.1 tok/s` |
@@ -156,6 +158,7 @@ Terminal HUD configuration is separate from desktop theme settings.
 | `display.showLens` | boolean | false | Show the complete Context Lens breakdown, main/agent totals and custom costs when showTerminal is true. Live capture is independent of this setting. |
 | `display.showAuth` | boolean | false | Show the auth method (subscription plan) of the current login as its own segment at the end of the first line, e.g. `Claude Max 20x`. Derived from the `oauthAccount` block in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json` when the config directory is overridden); shows `API Key` when there is no OAuth login but `ANTHROPIC_API_KEY` is set |
 | `display.showAuthUser` | boolean | false | Show the logged-in account (email local part, falling back to profile display name) next to the auth method |
+| `display.authUserFullEmail` | boolean | `false` | Show the full email address when `display.showAuthUser` is enabled. |
 | `display.authUserLength` | number | `8` | Maximum characters of the account name to display before truncating with `…`. `0` shows the full name |
 | `display.showAdvisor` | boolean | false | Inline the model configured via Claude Code's `/advisor` on the project line, e.g. `Advisor: Opus 4.7`. Read from the `advisorModel` field that Claude Code stamps on each assistant transcript record; sanitised and capped at 64 chars before rendering |
 | `display.advisorOverride` | string | `""` | Optional manual override for the displayed advisor label. When non-empty, replaces transcript-driven detection. Also sanitised and capped at 64 chars |
@@ -190,6 +193,8 @@ Terminal HUD configuration is separate from desktop theme settings.
 Colors accept a name (`dim`, `red`, `green`, `yellow`, `magenta`, `cyan`, `brightBlue`, `brightMagenta`), a 256-color number (`0-255`), or hex (`#rrggbb`). `colors.barFilled` and `colors.barEmpty` take a single visible character; wide characters such as emoji may affect bar alignment in some terminals.
 
 </details>
+
+The terminal HUD requires Node.js 22.18 or later. Use `/context-lens:hud` for diagnostics, previews and configuration. `/context-lens:setup` installs the collector. The terminal renderer runs in a separate, restricted process.
 
 ## Build from source
 

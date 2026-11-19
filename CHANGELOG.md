@@ -1,5 +1,10 @@
 # Changelog
 
+## 上游同步
+
+- 合入上游 `v0.15.3` 的终端渲染隔离、HUD 诊断、启动目录、周费用周期和显示修复。
+- Context Lens 继续通过现有状态栏入口静默采集。终端 HUD 需要 Node.js 22.18 或更新版本。
+
 All notable changes to Context Lens are documented in this file. Earlier Claude HUD history is retained below.
 
 ## [Unreleased]
