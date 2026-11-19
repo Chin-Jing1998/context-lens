@@ -1,7 +1,5 @@
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
-import { getHudPluginDir } from './claude-config-dir.js';
 import { getNativeCostUsd } from './cost.js';
 import { createDebug } from './debug.js';
 import { SEVEN_DAY_WINDOW_MS } from './usage-pace.js';
@@ -13,16 +11,22 @@ const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const LOCK_STALE_MS = 2_000;
 const LOCK_WAIT_MS = 500;
 const LOCK_RETRY_MS = 10;
-const defaultDeps = {
-    homeDir: () => os.homedir(),
-    now: () => Date.now(),
-};
-export function getDailyCostLedgerPath(homeDir) {
-    return path.join(getHudPluginDir(homeDir), 'daily-cost.json');
+export function getDailyCostLedgerPath(dataDir) {
+    return path.join(dataDir, 'daily-cost.json');
 }
 function localDateKey(now) {
     const date = new Date(now);
     return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+}
+// Date#getDay order, so each weekday's index is its day number.
+const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+// The latest 00:00 local time on `day` (0 = Sunday). Stepping back by calendar days, not by 24 hours,
+// keeps it at midnight in a week that crosses a daylight-saving change.
+function calendarWeekStart(now, day) {
+    const date = new Date(now);
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() - ((date.getDay() - day + 7) % 7));
+    return date.getTime();
 }
 const isAmount = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -126,8 +130,8 @@ function withLedgerLock(ledgerPath, update) {
 }
 // Folds the session's native cost into the ledger and returns today's and this
 // week's spend across sessions, or null when nothing has been recorded.
-export function getCostTotals(stdin, options, deps = defaultDeps) {
-    const ledgerPath = getDailyCostLedgerPath(deps.homeDir());
+export function getCostTotals(stdin, options, deps) {
+    const ledgerPath = getDailyCostLedgerPath(deps.dataDir());
     return withLedgerLock(ledgerPath, () => updateLedger(ledgerPath, stdin, options, deps));
 }
 function updateLedger(ledgerPath, stdin, options, deps) {
@@ -151,9 +155,12 @@ function updateLedger(ledgerPath, stdin, options, deps) {
             session.baseline = session.total;
         changed = true;
     }
-    // Restart the week when the quota window behind the Weekly bar opened after accumulation began.
+    // Restart the week when its window opened after accumulation began: the quota window behind the
+    // Weekly bar, or with weeklyCostPeriod a calendar week from the chosen weekday's midnight.
+    const day = WEEKDAYS.indexOf(options?.weeklyCostPeriod ?? 'quota');
     const resetAt = options?.sevenDayResetAt?.getTime();
-    const windowStart = resetAt !== undefined && Number.isFinite(resetAt) ? resetAt - SEVEN_DAY_WINDOW_MS : null;
+    const quotaStart = resetAt !== undefined && Number.isFinite(resetAt) ? resetAt - SEVEN_DAY_WINDOW_MS : null;
+    const windowStart = day >= 0 ? calendarWeekStart(now, day) : quotaStart;
     if (windowStart !== null && ledger.week.start < windowStart) {
         for (const session of Object.values(ledger.sessions))
             session.weekBaseline = session.total;

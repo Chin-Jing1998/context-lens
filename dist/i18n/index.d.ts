@@ -1,4 +1,4 @@
-import type { Language, MessageKey, Messages } from "./types.js";
+import type { Language, MessageKey, Messages } from "./types.ts";
 export type { Language, MessageKey, Messages };
 export declare function setLanguage(lang: Language): void;
 export declare function isCjkLanguage(): boolean;

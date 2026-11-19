@@ -1,59 +1,5 @@
 import { sanitizeTranscriptModel } from './model-source.js';
-import { sanitizeDisplayText } from './utils/sanitize.js';
-const NO_DATA_TIMEOUT_MS = 250;
-const IDLE_TIMEOUT_MS = 250;
-const MAX_STDIN_BYTES = 256 * 1024;
-// Returns null for a TTY (setup's manual run), no input, oversized input, or invalid JSON.
-// Resolves as soon as the buffered text parses, or after incomplete input goes idle.
-export function readStdin(stream = process.stdin) {
-    if (stream.isTTY) {
-        return Promise.resolve(null);
-    }
-    return new Promise((resolve) => {
-        let raw = '';
-        let done = false;
-        let idleTimer;
-        const finish = (value) => {
-            if (done)
-                return;
-            done = true;
-            clearTimeout(noDataTimer);
-            clearTimeout(idleTimer);
-            stream.pause();
-            resolve(value);
-        };
-        const parse = () => {
-            try {
-                const value = JSON.parse(raw);
-                return value !== null && typeof value === 'object' ? value : null;
-            }
-            catch {
-                return null;
-            }
-        };
-        const noDataTimer = setTimeout(() => {
-            if (!raw)
-                finish(null);
-        }, NO_DATA_TIMEOUT_MS);
-        stream.setEncoding('utf8');
-        stream.on('data', (chunk) => {
-            raw += chunk;
-            if (raw.length > MAX_STDIN_BYTES) {
-                finish(null);
-                return;
-            }
-            const parsed = parse();
-            if (parsed)
-                finish(parsed);
-            else {
-                clearTimeout(idleTimer);
-                idleTimer = setTimeout(() => finish(parse()), IDLE_TIMEOUT_MS);
-            }
-        });
-        stream.on('end', () => finish(parse()));
-        stream.on('error', () => finish(null));
-    });
-}
+import { displayLabel } from './utils/sanitize.js';
 export function getTotalTokens(stdin) {
     const usage = stdin.context_window?.current_usage;
     return (usage?.input_tokens ?? 0)
@@ -161,10 +107,7 @@ export function getUsageFromStdin(stdin) {
 }
 // Free text from stdin (session names, output styles, versions) is shown in the terminal.
 export function stdinText(value, maxLength = 80) {
-    if (typeof value !== 'string') {
-        return undefined;
-    }
-    return sanitizeDisplayText(value).trim().slice(0, maxLength) || undefined;
+    return displayLabel(value, maxLength) || undefined;
 }
 // Drops the "(1M context)" style suffix; the context bar already shows the window.
 export function stripContextSuffix(name) {

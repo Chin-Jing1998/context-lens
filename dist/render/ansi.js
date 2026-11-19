@@ -84,7 +84,7 @@ export function visibleWidth(str) {
     }
     return width;
 }
-function stripAnsi(str) {
+export function stripAnsi(str) {
     return tokenize(str).filter((token) => !token.escape).map((token) => token.text).join('');
 }
 // The longest prefix that fits in `width` cells, keeping the escapes before the cut.
@@ -115,7 +115,7 @@ function closeOpenHyperlink(str) {
         lastUrl = match[1];
     return lastUrl ? OSC8_CLOSE : '';
 }
-function truncateToWidth(str, width) {
+export function truncateToWidth(str, width) {
     if (width <= 0 || visibleWidth(str) <= width)
         return str;
     const suffix = width >= 3 ? '...' : '.'.repeat(width);

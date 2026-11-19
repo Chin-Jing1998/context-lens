@@ -1,7 +1,7 @@
-import type { HudConfig } from './config.js';
-import type { GitRepoIdentity, GitStatus } from './git.js';
-import type { AuthInfo } from './auth.js';
-import type { CostTotals } from './daily-cost.js';
+import type { HudConfig } from './config.ts';
+import type { GitRepoIdentity, GitStatus } from './git.ts';
+import type { AuthInfo } from './auth.ts';
+import type { CostTotals } from './daily-cost.ts';
 export interface StdinData {
     session_id?: string;
     session_name?: string;

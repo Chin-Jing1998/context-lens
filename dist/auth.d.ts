@@ -5,10 +5,12 @@
  *
  *   method: human-readable auth/plan label (e.g. "Claude Max 20x", "API Key")
  *   user:   account identifier (email local part, falling back to displayName)
+ *   email:  the full email address, for display.authUserFullEmail
  */
 export interface AuthInfo {
     method: string | null;
     user: string | null;
+    email: string | null;
 }
 /**
  * Derives auth info from the parsed contents of claude.json.
@@ -16,21 +18,22 @@ export interface AuthInfo {
  */
 export declare function deriveAuthInfo(claudeJson: unknown, env?: NodeJS.ProcessEnv): AuthInfo;
 /**
- * Cache of the two DERIVED fields, keyed on the source file's identity.
+ * Cache of the DERIVED fields, keyed on the source file's identity.
  *
  * The identity combines mtime, ctime, size, device, and inode so a replacement
  * or rapid rewrite cannot reuse a stale entry based on one timestamp alone.
  */
-export declare function readAuthInfo(): AuthInfo;
+export declare function readAuthInfo(claudeJson: string): AuthInfo;
 export declare function truncateUser(user: string, maxLength: number): string;
 /**
  * Builds the standalone auth segment for the end of the first HUD line,
- * honoring the showAuth / showAuthUser / authUserLength display settings.
+ * honoring the showAuth / showAuthUser / authUserFullEmail / authUserLength display settings.
  * Returns e.g. "Claude Max 20x · yukinosh…", or null when nothing to show.
  */
 export declare function formatAuthSegment(info: AuthInfo | null | undefined, display: {
     showAuth?: boolean;
     showAuthUser?: boolean;
+    authUserFullEmail?: boolean;
     authUserLength?: number;
 } | undefined): string | null;
 //# sourceMappingURL=auth.d.ts.map

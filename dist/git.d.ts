@@ -1,3 +1,4 @@
+import type { Ask } from './channel.ts';
 export interface LineDiff {
     added: number;
     deleted: number;
@@ -38,7 +39,8 @@ export interface GitStatusOptions {
     lineDiffs?: boolean;
     repo?: GitRepoIdentity | null;
 }
-export declare function getGitStatus(cwd?: string, options?: GitStatusOptions): Promise<GitStatus | null>;
+/** The repo's status, from the git runs collector.mjs makes with the repo's own config defused. */
+export declare function getGitStatus(ask: Ask, options?: GitStatusOptions): Promise<GitStatus | null>;
 interface ParsedStatus {
     oid: string | null;
     head: string | null;

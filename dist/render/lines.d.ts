@@ -1,5 +1,5 @@
-import type { Frame } from './frame.js';
-import { type LabelAlign } from './labels.js';
+import type { Frame } from './frame.ts';
+import { type LabelAlign } from './labels.ts';
 /** Config counts, output style, and failing MCP servers. */
 export declare function environmentLine(f: Frame): string | null;
 export declare function promptCacheLine(f: Frame): string | null;

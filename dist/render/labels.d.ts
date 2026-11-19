@@ -1,5 +1,5 @@
-import type { HudColorOverrides } from '../config.js';
-import type { MessageKey } from '../i18n/types.js';
+import type { HudColorOverrides } from '../config.ts';
+import type { MessageKey } from '../i18n/types.ts';
 export interface LabelAlign {
     align?: boolean;
     /** Count the memory label too, when its bar is on screen. */

@@ -1,5 +1,5 @@
-import type { Frame } from './frame.js';
-import { type LabelAlign } from './labels.js';
+import type { Frame } from './frame.ts';
+import { type LabelAlign } from './labels.ts';
 /** The context bar (when shown) and value, e.g. `█████░░░░░ 45%`. */
 export declare function contextBarAndValue(f: Frame): {
     bar: string | null;

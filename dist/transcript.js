@@ -2,9 +2,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as readline from 'node:readline';
 import { createHash } from 'node:crypto';
-import { getHudPluginDir } from './claude-config-dir.js';
 import { createDebug } from './debug.js';
-import { sanitizeDisplayText } from './utils/sanitize.js';
+import { displayLabel, sanitizeDisplayText } from './utils/sanitize.js';
 import { truncateString } from './utils/truncate.js';
 import { sanitizeTranscriptModel } from './model-source.js';
 const debug = createDebug('transcript');
@@ -29,14 +28,7 @@ function addUsage(total, usage) {
     for (const field of USAGE_FIELDS)
         total[field] += usage[field];
 }
-function name(value) {
-    if (typeof value !== 'string')
-        return undefined;
-    const text = sanitizeDisplayText(value).trim();
-    if (!text)
-        return undefined;
-    return truncateString(text, NAME_MAX_LEN, '…');
-}
+const name = (value) => displayLabel(value, NAME_MAX_LEN, '…') || undefined;
 const mcpServer = (toolName) => name(MCP_TOOL.exec(toolName)?.[1]);
 // Tool inputs are written by the model, so their text is untrusted terminal input.
 const text = (value) => typeof value === 'string' ? sanitizeDisplayText(value) || undefined : undefined;
@@ -174,7 +166,7 @@ class Parser {
         if (at)
             this.data.lastAssistantResponseAt = at;
         if (typeof entry.advisorModel === 'string' && entry.advisorModel) {
-            this.data.advisorModel = entry.advisorModel.slice(0, ADVISOR_MODEL_MAX_LEN);
+            this.data.advisorModel = truncateString(entry.advisorModel, ADVISOR_MODEL_MAX_LEN, '');
         }
         const model = sanitizeTranscriptModel(entry.message?.model);
         // Claude Code writes '<synthetic>' on assistant records it generates locally.
@@ -454,9 +446,9 @@ function getHudVersion() {
     }
     return hudVersion;
 }
-function cursorPath(homeDir, transcriptPath) {
+function cursorPath(dataDir, transcriptPath) {
     const key = createHash('sha256').update(path.resolve(transcriptPath)).digest('hex');
-    return path.join(getHudPluginDir(homeDir), 'transcript-cursors', `${key}.json`);
+    return path.join(dataDir, 'transcript-cursors', `${key}.json`);
 }
 function readCursor(file) {
     let cursor;
@@ -565,7 +557,7 @@ async function parseFrom(file, parser, offset, save) {
         parser.line(rest);
     return parser.finish();
 }
-export async function parseTranscript(transcriptPath, homeDir) {
+export async function parseTranscript(transcriptPath, dataDir) {
     let file;
     try {
         // Checked before opening, which would block on a pipe.
@@ -578,7 +570,7 @@ export async function parseTranscript(transcriptPath, homeDir) {
     }
     try {
         const stat = await file.stat();
-        const cursorFile = cursorPath(homeDir, transcriptPath);
+        const cursorFile = cursorPath(dataDir, transcriptPath);
         const save = (parser, offset) => writeCursor(cursorFile, { version: getHudVersion(), ino: stat.ino, offset, state: parser.save() });
         const cursor = readCursor(cursorFile);
         if (cursor && (await resumes(file, stat, cursor))) {
@@ -602,10 +594,10 @@ export async function parseTranscript(transcriptPath, homeDir) {
 // The id comes from the transcript and names a file, so only a plain token is used.
 const AGENT_ID = /^[\w-]{1,64}$/;
 /** A subagent's effort, from the first assistant record of `<session>/subagents/agent-<id>.jsonl`. */
-async function subagentEffort(transcriptPath, agentId) {
+async function subagentEffort(subagentsDir, agentId) {
     if (!AGENT_ID.test(agentId))
         return undefined;
-    const file = path.join(path.dirname(transcriptPath), path.basename(transcriptPath, '.jsonl'), 'subagents', `agent-${agentId}.jsonl`);
+    const file = path.join(subagentsDir, `agent-${agentId}.jsonl`);
     try {
         // Checked before opening, which would block on a pipe.
         if (!(await fs.promises.stat(file)).isFile())
@@ -638,10 +630,10 @@ async function subagentEffort(transcriptPath, agentId) {
     return undefined;
 }
 /** Sets each agent's effort in place; agents without a known id or first reply stay without one. */
-export async function addSubagentEfforts(transcriptPath, agents) {
+export async function addSubagentEfforts(subagentsDir, agents) {
     await Promise.all(agents.map(async (agent) => {
         if (agent.agentId)
-            agent.effort = await subagentEffort(transcriptPath, agent.agentId);
+            agent.effort = await subagentEffort(subagentsDir, agent.agentId);
     }));
 }
 //# sourceMappingURL=transcript.js.map

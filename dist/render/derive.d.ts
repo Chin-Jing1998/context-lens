@@ -1,6 +1,6 @@
-import type { RenderContext } from '../types.js';
-import { type ContextUsage } from '../stdin.js';
-import { type EffortInfo } from '../effort.js';
+import type { RenderContext } from '../types.ts';
+import { type ContextUsage } from '../stdin.ts';
+import { type EffortInfo } from '../effort.ts';
 export declare const contextUsage: (ctx: RenderContext) => ContextUsage;
 export declare const sessionName: (ctx: RenderContext) => string | undefined;
 export declare const claudeCodeVersion: (ctx: RenderContext) => string | undefined;

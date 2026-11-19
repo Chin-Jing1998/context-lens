@@ -1,5 +1,5 @@
-import type { HourCycleMode, HudConfig, TimeFormatMode } from '../config.js';
-import type { MessageKey } from '../i18n/types.js';
+import type { HourCycleMode, HudConfig, TimeFormatMode } from '../config.ts';
+import type { MessageKey } from '../i18n/types.ts';
 interface WallClockOptions {
     hourCycle: HourCycleMode;
     showSeconds: boolean;

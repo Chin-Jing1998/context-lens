@@ -1,5 +1,5 @@
-import type { HudColorOverrides, UsageValueMode } from '../config.js';
-import { type UsagePace } from '../usage-pace.js';
+import type { HudColorOverrides, UsageValueMode } from '../config.ts';
+import { type UsagePace } from '../usage-pace.ts';
 export declare const RESET = "\u001B[0m";
 export declare function green(text: string): string;
 export declare function yellow(text: string): string;

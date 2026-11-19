@@ -1,4 +1,4 @@
-import type { RenderContext } from '../types.js';
+import type { RenderContext } from '../types.ts';
 export interface Frame extends RenderContext {
     now: number;
     /** Lines wrap to this width; null when the terminal width is unknown. */

@@ -1,5 +1,5 @@
-import type { Frame, Layout } from './frame.js';
-import { type LabelAlign } from './labels.js';
+import type { Frame, Layout } from './frame.ts';
+import { type LabelAlign } from './labels.ts';
 /**
  * The usage windows as separator-joined parts. Expanded joins them into one line;
  * compact lays them out with the rest of its line and leaves `Usage` off the

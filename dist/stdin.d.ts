@@ -1,9 +1,5 @@
-import type { StdinData, UsageData, TranscriptData } from './types.js';
-import type { ModelFormatMode } from './config.js';
-type StdinStream = Pick<NodeJS.ReadStream, 'setEncoding' | 'on' | 'pause'> & {
-    isTTY?: boolean;
-};
-export declare function readStdin(stream?: StdinStream): Promise<StdinData | null>;
+import type { StdinData, UsageData, TranscriptData } from './types.ts';
+import type { ModelFormatMode } from './config.ts';
 export declare function getTotalTokens(stdin: StdinData): number;
 export interface ContextUsage {
     percent: number;
@@ -21,5 +17,4 @@ export declare function getUsageFromStdin(stdin: StdinData): UsageData | null;
 export declare function stdinText(value: unknown, maxLength?: number): string | undefined;
 export declare function stripContextSuffix(name: string): string;
 export declare function formatModelName(name: string, format?: ModelFormatMode, override?: string): string;
-export {};
 //# sourceMappingURL=stdin.d.ts.map

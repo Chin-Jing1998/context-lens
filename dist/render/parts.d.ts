@@ -1,5 +1,5 @@
-import type { FirstLineSegment } from '../config.js';
-import type { Frame, Layout } from './frame.js';
+import type { FirstLineSegment } from '../config.ts';
+import type { Frame, Layout } from './frame.ts';
 /** A first-line part; `key` lets projectLineOrder move it, null keeps its slot. */
 export interface Part {
     key: FirstLineSegment | null;

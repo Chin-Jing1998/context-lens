@@ -1,4 +1,3 @@
-import { getTerminalWidth } from '../utils/terminal.js';
 import { RESET } from './colors.js';
 import { wrapToWidth } from './ansi.js';
 import { compactLines } from './compact.js';
@@ -12,9 +11,5 @@ export function renderLines(ctx, columns, now) {
         .flatMap((line) => line.split('\n'))
         .flatMap((line) => wrapToWidth(line, frame.width ?? 0))
         .map((line) => `${RESET}${line}`);
-}
-export function render(ctx) {
-    for (const line of renderLines(ctx, getTerminalWidth(), Date.now()))
-        console.log(line);
 }
 //# sourceMappingURL=index.js.map

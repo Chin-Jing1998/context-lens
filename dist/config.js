@@ -1,10 +1,8 @@
 import * as fs from 'node:fs';
-import * as path from 'node:path';
-import * as os from 'node:os';
-import { expandHomeDirPrefix, getClaudeConfigDir, getHudPluginDir } from './claude-config-dir.js';
 import { createDebug } from './debug.js';
 import { MAX_TERMINAL_WIDTH } from './utils/terminal.js';
 import { sanitizeDisplayText } from './utils/sanitize.js';
+import { truncateString } from './utils/truncate.js';
 const debug = createDebug('config');
 const MAX_CONFIG_FILE_BYTES = 64 * 1024;
 const MAX_CONFIG_NESTING_DEPTH = 8;
@@ -23,6 +21,7 @@ const TIME_FORMATS = ['relative', 'absolute', 'both', 'elapsed', 'elapsedAndAbso
 const HOUR_CYCLES = ['auto', 'h11', 'h12', 'h23', 'h24'];
 const CUSTOM_LINE_POSITIONS = ['first', 'last'];
 const ADDED_DIRS_LAYOUTS = ['inline', 'line'];
+const WEEKLY_COST_PERIODS = ['quota', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const COLOR_NAMES = ['dim', 'red', 'green', 'yellow', 'magenta', 'cyan', 'brightBlue', 'brightMagenta'];
 const CONTEXT_DETAIL_MODES = ['always', 'warning', 'critical', 'never'];
 const USAGE_DETAIL_MODES = ['always', 'threshold', 'never'];
@@ -91,6 +90,7 @@ export const DEFAULT_CONFIG = {
     display: {
         showModel: true,
         showProject: true,
+        showLaunchDir: false,
         showAddedDirs: true,
         addedDirsLayout: 'inline',
         showContextBar: true,
@@ -100,6 +100,7 @@ export const DEFAULT_CONFIG = {
         showRoutedCost: false,
         showDailyCost: false,
         showWeeklyCost: false,
+        weeklyCostPeriod: 'quota',
         showDuration: false,
         showSpeed: false,
         showTokenBreakdown: true,
@@ -121,6 +122,7 @@ export const DEFAULT_CONFIG = {
         showSessionName: false,
         showAuth: false,
         showAuthUser: false,
+        authUserFullEmail: false,
         authUserLength: 8,
         showClaudeCodeVersion: false,
         showEffortLevel: false,
@@ -182,29 +184,23 @@ export const DEFAULT_CONFIG = {
         barEmpty: '░',
     },
 };
-export function getConfigPath() {
-    return path.join(getHudPluginDir(os.homedir()), 'config.json');
-}
-// Lives outside plugins/, which users often symlink across several CLAUDE_CONFIG_DIRs,
-// so it stays per-directory and can override the shared config.
-export function getConfigOverridePath() {
-    return path.join(getClaudeConfigDir(os.homedir()), 'context-lens.json');
-}
+const rule = (accepts, fn, freeText = false) => (Object.assign(fn, { accepts, freeText }));
 const isNumber = (value) => typeof value === 'number' && Number.isFinite(value);
-const oneOf = (allowed) => (value, fallback) => (allowed.includes(value) ? value : fallback);
-const clamp = (min, max) => (value, fallback) => (isNumber(value) ? Math.max(min, Math.min(max, value)) : fallback);
-const floorAtLeastZero = (value, fallback) => (isNumber(value) ? Math.max(0, Math.floor(value)) : fallback);
-const count = (value, fallback) => (Number.isInteger(value) && value >= 0 ? value : fallback);
-const text = (maxLength) => (value, fallback) => (typeof value === 'string' ? sanitizeDisplayText(value).slice(0, maxLength) : fallback);
+const list = (values) => values.map(value => JSON.stringify(value)).join(' | ');
+const oneOf = (allowed) => rule(list(allowed), (value, fallback) => (allowed.includes(value) ? value : fallback));
+const clamp = (min, max) => rule(`a number from ${min} to ${max}`, (value, fallback) => (isNumber(value) ? Math.max(min, Math.min(max, value)) : fallback));
+const floorAtLeastZero = rule('a whole number, 0 or more', (value, fallback) => (isNumber(value) ? Math.max(0, Math.floor(value)) : fallback));
+const count = rule('a whole number, 0 or more', (value, fallback) => (Number.isInteger(value) && value >= 0 ? value : fallback));
+const text = (maxLength) => rule(`text, up to ${maxLength} characters`, (value, fallback) => (typeof value === 'string' ? truncateString(sanitizeDisplayText(value), maxLength, '') : fallback), true);
 // Keeps known names once each, in order. An empty result falls back only when `nonEmpty`.
-const names = (known, nonEmpty) => (value, fallback) => {
+const names = (known, nonEmpty) => rule(`a list of ${list(known)}`, (value, fallback) => {
     if (!Array.isArray(value))
         return fallback;
     const kept = [...new Set(value.filter(item => known.includes(item)))];
     return kept.length > 0 || !nonEmpty ? kept : fallback;
-};
+});
 // Groups need two or more known elements, and an element joins at most one group.
-const mergeGroups = (value, fallback) => {
+const mergeGroups = rule(`a list of groups, each 2 or more of ${list(ELEMENTS)}, each element in one group`, (value, fallback) => {
     if (!Array.isArray(value))
         return fallback;
     if (value.length === 0)
@@ -221,32 +217,31 @@ const mergeGroups = (value, fallback) => {
         groups.push(members);
     }
     return groups.length > 0 ? groups : fallback;
-};
+});
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
-const color = (value, fallback) => (COLOR_NAMES.includes(value)
+const color = rule(`${list(COLOR_NAMES)}, a 256-color number 0-255, or "#rrggbb"`, (value, fallback) => (COLOR_NAMES.includes(value)
     || (Number.isInteger(value) && value >= 0 && value <= 255)
     || (typeof value === 'string' && HEX_COLOR.test(value))
     ? value
-    : fallback);
+    : fallback));
 // Exactly one visible grapheme: no controls, format, variation, separator, or unassigned code points.
 const INVISIBLE_CODEPOINT = /[\p{Cc}\p{Cf}\p{Variation_Selector}\p{Zl}\p{Zp}\p{Cn}]/u;
-const barChar = (value, fallback) => {
+const barChar = rule('one visible character', (value, fallback) => {
     if (typeof value !== 'string' || value.length === 0)
         return fallback;
     const graphemes = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(value)];
     return graphemes.length === 1 && !INVISIBLE_CODEPOINT.test(value) ? value : fallback;
-};
-// Expands a leading ~ and ${VAR}; unset variables are left as written.
-const usagePath = (value) => (typeof value === 'string'
-    ? expandHomeDirPrefix(value.trim(), os.homedir())
-        .replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (match, name) => process.env[name] ?? match)
-    : '');
-// Booleans need no rule: a default of type boolean accepts only booleans.
+});
+// collector.mjs resolves these (a leading ~ and ${VAR} are expanded) and reads or writes the file;
+// logic only needs to know whether one is set.
+const usagePath = rule('an absolute path (a leading ~ and ${VAR} are expanded)', (value) => (typeof value === 'string' ? value.trim() : ''), true);
+const boolean = rule('true | false', (value, fallback) => (typeof value === 'boolean' ? value : fallback));
+// Booleans need no rule here: a default of type boolean gets `boolean`.
 const RULES = {
     'language': oneOf(LANGUAGES),
     'lineLayout': oneOf(LINE_LAYOUTS),
     'pathLevels': oneOf(PATH_LEVELS),
-    'maxWidth': (value) => (isNumber(value) && value > 0 ? Math.min(Math.floor(value), MAX_TERMINAL_WIDTH) : null),
+    'maxWidth': rule('a positive number, or null', (value) => (isNumber(value) && value > 0 ? Math.min(Math.floor(value), MAX_TERMINAL_WIDTH) : null)),
     'elementOrder': names(ELEMENTS, true),
     'projectLineOrder': names(FIRST_LINE_SEGMENTS, false),
     'gitStatus.branchOverflow': oneOf(GIT_BRANCH_OVERFLOW_MODES),
@@ -254,6 +249,7 @@ const RULES = {
     'gitStatus.pushCriticalThreshold': floorAtLeastZero,
     'display.addedDirsLayout': oneOf(ADDED_DIRS_LAYOUTS),
     'display.contextValue': oneOf(CONTEXT_VALUE_MODES),
+    'display.weeklyCostPeriod': oneOf(WEEKLY_COST_PERIODS),
     'display.usageValue': oneOf(USAGE_VALUE_MODES),
     'display.toolNameMaxLength': count,
     'display.toolsMaxVisible': count,
@@ -279,7 +275,7 @@ const RULES = {
     'display.timeFormat': oneOf(TIME_FORMATS),
     'display.hourCycle': oneOf(HOUR_CYCLES),
     'display.advisorOverride': text(80),
-    'display.autoCompactWindow': (value) => (Number.isInteger(value) && value > 0 ? value : null),
+    'display.autoCompactWindow': rule('a positive whole number, or null', (value) => (Number.isInteger(value) && value > 0 ? value : null)),
     'display.contextDetailMode': oneOf(CONTEXT_DETAIL_MODES),
     'display.usageDetailMode': oneOf(USAGE_DETAIL_MODES),
     'display.compactContextFormat': oneOf(COMPACT_CONTEXT_FORMATS),
@@ -290,25 +286,65 @@ const RULES = {
 function isPlainObject(value) {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
+const ruleFor = (keyPath, fallback) => (RULES[keyPath] ?? RULES[`${keyPath.slice(0, keyPath.lastIndexOf('.') + 1)}*`] ?? (typeof fallback === 'boolean' ? boolean : undefined));
 // Walks the defaults, so unknown user keys are dropped and every key is validated.
 function normalize(defaults, input, prefix = '') {
     const source = isPlainObject(input) ? input : {};
     const result = {};
     for (const [key, fallback] of Object.entries(defaults)) {
         const keyPath = prefix + key;
-        const rule = RULES[keyPath] ?? RULES[`${prefix}*`];
+        const keyRule = ruleFor(keyPath, fallback);
         const value = source[key];
-        if (rule) {
-            result[key] = rule(value, fallback);
+        if (keyRule) {
+            result[key] = keyRule(value, fallback);
         }
         else if (isPlainObject(fallback)) {
             result[key] = normalize(fallback, value, `${keyPath}.`);
         }
         else {
-            result[key] = typeof fallback === 'boolean' && typeof value === 'boolean' ? value : fallback;
+            result[key] = fallback;
         }
     }
     return result;
+}
+/** Every config key with its default and what it accepts, in DEFAULT_CONFIG order. */
+export function configKeys(defaults = DEFAULT_CONFIG, prefix = '') {
+    return Object.entries(defaults).flatMap(([key, fallback]) => {
+        const keyPath = prefix + key;
+        const keyRule = ruleFor(keyPath, fallback);
+        if (!keyRule && isPlainObject(fallback))
+            return configKeys(fallback, `${keyPath}.`);
+        return [{ key: keyPath, default: fallback, accepts: keyRule?.accepts ?? 'a value', freeText: keyRule?.freeText ?? false }];
+    });
+}
+/** The key's entry, or undefined for a key config.json doesn't have. */
+export const configKey = (key) => keyEntry(key);
+const UNSET = Symbol('unset');
+const sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+let allKeys;
+const keyEntry = (key) => (allKeys ??= new Map(configKeys().map(entry => [entry.key, entry]))).get(key);
+/** Why `value` is not valid for `key`, or null when it is. A value a rule would change counts as invalid. */
+export function checkValue(key, value) {
+    const entry = keyEntry(key);
+    if (!entry)
+        return `${key} is not a config key`;
+    const keyRule = ruleFor(key, entry.default);
+    const valid = keyRule === usagePath ? typeof value === 'string' : keyRule ? sameJson(keyRule(value, UNSET), value) : false;
+    return valid ? null : `${key} must be ${entry.accepts}`;
+}
+/** Each set key whose value would be ignored or changed. Unknown keys are left alone. */
+export function configProblems(raw, prefix = '') {
+    return Object.entries(raw).flatMap(([key, value]) => {
+        const keyPath = prefix + key;
+        if (keyEntry(keyPath)) {
+            const problem = checkValue(keyPath, value);
+            return problem ? [problem] : [];
+        }
+        const isSection = isPlainObject(DEFAULT_CONFIG[keyPath]) && prefix === '';
+        if (!isSection)
+            return [];
+        return isPlainObject(value) ? configProblems(value, `${keyPath}.`) : [`${keyPath} must be an object`];
+    });
 }
 // v0.0.x wrote `layout: "default" | "separators"`; some third-party tools write an object.
 function migrateLegacyLayout(config) {
@@ -344,7 +380,7 @@ function hasSafeConfigShape(value, depth = 0) {
     return Object.entries(value).every(([key, child]) => (!UNSAFE_CONFIG_KEYS.has(key) && hasSafeConfigShape(child, depth + 1)));
 }
 // Sections merge key by key; arrays and scalars replace the base value.
-function mergeOverrides(base, override) {
+export function mergeOverrides(base, override) {
     const result = Object.assign(Object.create(null), base);
     for (const [key, value] of Object.entries(override)) {
         const current = result[key];
@@ -353,6 +389,7 @@ function mergeOverrides(base, override) {
     return result;
 }
 // Checks and reads through one descriptor so a swapped or growing file can't slip past either guard.
+// Null when the file is missing; a reason string when it can't be used.
 function readConfigFile(configPath) {
     try {
         // O_NOFOLLOW rejects symlinks on POSIX; it is undefined on Windows.
@@ -360,7 +397,7 @@ function readConfigFile(configPath) {
         try {
             if (!fs.fstatSync(fd).isFile()) {
                 debug('Ignoring %s: not a regular file', configPath);
-                return null;
+                return 'is not a regular file';
             }
             const buf = Buffer.alloc(MAX_CONFIG_FILE_BYTES + 1);
             let length = 0;
@@ -371,12 +408,12 @@ function readConfigFile(configPath) {
             } while (bytesRead > 0 && length < buf.length);
             if (length > MAX_CONFIG_FILE_BYTES) {
                 debug('Ignoring %s: larger than %d bytes', configPath, MAX_CONFIG_FILE_BYTES);
-                return null;
+                return `is larger than ${MAX_CONFIG_FILE_BYTES / 1024} KB`;
             }
             const parsed = JSON.parse(buf.subarray(0, length).toString('utf-8'));
             if (!isPlainObject(parsed) || !hasSafeConfigShape(parsed)) {
                 debug('Ignoring %s: not a bounded JSON object without unsafe keys', configPath);
-                return null;
+                return 'is not a JSON object (or nests too deep, or uses __proto__)';
             }
             return parsed;
         }
@@ -385,15 +422,33 @@ function readConfigFile(configPath) {
         }
     }
     catch (err) {
-        if (err.code !== 'ENOENT') {
-            debug('Ignoring %s:', configPath, err instanceof Error ? err.message : err);
-        }
-        return null;
+        if (err.code === 'ENOENT')
+            return null;
+        debug('Ignoring %s:', configPath, err instanceof Error ? err.message : err);
+        return err instanceof SyntaxError ? 'is not valid JSON' : 'can\'t be read';
     }
 }
-export async function loadConfig() {
-    const base = readConfigFile(getConfigPath()) ?? {};
-    const override = readConfigFile(getConfigOverridePath());
-    return mergeConfig((override ? mergeOverrides(base, override) : base));
+export function loadConfigFiles(paths) {
+    const files = [['config.json', readConfigFile(paths.config)], ['context-lens.json', readConfigFile(paths.override)]];
+    const problems = [];
+    const [base, override] = files.map(([name, file]) => {
+        if (typeof file === 'string')
+            problems.push(`${name} ${file}`);
+        else if (file)
+            problems.push(...configProblems(migrateLegacyLayout(file)).map(problem => `${name}: ${problem}`));
+        return isPlainObject(file) ? file : null;
+    });
+    const merged = override ? mergeOverrides(base ?? {}, override) : base ?? {};
+    const baseFile = files[0][1];
+    return {
+        config: mergeConfig(merged),
+        base: base ?? {},
+        baseUnreadable: typeof baseFile === 'string' ? `config.json ${baseFile}` : null,
+        override: override ?? {},
+        problems,
+    };
+}
+export async function loadConfig(paths) {
+    return loadConfigFiles(paths).config;
 }
 //# sourceMappingURL=config.js.map

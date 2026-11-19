@@ -1,13 +1,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
-import { getHudPluginDir } from './claude-config-dir.js';
 // Below this much API time a rate is mostly noise (#481).
 const MIN_API_DELTA_MS = 500;
 const isCount = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0;
-function statePath(homeDir, transcriptPath) {
+function statePath(dataDir, transcriptPath) {
     const key = createHash('sha256').update(path.resolve(transcriptPath)).digest('hex');
-    return path.join(getHudPluginDir(homeDir), 'speed-cache', `${key}.json`);
+    return path.join(dataDir, 'speed-cache', `${key}.json`);
 }
 function readState(file) {
     try {
@@ -36,7 +35,7 @@ function writeState(file, state) {
 // cost.total_api_duration_ms advances by that response's request time in the same
 // update, so speed is the finished response's output over the API time it added.
 // The reading holds until the next response.
-export function getOutputSpeed(stdin, homeDir) {
+export function getOutputSpeed(stdin, dataDir) {
     const transcriptPath = stdin.transcript_path?.trim();
     const usage = stdin.context_window?.current_usage;
     const output = usage?.output_tokens;
@@ -44,7 +43,7 @@ export function getOutputSpeed(stdin, homeDir) {
     if (!transcriptPath || !usage || !isCount(output) || !isCount(apiDurationMs)) {
         return null;
     }
-    const file = statePath(homeDir, transcriptPath);
+    const file = statePath(dataDir, transcriptPath);
     const usageKey = [usage.input_tokens, output, usage.cache_creation_input_tokens, usage.cache_read_input_tokens].join(':');
     const previous = readState(file);
     if (!previous || apiDurationMs < previous.apiDurationMs) {

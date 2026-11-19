@@ -1,25 +1,15 @@
 import * as fs from 'node:fs';
-import * as os from 'node:os';
-import { getClaudeConfigJsonPath } from './claude-config-dir.js';
-import { sanitizeDisplayText } from './utils/sanitize.js';
-const EMPTY_AUTH_INFO = { method: null, user: null };
-const API_KEY_AUTH_INFO = { method: 'API Key', user: null };
+import { displayLabel } from './utils/sanitize.js';
+import { truncateString } from './utils/truncate.js';
+const EMPTY_AUTH_INFO = { method: null, user: null, email: null };
+const API_KEY_AUTH_INFO = { method: 'API Key', user: null, email: null };
 const AUTH_VALUE_MAX_LEN = 128;
 function hasApiKey(env) {
     return typeof env.ANTHROPIC_API_KEY === 'string' && env.ANTHROPIC_API_KEY.trim().length > 0;
 }
-// Strip ANSI sequences and control/bidi characters so values from
-// claude.json can never smuggle escape sequences into the terminal.
-function sanitizeValue(value) {
-    return sanitizeDisplayText(value).trim().slice(0, AUTH_VALUE_MAX_LEN);
-}
+// Values from claude.json are sanitized so they can never smuggle escape sequences into the terminal.
 function readString(obj, key) {
-    const value = obj[key];
-    if (typeof value !== 'string') {
-        return null;
-    }
-    const sanitized = sanitizeValue(value);
-    return sanitized.length > 0 ? sanitized : null;
+    return displayLabel(obj[key], AUTH_VALUE_MAX_LEN) || null;
 }
 /**
  * Formats an organizationType value into a display label:
@@ -71,21 +61,21 @@ export function deriveAuthInfo(claudeJson, env = process.env) {
     }
     const email = readString(account, 'emailAddress');
     const user = email ? email.split('@')[0] : readString(account, 'displayName');
-    return { method, user };
+    return { method, user, email };
 }
 /**
- * Cache of the two DERIVED fields, keyed on the source file's identity.
+ * Cache of the DERIVED fields, keyed on the source file's identity.
  *
  * The identity combines mtime, ctime, size, device, and inode so a replacement
  * or rapid rewrite cannot reuse a stale entry based on one timestamp alone.
  */
-export function readAuthInfo() {
+export function readAuthInfo(claudeJson) {
     // An API key wins over whatever OAuth profile claude.json still holds.
     if (hasApiKey(process.env)) {
         return API_KEY_AUTH_INFO;
     }
     try {
-        return deriveAuthInfo(JSON.parse(fs.readFileSync(getClaudeConfigJsonPath(os.homedir()), 'utf8')));
+        return deriveAuthInfo(JSON.parse(fs.readFileSync(claudeJson, 'utf8')));
     }
     catch {
         return EMPTY_AUTH_INFO;
@@ -95,11 +85,11 @@ export function truncateUser(user, maxLength) {
     if (maxLength <= 0 || user.length <= maxLength) {
         return user;
     }
-    return `${user.slice(0, maxLength)}…`;
+    return `${truncateString(user, maxLength, '')}…`;
 }
 /**
  * Builds the standalone auth segment for the end of the first HUD line,
- * honoring the showAuth / showAuthUser / authUserLength display settings.
+ * honoring the showAuth / showAuthUser / authUserFullEmail / authUserLength display settings.
  * Returns e.g. "Claude Max 20x · yukinosh…", or null when nothing to show.
  */
 export function formatAuthSegment(info, display) {
@@ -110,8 +100,9 @@ export function formatAuthSegment(info, display) {
     if (display?.showAuth && info.method) {
         parts.push(info.method);
     }
-    if (display?.showAuthUser && info.user) {
-        parts.push(truncateUser(info.user, display?.authUserLength ?? 8));
+    const user = display?.authUserFullEmail && info.email ? info.email : info.user;
+    if (display?.showAuthUser && user) {
+        parts.push(truncateUser(user, display?.authUserLength ?? 8));
     }
     return parts.length > 0 ? parts.join(' · ') : null;
 }

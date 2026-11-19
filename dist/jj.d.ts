@@ -1,15 +1,6 @@
-import type { GitStatus } from './git.js';
-export interface JjRunnerOptions {
-    cwd: string;
-    timeout: number;
-    maxBuffer: number;
-    encoding: 'utf8';
-    windowsHide: boolean;
-    shell: false;
-}
-export type JjRunner = (file: string, args: readonly string[], options: JjRunnerOptions) => Promise<{
-    stdout: string;
-}>;
-export declare function isJjRepo(cwd?: string): boolean;
-export declare function getJjStatus(cwd?: string, runner?: JjRunner): Promise<GitStatus | null>;
+import type { Ask } from './channel.ts';
+import type { GitStatus } from './git.ts';
+export declare function parseJjOutput(stdout: string): GitStatus | null;
+/** Null outside a jj repo, or when jj is missing or rejects the template: render nothing. */
+export declare function getJjStatus(ask: Ask): Promise<GitStatus | null>;
 //# sourceMappingURL=jj.d.ts.map
