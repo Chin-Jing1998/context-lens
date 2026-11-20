@@ -1,10 +1,15 @@
 import { statSync } from 'node:fs';
 import { captureClaude, claudeLaunchSettings, validId } from './sessions.js';
 import { resolveClaudeSettings } from './settings.js';
-export function captureStatusline(stdin, showTerminal, hudWindow) {
+import { formatAuthSegment, readAuthInfo } from '../auth.js';
+export function captureStatusline(stdin, showTerminal, hudWindow, account) {
     const launch = claudeLaunchSettings();
     try {
-        captureClaude(stdin, launch, hudWindow ?? undefined);
+        const auth = account && (account.showAuth || account.showAuthUser) ? readAuthInfo(account.path) : null;
+        captureClaude(stdin, launch, hudWindow ?? undefined, {
+            authMethod: account?.showAuth ? auth?.method ?? undefined : undefined,
+            authUser: formatAuthSegment(auth, { ...account, showAuth: false }) ?? undefined,
+        });
     }
     catch {
         // 桌面端会显示采集缺失状态。

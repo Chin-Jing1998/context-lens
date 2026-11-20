@@ -20,7 +20,7 @@ const costKey = (key) => {
 };
 export async function startServer(options = {}) {
     const collector = options.collector ?? new SessionCollector();
-    const costs = options.costHistory ?? new CostHistory(options.collector ? { native: () => collector.list().filter(file => file.client !== 'agy'), sources: [] } : {});
+    const costs = options.costHistory ?? new CostHistory(options.collector ? { native: () => collector.list(), sources: [] } : {});
     const active = new ActiveSessions();
     const assets = {
         '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'],
@@ -93,7 +93,7 @@ export async function startServer(options = {}) {
                     json(404, { error: 'Session is no longer available' });
                     return;
                 }
-                json(200, await collector.get(key, { view }));
+                json(200, await collector.get(key, { view, git: true }));
             }
             else if (req.method === 'GET' && url.pathname === '/api/details') {
                 const key = url.searchParams.get('session') || '';
@@ -124,7 +124,8 @@ export async function startServer(options = {}) {
             else if (req.method === 'GET' && url.pathname === '/api/costs') {
                 const query = { period: url.searchParams.get('period') || undefined, start: url.searchParams.get('start') || undefined,
                     end: url.searchParams.get('end') || undefined, timeZone: url.searchParams.get('timeZone') || undefined,
-                    tool: url.searchParams.get('tool') || undefined, page: url.searchParams.has('page') ? Number(url.searchParams.get('page')) : undefined };
+                    tool: url.searchParams.get('tool') || undefined, page: url.searchParams.has('page') ? Number(url.searchParams.get('page')) : undefined,
+                    sessionScope: url.searchParams.get('sessionScope') ?? undefined };
                 try {
                     costRange(query);
                 }

@@ -85,7 +85,9 @@ function toolFor(name, title) {
 }
 function follow(next) {
   if (!next.pid || next.pid === process.pid || /^context lens$/i.test(next.name) || /^electron$/i.test(next.name)) return;
-  const client = toolFor(next.name, next.title), terminal = /^(windowsterminal|wt|powershell|pwsh|cmd|conhost)$/i.test(next.name);
+  const orca = /^orca$/i.test(next.name);
+  const client = orca ? null : toolFor(next.name, next.title);
+  const terminal = orca || /^(windowsterminal|wt|powershell|pwsh|cmd|conhost)$/i.test(next.name);
   const supported = Boolean(client || terminal), identity = next.pid + ':' + next.title;
   if (foreground?.identity === identity) return;
   foreground = { ...next, client, supported, identity };
@@ -102,7 +104,8 @@ async function refresh(manual = false) {
     if (process.platform === 'win32' && !foreground?.supported) { if (manual) emit(detail, 'context-lens-detection', { state: 'waiting' }); return; }
     const target = foreground;
     const query = new URLSearchParams(); if (target?.pid) query.set('pid', String(target.pid)); if (target?.client) query.set('client', target.client);
-    const id = target?.title.match(/(?:[a-f0-9]{8}-){1}[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i)?.[0];
+    const id = /^orca$/i.test(target?.name ?? '') ? undefined
+      : target?.title.match(/(?:[a-f0-9]{8}-){1}[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i)?.[0];
     if (id) query.set('visibleId', id);
     // Only exact unique local titles can select a visible conversation.
     if (target?.client && !id && !/^(windowsterminal|wt|powershell|pwsh|cmd|conhost)$/i.test(target.name)) {

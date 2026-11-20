@@ -1,5 +1,4 @@
 import * as fs from 'node:fs';
-import path from 'node:path';
 import { buildContext, percentageNumber, tokenNumber } from './context.js';
 import { readSession } from './reader.js';
 import { discoverSessions, checkpoint, readLiveClaude, sessionKey } from './sessions.js';
@@ -10,7 +9,9 @@ import { sessionTiming } from './timing.js';
 import { summarizeDetails } from './claude-details.js';
 import { buildSessionDetails } from './session-details.js';
 import { officialModelMetadata } from './model-metadata.js';
-import { agyHistory, agyStamp, discoverAgySessions, readAgyLive, readAgySession, readAgyTranscript } from './agy.js';
+import { agySessionHistory, agyStamp, discoverAgySessions, readAgyFile, readAgyLive } from './agy.js';
+import { currentQuota } from './quota.js';
+import { readWorkspaceGit } from './workspace.js';
 import { claudeDesktopSessions } from './claude-desktop.js';
 function totals(parsed, requests) {
     const sum = sumRequests(requests, parsed.complete);
@@ -70,27 +71,17 @@ export class SessionCollector {
     }
     async read(file) {
         const stat = fs.statSync(file.file);
-        const history = file.client === 'agy' && file.surface === 'cli' && file.file.endsWith('.db')
-            ? agyHistory(path.dirname(path.dirname(file.file)), file.id) : undefined;
+        const history = agySessionHistory(file);
         const stamp = file.client === 'agy' ? agyStamp(file.file) + (history ? `:${agyStamp(history)}` : '') : `${stat.ino}:${stat.size}:${stat.mtimeMs}:${file.model}:${file.surface ?? ''}`;
         const old = this.parsed.get(file.file);
         if (old?.stamp === stamp) {
-            old.data.info.title = file.title;
+            if (file.client !== 'claude' || file.title && file.title !== '未命名对话')
+                old.data.info.title = file.title;
             return old.data;
         }
         if (file.client === 'agy') {
             try {
-                let data = file.file.endsWith('.jsonl') ? await readAgyTranscript(file) : readAgySession(file);
-                if (history && (!data.requests.length || !data.activity)) {
-                    const oldHistory = await readAgyTranscript({ ...file, file: history });
-                    if (!data.requests.length && oldHistory.requests.length) {
-                        data = { ...oldHistory, used: data.used ?? oldHistory.used, capacity: data.capacity,
-                            at: data.at ?? oldHistory.at, windowEstimated: data.windowEstimated, categories: data.categories,
-                            messageBreakdown: data.messageBreakdown, activity: data.activity ?? oldHistory.activity };
-                    }
-                    else
-                        data.activity ??= oldHistory.activity;
-                }
+                const data = await readAgyFile(file, history);
                 this.saveParsed(file.file, { stamp, size: stat.size, data });
                 return data;
             }
@@ -284,6 +275,10 @@ export class SessionCollector {
         if (!all.complete)
             warnings.push('Some history or counters are unavailable; cumulative values may be incomplete and request counts may be unknown');
         const nativeCost = live?.stdin.cost?.total_cost_usd;
+        const telemetry = { ...main.telemetry, ...live?.telemetry, ...agyLive?.telemetry };
+        if (!fresh && main.telemetry?.effort)
+            telemetry.effort = main.telemetry.effort;
+        const git = options.git ? await readWorkspaceGit(main.info.cwd) : null;
         return {
             session: file.client === 'claude' && (!main.info.model || main.info.model === 'unknown') && live?.stdin.model?.id
                 ? { ...main.info, model: live.stdin.model.id } : main.info,
@@ -292,6 +287,10 @@ export class SessionCollector {
             activity: main.activity ? summarizeActivity(main.activity, agentActivity) : undefined,
             timing: main.timing ? sessionTiming(main.timing, now) : undefined,
             insights: main.details ? summarizeDetails(main.details) : undefined,
+            quota: currentQuota(live?.quota ?? agyLive?.quota ?? main.quota, now),
+            hasRequestDetails: requests.length > 0,
+            telemetry: Object.values(telemetry).some(value => value !== undefined) ? telemetry : undefined,
+            git: git ?? undefined,
             cost: estimateCost(requests, prices, all.complete), nativeCostUsd: typeof nativeCost === 'number' && nativeCost >= 0 ? nativeCost : null,
             warnings: [...new Set([...warnings, ...context.warnings])], capturedAt: new Date(now).toISOString(),
         };

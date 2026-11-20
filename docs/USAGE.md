@@ -98,13 +98,13 @@ node scripts/context-lens.mjs serve --port 47831
 
 ### 日期、工具及模型费用
 
-费用卡片保留当前会话金额，并提供当天、7d、14d、本月、本季度、本年和自定义日期。7d、14d 包含当天；月、季度、年从当前自然周期首日开始。日期边界按查询端所在时区计算，自定义开始日与结束日均包含在内。
+费用卡片保留当前会话金额，并提供当天、本周、近 7 天、近 14 天、本月、本季度、本年和自定义日期。本周从查询时区的周一零点起算，自定义开始日和结束日均包含在内。
 
-当期费用为所选日期内的请求费用；累计费用为截至结束日的历史请求费用。工具筛选同步作用于总计、模型费用和会话费用。每个模型显示当期与累计金额；会话明细显示对话标题、工具名称及会话编号，每页 20 条，仅供查看。没有活跃会话时仍可查询历史费用。
+当期费用统计所选日期内的请求，累计费用统计截至结束日的请求。工具筛选同步作用于总计、模型费用和会话费用。按会话查看时使用客户端记录的标题，缺少标题时使用会话编号，每页 20 条。没有活跃会话时仍可查询历史费用。
 
 主会话与子代理按工具和请求标识去重，再汇入同一对话。流式重复记录保留原请求日期；没有有效时间的记录不分配到文件修改日。OpenCode 与 MiMo Code 分叉复制的用量记录早于新会话创建时间，不计为新会话请求。未知价格保持“—”，已计价的部分使用“≥”标识；完整 token 计价使用“≈”。
 
-自动读取 Claude Code、Codex、OpenCode、MiMo Code、DeepSeek Harness 和 ZCode 的本地记录。OpenCode 与 MiMo Code 使用 SQLite 的逐消息用量，ZCode 使用逐请求用量，DeepSeek Harness 使用 v2–v4 JSONL 会话记录。Zstandard 记录需要 Node.js 22.15+；独立应用使用构建时打包的运行环境。
+自动读取 Claude Code、Codex、Antigravity、OpenCode、MiMo Code、DeepSeek Harness 和 ZCode 的本地记录。OpenCode 与 MiMo Code 使用 SQLite 的逐消息用量，ZCode 使用逐请求用量，DeepSeek Harness 使用 v2–v4 JSONL 会话记录。Zstandard 记录需要 Node.js 22.15+，独立应用使用构建时打包的运行环境。
 
 费用账本位于 `~/.config/context-lens/cost-history/`，仅保留工具、会话标识、标题、请求时间、模型和 token 计数。已采集记录在原日志轮转或移除后仍可查询；采集之前已删除的记录无法恢复。其他工具可以写入 `cost-imports/` 的统一计数文档，或通过本机 `POST /api/costs/import` 接入；工具名称不限定于内置名单。
 

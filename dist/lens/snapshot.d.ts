@@ -19,6 +19,7 @@ export declare class SessionCollector {
     get(key: string, options?: {
         view?: 'budget' | 'model';
         launch?: LaunchSettings;
+        git?: boolean;
     }): Promise<HudSnapshot>;
     details(key: string, query?: DetailQuery): Promise<{
         session: string;
@@ -44,6 +45,7 @@ export declare class SessionCollector {
         view?: 'budget' | 'model';
         launch?: LaunchSettings;
         live?: LiveClaude;
+        git?: boolean;
     }): Promise<HudSnapshot>;
 }
 //# sourceMappingURL=snapshot.d.ts.map

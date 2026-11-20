@@ -32,13 +32,17 @@
 </section>
 <section class="usage-panel surface" aria-labelledby="usage-title">
 <div class="section-heading"><h2 id="usage-title">累计用量</h2></div>
-<div id="usage-tabs" class="detail-tabs" role="tablist" aria-label="用量页面" hidden><button id="usage-overview-tab" type="button" role="tab" aria-selected="true" aria-controls="usage-overview-page" data-detail-page="overview">累计用量</button><button id="usage-agents-tab" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="usage-agents-page" data-detail-page="agents" hidden>Agent 详情</button></div>
+<div id="usage-tabs" class="detail-tabs" role="tablist" aria-label="用量页面" hidden><button id="usage-overview-tab" type="button" role="tab" aria-selected="true" aria-controls="usage-overview-page" data-detail-page="overview">累计用量</button><button id="usage-quota-tab" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="usage-quota-page" data-detail-page="quota" hidden>订阅额度</button><button id="usage-agents-tab" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="usage-agents-page" data-detail-page="agents" hidden>Agent 详情</button></div>
 <div id="usage-overview-page" role="tabpanel" aria-labelledby="usage-overview-tab">
 <div class="metric-pair"><div><span class="caption">输入总量</span><strong id="input-total" class="number metric-number">—</strong></div><div><span class="caption">输出总量</span><strong id="output-total" class="number metric-number">—</strong></div></div>
 <div class="cache-line"><span id="cache-status" class="badge">主会话缓存：未知</span><span><span class="caption">累计命中 </span><span id="cache-rate" class="number">—</span></span></div>
 <p id="cache-expiry" class="cache-expiry" hidden></p>
 <details id="usage-details" class="disclosure" open><summary>用量明细<svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></summary><div class="disclosure-body"><table class="usage"><caption class="sr-only">主会话、子代理和合计的累计指标</caption><thead><tr><th>指标</th><th>主会话</th><th id="agents-heading">子代理</th><th>合计</th></tr></thead><tbody id="usage-rows"></tbody></table></div></details>
-</div><section id="usage-agents-page" role="tabpanel" aria-labelledby="usage-agents-tab" hidden><div id="agent-ledger"></div></section>
+</div>
+<section id="usage-quota-page" role="tabpanel" aria-labelledby="usage-quota-tab" hidden>
+<div id="quota-list" class="detail-list" tabindex="0" aria-label="订阅额度"><table class="quota-table"><thead><tr><th scope="col">额度窗口</th><th scope="col">剩余</th><th id="quota-reset-heading" scope="col">重置时间</th></tr></thead><tbody id="quota-rows"></tbody></table></div>
+</section>
+<section id="usage-agents-page" role="tabpanel" aria-labelledby="usage-agents-tab" hidden><div id="agent-ledger"></div></section>
 </section>
 </div>
 <section class="cost-panel surface" aria-labelledby="cost-title">
@@ -52,11 +56,17 @@
 <dl class="cost-session-facts"><div><dt>未缓存输入</dt><dd id="cost-session-uncached" class="number">—</dd></div><div><dt>缓存读取</dt><dd id="cost-session-cache-read" class="number">—</dd></div><div><dt>请求次数</dt><dd id="cost-session-requests" class="number">—</dd></div><div><dt>缓存命中</dt><dd id="cost-session-hit" class="number">—</dd></div></dl>
 </section>
 <section id="cost-query-page" class="cost-query-page" role="tabpanel" aria-labelledby="cost-query-tab" hidden>
-<div class="cost-query-controls"><label class="sr-only" for="cost-periods">费用日期区间</label><select id="cost-periods" aria-label="费用日期区间"><option value="all">累计</option><option value="today">当天</option><option value="7d">近 7 天</option><option value="14d">近 14 天</option><option value="month">本月</option><option value="quarter">本季度</option><option value="year">本年</option><option value="custom">自定义</option></select><label class="sr-only" for="cost-tool">Agent 工具</label><select id="cost-tool" aria-label="Agent 工具"><option value="">全部工具</option></select></div>
+<div class="cost-query-controls"><label class="sr-only" for="cost-periods">费用日期区间</label><select id="cost-periods" aria-label="费用日期区间"><option value="all">累计</option><option value="today">当天</option><option value="week">本周</option><option value="7d">近 7 天</option><option value="14d">近 14 天</option><option value="month">本月</option><option value="quarter">本季度</option><option value="year">本年</option><option value="custom">自定义</option></select><label class="sr-only" for="cost-tool">Agent 工具</label><select id="cost-tool" aria-label="Agent 工具"><option value="">全部工具</option></select></div>
 <div class="cost-range-slot"><form id="cost-dates" class="cost-dates" novalidate hidden><label><span class="sr-only">开始日期</span><input id="cost-start" type="date" aria-label="开始日期" required></label><label><span class="sr-only">结束日期</span><input id="cost-end" type="date" aria-label="结束日期" required></label><button type="submit">查询</button></form><p id="cost-range" class="cost-range"></p><p id="cost-date-error" class="field-error" role="alert" hidden></p></div>
 <div class="cost-query-total"><span class="caption">查询合计</span><strong id="cost-period-total" class="number">—</strong></div>
-<div class="cost-model-heading"><strong>模型费用</strong><span><span id="cost-model-count">—</span><span id="cost-query-currency">—</span></span></div>
+<div class="cost-model-heading"><strong id="cost-breakdown-heading">模型费用</strong><select id="cost-breakdown" aria-label="费用分类" hidden><option value="models">按模型</option><option value="sessions">按会话</option></select><span><span id="cost-model-count">—</span><span id="cost-query-currency">—</span></span></div>
 <div id="model-cost-details" class="cost-model-scroller" tabindex="0" role="region" aria-label="模型费用列表"><p id="cost-status" class="context-notice" role="status">读取费用记录…</p><table id="model-cost-table" class="cost-table" hidden><caption class="sr-only">查询区间内每个模型的 API 费用</caption><thead><tr><th scope="col">模型</th><th scope="col">费用</th></tr></thead><tbody id="model-cost-rows"></tbody></table></div>
+<div id="session-cost-details" class="session-cost-details" hidden>
+<div id="session-cost-list" class="cost-model-scroller" tabindex="0" role="region" aria-label="会话费用列表">
+<table class="cost-table session-cost-table"><thead><tr><th scope="col">会话</th><th id="session-period-heading" scope="col">当期</th><th scope="col">累计</th></tr></thead><tbody id="session-cost-rows"></tbody></table>
+</div>
+<div id="session-cost-pager" class="detail-pager" hidden><button id="session-cost-previous" type="button" aria-label="上一页会话费用">上一页</button><span id="session-cost-position" class="number"></span><button id="session-cost-next" type="button" aria-label="下一页会话费用">下一页</button></div>
+</div>
 </section>
 <section id="cost-requests-page" class="cost-requests-page" role="tabpanel" aria-labelledby="cost-requests-tab" hidden><div id="request-ledger"></div></section>
 </div>
@@ -66,13 +76,19 @@
 <div id="activity-panels"></div>
 <section class="runtime-panel surface" aria-labelledby="runtime-title">
 <div class="activity-heading"><h2 id="runtime-title">会话</h2><span id="runtime-status" class="caption">—</span></div>
-<div id="runtime-tabs" class="detail-tabs" role="tablist" aria-label="会话页面" hidden><button id="runtime-overview-tab" type="button" role="tab" aria-selected="true" aria-controls="runtime-overview-page" data-detail-page="overview">运行</button><button id="runtime-hooks-tab" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="runtime-hooks-page" data-detail-page="hooks" hidden>Hook</button><button id="runtime-stops-tab" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="runtime-stops-page" data-detail-page="stops" hidden>停止检查</button><button id="runtime-files-tab" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="runtime-files-page" data-detail-page="files" hidden>文件</button><button id="runtime-tasks-tab" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="runtime-tasks-page" data-detail-page="tasks" hidden>任务</button></div>
+<div id="runtime-tabs" class="detail-tabs" role="tablist" aria-label="会话页面" hidden><button id="runtime-overview-tab" type="button" role="tab" aria-selected="true" aria-controls="runtime-overview-page" data-detail-page="overview">运行</button><button id="runtime-workspace-tab" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="runtime-workspace-page" data-detail-page="workspace" hidden>工作区</button><button id="runtime-hooks-tab" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="runtime-hooks-page" data-detail-page="hooks" hidden>Hook</button><button id="runtime-stops-tab" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="runtime-stops-page" data-detail-page="stops" hidden>停止检查</button><button id="runtime-files-tab" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="runtime-files-page" data-detail-page="files" hidden>文件</button><button id="runtime-tasks-tab" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="runtime-tasks-page" data-detail-page="tasks" hidden>任务</button></div>
 <div id="runtime-overview-page" class="runtime-overview-page" role="tabpanel" aria-labelledby="runtime-overview-tab">
 <div class="runtime-hero"><span class="caption">会话时长</span><strong id="runtime-total" class="number">—</strong></div>
 <dl class="activity-metrics runtime-metrics"><div><dt>本轮运行</dt><dd id="runtime-current" class="number">—</dd></div><div><dt>累计运行</dt><dd id="runtime-active" class="number">—</dd></div><div><dt>完成轮次</dt><dd id="runtime-turns" class="number">—</dd></div></dl>
 <p id="runtime-session-title" class="runtime-session-title">暂无活跃会话</p>
 <dl class="runtime-info"><div><dt>开始时间</dt><dd id="runtime-start" class="number">—</dd></div><div><dt>最近活动</dt><dd id="runtime-last" class="number">—</dd></div><div><dt>客户端</dt><dd id="runtime-client">—</dd></div><div><dt>模型</dt><dd id="runtime-model">—</dd></div><div id="runtime-version-row" hidden><dt>版本</dt><dd id="runtime-version" class="number"></dd></div><div id="runtime-branch-row" hidden><dt>Git 分支</dt><dd id="runtime-branch" class="number"></dd></div><div id="runtime-permission-row" hidden><dt>权限模式</dt><dd id="runtime-permission"></dd></div><div class="runtime-directory"><dt>工作目录</dt><dd id="runtime-directory">—</dd></div></dl>
-</div><section id="runtime-hooks-page" role="tabpanel" aria-labelledby="runtime-hooks-tab" hidden><div id="hook-ledger"></div></section><section id="runtime-stops-page" role="tabpanel" aria-labelledby="runtime-stops-tab" hidden><div id="hook-stop-ledger"></div></section><section id="runtime-files-page" role="tabpanel" aria-labelledby="runtime-files-tab" hidden><div id="file-ledger"></div></section><section id="runtime-tasks-page" role="tabpanel" aria-labelledby="runtime-tasks-tab" hidden><div id="task-ledger"></div></section>
+<dl id="runtime-extra" class="runtime-info runtime-extra" hidden></dl>
+</div>
+<section id="runtime-workspace-page" role="tabpanel" aria-labelledby="runtime-workspace-tab" hidden>
+<dl id="workspace-info" class="runtime-info"></dl>
+<div id="workspace-files" class="detail-list" tabindex="0" aria-label="Git 变更文件" hidden><table class="workspace-table"><thead><tr><th scope="col">变更文件</th><th scope="col">状态</th><th id="workspace-diff-heading" scope="col">增删行</th></tr></thead><tbody id="workspace-file-rows"></tbody></table></div>
+</section>
+<section id="runtime-hooks-page" role="tabpanel" aria-labelledby="runtime-hooks-tab" hidden><div id="hook-ledger"></div></section><section id="runtime-stops-page" role="tabpanel" aria-labelledby="runtime-stops-tab" hidden><div id="hook-stop-ledger"></div></section><section id="runtime-files-page" role="tabpanel" aria-labelledby="runtime-files-tab" hidden><div id="file-ledger"></div></section><section id="runtime-tasks-page" role="tabpanel" aria-labelledby="runtime-tasks-tab" hidden><div id="task-ledger"></div></section>
 </section>
 </main>
 <template id="activity-template"><section class="activity-panel surface">

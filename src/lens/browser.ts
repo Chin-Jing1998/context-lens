@@ -36,6 +36,7 @@ let layerTrigger: HTMLElement | null = null;
 let costPeriod = 'all', costVersion = 0, costAt = 0;
 let activeCostPage: 'current' | 'query' | 'requests' = 'current';
 let modelCostSignature = '';
+let sessionCostSignature = '', costSessionPage = 1;
 let costReport: CostReport | null = null;
 const settingsDialog = $<HTMLDialogElement>('settings-dialog');
 
@@ -238,7 +239,7 @@ function renderRuntime(reset = false): void {
   text($('runtime-client'), latest ? clientName(latest.session.client) + (latest.session.surface === 'cli' ? ' CLI' : '') : '—');
 }
 setInterval(() => { if (!document.documentElement.dataset.island || document.documentElement.dataset.island === 'runtime') renderRuntime(); }, 1000);
-for (const node of [document.documentElement, $('model-cost-details'), $('price-list'), document.querySelector<HTMLElement>('.settings-scroll')!]) autoScrollbar(node);
+for (const node of [document.documentElement, $('model-cost-details'), $('session-cost-list'), $('price-list'), document.querySelector<HTMLElement>('.settings-scroll')!]) autoScrollbar(node);
 let layoutFrame = 0, lastLayout = '', cardTransition = false;
 let cardAnimation: Animation | null = null;
 let costTabAnimation: Animation | null = null;
@@ -471,6 +472,45 @@ function costNumber(value: Pick<CostAmount, 'amount' | 'complete'>, currency = '
   const amount = value.amount > 0 && value.amount < 0.000000000001 ? value.amount.toExponential(2) : value.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: digits });
   return (value.complete ? '≈ ' : '≥ ') + symbol + amount;
 }
+const costBreakdown = $<HTMLSelectElement>('cost-breakdown');
+const previousCostPage = $<HTMLButtonElement>('session-cost-previous'), nextCostPage = $<HTMLButtonElement>('session-cost-next');
+const costRequestTime = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+
+function renderSessionCosts(data: CostReport): void {
+  const available = !data.loading && data.sessionCount > 0;
+  const selected = available && costBreakdown.value === 'sessions';
+  const cumulative = costPeriod === 'all';
+  costBreakdown.hidden = !available;
+  $('model-cost-details').hidden = selected;
+  $('session-cost-details').hidden = !selected;
+  text($('cost-breakdown-heading'), selected ? '会话费用' : '模型费用');
+  if (!selected) return;
+
+  text($('cost-model-count'), count(data.sessionCount) + ' 个会话');
+  $('session-period-heading').hidden = cumulative;
+  $('session-cost-pager').hidden = data.pages <= 1;
+  text($('session-cost-position'), data.page + ' / ' + data.pages);
+  previousCostPage.disabled = data.page <= 1; nextCostPage.disabled = data.page >= data.pages;
+  const signature = JSON.stringify([cumulative, data.page, data.sessions]);
+  if (signature === sessionCostSignature) return;
+  sessionCostSignature = signature;
+  $('session-cost-rows').replaceChildren(...data.sessions.map(session => {
+    const recordedTitle = session.title?.trim();
+    const displayTitle = recordedTitle && recordedTitle !== '未命名对话' ? recordedTitle : session.id;
+    const row = el('tr'), name = el('th'), title = el('strong', displayTitle);
+    title.title = displayTitle === session.id ? session.id : displayTitle + '\n' + session.id;
+    name.scope = 'row';
+    const reading = cumulative ? session.cumulative : session.period;
+    const date = new Date(session.lastAt);
+    const meta = [session.toolName, count(reading.requests) + ' 次请求', Number.isFinite(date.getTime()) ? costRequestTime.format(date) : ''].filter(Boolean);
+    name.append(title, el('span', meta.join(' · ')));
+    row.append(name);
+    if (!cumulative) row.append(el('td', session.period.amount === null ? '' : costNumber(session.period)));
+    row.append(el('td', session.cumulative.amount === null ? '' : costNumber(session.cumulative)));
+    return row;
+  }));
+}
+
 function renderCostReport(data: CostReport): void {
   costReport = data;
   const cumulative = costPeriod === 'all';
@@ -499,13 +539,18 @@ function renderCostReport(data: CostReport): void {
     $('model-cost-rows').replaceChildren(...rows); scroller.scrollTop = top; modelCostSignature = signature;
   }
   $('model-cost-table').hidden = data.loading || !models.length;
+  costSessionPage = data.page;
+  renderSessionCosts(data);
   fitDesktopDetail();
 }
 async function refreshCosts(force = false): Promise<void> {
   if (!force && Date.now() - costAt < (costReport?.loading ? 1500 : 10000)) return;
   costAt = Date.now(); const request = ++costVersion;
   // Lifetime amounts already come from the report's cumulative fields; billing calculations remain on the server.
-  const query = new URLSearchParams({ period: costPeriod === 'all' ? 'today' : costPeriod, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, tool: $<HTMLSelectElement>('cost-tool').value });
+  const query = new URLSearchParams({
+    period: costPeriod === 'all' ? 'today' : costPeriod, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    tool: $<HTMLSelectElement>('cost-tool').value, page: String(costSessionPage), sessionScope: costPeriod === 'all' ? 'cumulative' : 'period',
+  });
   if (costPeriod === 'custom') { query.set('start', $<HTMLInputElement>('cost-start').value); query.set('end', $<HTMLInputElement>('cost-end').value); }
   $('cost-periods').setAttribute('aria-busy', 'true');
   try {
@@ -515,12 +560,32 @@ async function refreshCosts(force = false): Promise<void> {
   } catch {
     if (request !== costVersion) return;
     text($('cost-status'), '费用暂不可读'); $('cost-status').hidden = false;
-  } finally { if (request === costVersion) $('cost-periods').removeAttribute('aria-busy'); }
+  } finally {
+    if (request === costVersion) {
+      $('cost-periods').removeAttribute('aria-busy');
+      if (costReport) {
+        previousCostPage.disabled = costReport.page <= 1;
+        nextCostPage.disabled = costReport.page >= costReport.pages;
+      }
+    }
+  }
 }
 function changeCostFilter(): void {
-  costReport = null; text($('cost-period-total'), '—'); text($('cost-model-count'), '—'); $('model-cost-table').hidden = true;
+  costReport = null; costSessionPage = 1;
+  costBreakdown.hidden = true; $('session-cost-details').hidden = true; $('model-cost-details').hidden = false;
+  text($('cost-breakdown-heading'), '模型费用'); $('session-cost-list').scrollTop = 0;
+  text($('cost-period-total'), '—'); text($('cost-model-count'), '—'); $('model-cost-table').hidden = true;
   text($('cost-status'), '读取费用记录…'); $('cost-status').hidden = false; $('model-cost-details').scrollTop = 0; void refreshCosts(true);
 }
+costBreakdown.onchange = () => { if (costReport) renderCostReport(costReport); };
+function moveCostPage(delta: number): void {
+  if (!costReport || costReport.page + delta < 1 || costReport.page + delta > costReport.pages) return;
+  costSessionPage = costReport.page + delta;
+  previousCostPage.disabled = nextCostPage.disabled = true;
+  $('session-cost-list').scrollTop = 0;
+  void refreshCosts(true);
+}
+previousCostPage.onclick = () => moveCostPage(-1); nextCostPage.onclick = () => moveCostPage(1);
 $<HTMLSelectElement>('cost-periods').onchange = event => {
   costPeriod = (event.currentTarget as HTMLSelectElement).value;
   $('cost-date-error').hidden = true; $('cost-range').hidden = false;

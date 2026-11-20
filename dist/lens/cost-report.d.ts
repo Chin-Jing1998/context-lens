@@ -10,7 +10,7 @@ export interface CostSession {
     complete: boolean;
     excludedRequestIds?: string[];
 }
-export type CostPeriod = 'today' | '7d' | '14d' | 'month' | 'quarter' | 'year' | 'custom';
+export type CostPeriod = 'today' | 'week' | '7d' | '14d' | 'month' | 'quarter' | 'year' | 'custom';
 export interface CostQuery {
     period?: string;
     start?: string;
@@ -18,6 +18,7 @@ export interface CostQuery {
     timeZone?: string;
     tool?: string;
     page?: number;
+    sessionScope?: string;
 }
 export interface CostAmount {
     amount: number | null;

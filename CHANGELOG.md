@@ -4,6 +4,20 @@ All notable changes to Context Lens are documented in this file. Earlier Claude 
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-11-20
+
+### 新增
+
+- 费用累计查询支持按会话查看，使用真实会话标题。逐请求账单展示输入、输出、缓存读取、缓存写入和推理 Token 分项。
+- 用量页显示 Codex、Antigravity CLI 和 Claude Code 已上报的订阅额度与重置时间。
+- 会话页补充可用的工作区、Git、Hook、停止检查、文件和任务记录。
+
+### 修复
+
+- 改善 macOS Antigravity 桌面端的前台对话识别，对话页焦点可在窗口控件短暂不可读时辅助确认会话。
+- 支持在 Orca 中识别经启动参数显式恢复的本机 Codex 会话，切换标签页后按实际选中的终端更新。
+- macOS 悬浮球右键先收起环形岛，再在屏幕可用区域内弹出原生菜单。
+
 ## [0.14.0] - 2026-11-19
 
 ### 新增

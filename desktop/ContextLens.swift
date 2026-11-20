@@ -22,6 +22,10 @@ func agentClient(bundle: String, name: String) -> String? {
     if lower == "zcode" { return "zcode" }
     return nil
 }
+func terminalHost(bundle: String) -> Bool {
+    ["com.apple.Terminal", "com.googlecode.iterm2", "com.mitchellh.ghostty", "dev.warp.Warp-Stable",
+     "net.kovidgoyal.kitty", "org.alacritty", "com.stablyai.orca"].contains(bundle)
+}
 struct FrontmostSession: Equatable {
     var id = "", title = "", cwd = "", tty = ""
     var query: [URLQueryItem] {
@@ -99,10 +103,28 @@ func navigationSession(_ root: AXUIElement, pid: pid_t, client: String?, appName
         window = found
     }
     var result = FrontmostSession()
+    let windowScanIncomplete = incomplete
     let document = urlString(value(window, kAXDocumentAttribute))
     let documentId = navigationId(document)
+    if client == "agy" { incomplete = windowScanIncomplete }
+    func focusedAntigravityId() -> String? {
+        let previous = incomplete
+        defer { incomplete = previous }
+        var focus = element(value(root, kAXFocusedUIElementAttribute)), outerRoute: String?
+        for _ in 0..<32 {
+            guard let node = focus else { return nil }
+            if CFEqual(node, window) { return outerRoute }
+            let role = string(node, kAXRoleAttribute)
+            guard !role.isEmpty, role != "AXWindow" else { return nil }
+            if role == "AXWebArea" { outerRoute = navigationId(urlString(value(node, kAXURLAttribute))) }
+            focus = element(value(node, kAXParentAttribute))
+        }
+        return nil
+    }
+    // 焦点所属对话页可在同窗的其他节点暂时无法读取时提供身份。
+    let focusedAgyId = client == "agy" && documentId == nil ? focusedAntigravityId() : nil
     if let url = URL(string: document), url.isFileURL { result.cwd = url.path }
-    let rawWindowTitle = string(window, kAXTitleAttribute)
+    let rawWindowTitle = client == "agy" ? "" : string(window, kAXTitleAttribute)
     if let tty = rawWindowTitle.range(of: "ttys?\\d{1,6}", options: .regularExpression) { result.tty = String(rawWindowTitle[tty]) }
     var windowTitle = rawWindowTitle
     for suffix in [" — " + appName, " - " + appName] { if windowTitle.hasSuffix(suffix) { windowTitle = String(windowTitle.dropLast(suffix.count)) } }
@@ -115,6 +137,7 @@ func navigationSession(_ root: AXUIElement, pid: pid_t, client: String?, appName
         if role.isEmpty { incomplete = true; continue }
         if ["AXTextArea", "AXTextField", "AXSecureTextField", "AXStaticText", "AXLink"].contains(role)
             || role == "AXHeading" && (depth > 10 || insideWeb) { continue }
+        if client == "agy", ["AXMenuButton", "AXPopUpButton", "AXMenu", "AXMenuBar", "AXMenuItem", "AXButton"].contains(role) { continue }
         var inWeb = insideWeb
         if role == "AXWebArea" {
             if insideWeb { continue } // An embedded preview is not the main document.
@@ -160,7 +183,8 @@ func navigationSession(_ root: AXUIElement, pid: pid_t, client: String?, appName
     if cursor < queue.count || now() >= deadline { incomplete = true }
     guard foreground() == pid else { return FrontmostSession() }
     if client == "agy" {
-        if ids.count == 1 && (documentId != nil || !incomplete) { result.id = ids.first! }
+        if let focusedAgyId { ids.insert(focusedAgyId) }
+        if ids.count == 1 && (documentId != nil || focusedAgyId != nil || !incomplete) { result.id = ids.first! }
         return result
     }
     // Observed conflicts are never repaired by choosing the traversal's first match.
@@ -180,7 +204,7 @@ func navigationSession(_ root: AXUIElement, pid: pid_t, client: String?, appName
     return result
 }
 func frontmostSession(_ app: NSRunningApplication, client: String?) -> FrontmostSession {
-    guard AXIsProcessTrusted() else { return FrontmostSession() }
+    guard app.bundleIdentifier != "com.stablyai.orca", AXIsProcessTrusted() else { return FrontmostSession() }
     let root = AXUIElementCreateApplication(app.processIdentifier)
     AXUIElementSetMessagingTimeout(root, 0.03)
     return navigationSession(root, pid: app.processIdentifier, client: client, appName: app.localizedName ?? "",
@@ -329,6 +353,26 @@ func checkNavigationFixtures() {
     reset(); children(window, [web, timedSibling]); timeoutAt = key(timedSibling, kAXChildrenAttribute)
     let timed = collect("claude")
     check(timed.id.isEmpty && timed.title == "Window fallback", "A time-truncated tree only retains direct window metadata")
+
+    let agyId = "20000000-0000-0000-0000-000000000001"
+    let agyRoute = "http://127.0.0.1:64882/c/\(agyId)?project=1" as CFString
+    let agyWeb = node([kAXRoleAttribute: "AXWebArea" as CFString, kAXURLAttribute: agyRoute, kAXParentAttribute: window])
+    let agyInput = node([kAXRoleAttribute: "AXTextArea" as CFString, kAXParentAttribute: agyWeb])
+    let agyWindowButton = node([kAXRoleAttribute: "AXMenuButton" as CFString])
+    reset("Antigravity"); children(window, [agyWindowButton, agyWeb])
+    errors[key(window, kAXDocumentAttribute)] = .cannotComplete
+    errors[key(agyWindowButton, kAXChildrenAttribute)] = .cannotComplete
+    check(collect("agy").id == agyId && !calls.contains(key(agyWindowButton, kAXChildrenAttribute)), "Antigravity 忽略原生窗口控件和可选文档属性的读取错误")
+    reset("Antigravity"); children(window, [agyWeb, timedSibling])
+    set(root, kAXFocusedUIElementAttribute, agyInput)
+    timeoutAt = key(timedSibling, kAXChildrenAttribute)
+    check(collect("agy").id == agyId && !calls.contains(key(agyInput, kAXValueAttribute)), "Antigravity 同窗焦点确认会话且不读取输入内容")
+    let background = node([kAXRoleAttribute: "AXWindow" as CFString])
+    set(agyWeb, kAXParentAttribute, background); clock = 0
+    check(collect("agy").id.isEmpty, "Antigravity 拒绝其他窗口的焦点证据")
+    let previewShell = node([kAXRoleAttribute: "AXWebArea" as CFString, kAXParentAttribute: window])
+    set(agyWeb, kAXParentAttribute, previewShell); children(window, [previewShell, timedSibling]); clock = 0
+    check(collect("agy").id.isEmpty, "Antigravity 拒绝嵌套预览的路由")
     reset(); activePID = 99; check(collect().title.isEmpty && calls.isEmpty, "A different initial foreground PID prevents all AX reads")
     reset(); switchAt = key(window, kAXTitleAttribute)
     check(collect().title.isEmpty, "A foreground PID change during collection discards all identity")
@@ -354,6 +398,12 @@ func contextReading(_ percent: Double?, usedTokens: Double?) -> String {
 func clampedOrigin(_ point: NSPoint, size: NSSize, screen: NSRect) -> NSPoint {
     NSPoint(x: max(screen.minX, min(point.x, screen.maxX - size.width)),
             y: max(screen.minY, min(point.y, screen.maxY - size.height)))
+}
+func menuAnchor(_ point: NSPoint, size: NSSize, screen: NSRect, rightToLeft: Bool) -> NSPoint {
+    let size = NSSize(width: min(size.width, screen.width), height: min(size.height, screen.height))
+    let left = rightToLeft ? point.x - size.width : point.x
+    let origin = clampedOrigin(NSPoint(x: left, y: point.y - size.height), size: size, screen: screen)
+    return NSPoint(x: origin.x + (rightToLeft ? size.width : 0), y: origin.y + size.height)
 }
 
 func fittedFrame(_ frame: NSRect, screen: NSRect) -> NSRect {
@@ -685,6 +735,8 @@ struct LensVisibility {
     var toggle: (() -> Void)?
     var moved: (() -> Void)?
     var entered: (() -> Void)?
+    var exited: (() -> Void)?
+    var menuRequested: ((NSPoint) -> Void)?
     var dragStarted: (() -> Void)?
     var percent: Double?
     var windowEstimated = false
@@ -694,6 +746,7 @@ struct LensVisibility {
     private var mouseStart = NSPoint.zero
     private var windowStart = NSPoint.zero
     private var dragged = false
+    private var controlClick = false
     private var pressedHighlight = false { didSet { needsDisplay = true } }
     override var acceptsFirstResponder: Bool { true }
     override init(frame: NSRect) {
@@ -708,16 +761,26 @@ struct LensVisibility {
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
     }
     override func mouseEntered(with event: NSEvent) { entered?() }
+    override func mouseExited(with event: NSEvent) { exited?() }
     override func accessibilityPerformPress() -> Bool { toggle?(); return true }
+    override func accessibilityPerformShowMenu() -> Bool {
+        guard let frame = window?.frame, let menuRequested else { return false }
+        menuRequested(NSPoint(x: frame.midX, y: frame.midY)); return true
+    }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func rightMouseDown(with event: NSEvent) {
+        menuRequested?(window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation)
+    }
     override func mouseDown(with event: NSEvent) {
+        controlClick = event.modifierFlags.contains(.control)
+        if controlClick { rightMouseDown(with: event); return }
         mouseStart = window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation
         windowStart = window?.frame.origin ?? .zero; dragged = false
         // Keep the ring and reading fixed; pressing changes only the surface tint.
         stopPulse(); pressedHighlight = true
     }
     override func mouseDragged(with event: NSEvent) {
-        guard !isPositionLocked else { return }
+        guard !isPositionLocked, !controlClick else { return }
         let mouse = window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation
         if hypot(mouse.x - mouseStart.x, mouse.y - mouseStart.y) < 3 && !dragged { return }
         if !dragged { dragStarted?(); windowStart = window?.frame.origin ?? windowStart }
@@ -727,6 +790,7 @@ struct LensVisibility {
         window?.setFrameOrigin(clampedOrigin(point, size: bounds.size, screen: screen.visibleFrame))
     }
     override func mouseUp(with event: NSEvent) {
+        if controlClick { controlClick = false; return }
         pressedHighlight = false
         if let p = percent, p >= 85 { startPulse() }
         if dragged { moved?() } else { toggle?() }
@@ -833,10 +897,9 @@ struct LensVisibility {
     private var panel: DetailPanel!
     private var web: WKWebView!
     private var status: NSStatusItem!
-    private var hideItem: NSMenuItem!
-    private var collapseItem: NSMenuItem!
-    private var lockItem: NSMenuItem!
-    private var uiThemeItems: [LensUITheme: NSMenuItem] = [:]
+    private var ballMenu: NSMenu!
+    private var ballMenuOpen = false
+    private var suppressBallHover = false
     private var backend: Process?
     private var timer: Timer?
     private var terminationSignal: DispatchSourceSignal?
@@ -917,7 +980,12 @@ struct LensVisibility {
         ballView = BallView(frame: NSRect(x: 0, y: 0, width: 56, height: 56))
         ballView.isPositionLocked = isPositionLocked
         ballView.toggle = { [weak self] in self?.toggleOrbit() }
-        ballView.entered = { [weak self] in self?.showOrbit() }
+        ballView.entered = { [weak self] in
+            guard let self, !self.ballMenuOpen, !self.suppressBallHover else { return }
+            self.showOrbit()
+        }
+        ballView.exited = { [weak self] in self?.suppressBallHover = false }
+        ballView.menuRequested = { [weak self] point in self?.showBallMenu(at: point) }
         ballView.dragStarted = { [weak self] in self?.beginBallDrag() }
         ballView.moved = { [weak self] in self?.endBallDrag() }
         ball.contentView = glassContent(ballView, radius: 28)
@@ -934,31 +1002,10 @@ struct LensVisibility {
         let mask = CGMutablePath(); LensIsland.allCases.forEach { mask.addPath($0.path(center: OrbitGeometry.center)) }
         orbit.contentView = glassContent(orbitView, radius: 28, mask: mask)
         startHoverTracking()
-        let menu = NSMenu(); menu.delegate = self
-        func item(_ title: String, _ action: Selector, _ key: String = "", _ symbol: String? = nil) -> NSMenuItem {
-            let value = menu.addItem(withTitle: title, action: action, keyEquivalent: key); value.target = self
-            if let symbol { value.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) }
-            return value
-        }
-        _ = item("打开面板", #selector(showPanel), "", "rectangle")
-        collapseItem = item("收起面板", #selector(collapsePanel), "", "rectangle.compress.vertical")
-        hideItem = item("隐藏悬浮球", #selector(toggleBall), "", "eye.slash")
-        lockItem = item("锁定位置", #selector(togglePositionLock), "", "lock")
-        let themeItem = NSMenuItem(title: "界面主题", action: nil, keyEquivalent: "")
-        let themes = NSMenu(); themes.delegate = self
-        for preset in LensUITheme.allCases {
-            let choice = NSMenuItem(title: preset.title, action: #selector(chooseUITheme(_:)), keyEquivalent: "")
-            choice.target = self; choice.representedObject = preset.rawValue; themes.addItem(choice); uiThemeItems[preset] = choice
-        }
-        themeItem.submenu = themes; menu.addItem(themeItem)
-        menu.addItem(.separator())
-        _ = item("设置…", #selector(showSettings), ",", "slider.horizontal.3")
-        menu.addItem(.separator())
-        _ = item("退出 Context Lens", #selector(quit), "q")
-        ballView.menu = menu
+        ballMenu = makeMenu()
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         status.button?.image = NSImage(systemSymbolName: "scope", accessibilityDescription: "Context Lens")
-        status.menu = menu
+        status.menu = makeMenu()
         let size = NSSize(width: activeIsland.width, height: activeIsland.height)
         panel = DetailPanel(contentRect: NSRect(origin: .zero, size: size),
                             styleMask: [.borderless, .nonactivatingPanel, .resizable], backing: .buffered, defer: false)
@@ -972,6 +1019,45 @@ struct LensVisibility {
         web = DetailWebView(frame: NSRect(origin: .zero, size: size), configuration: config); web.navigationDelegate = self
         web.setValue(false, forKey: "drawsBackground"); web.autoresizingMask = [.width, .height]
         panel.contentView = glassContent(web, radius: 20)
+    }
+
+    private func makeMenu() -> NSMenu {
+        let menu = NSMenu(); menu.delegate = self; menu.autoenablesItems = false
+        func add(_ title: String, _ action: Selector, key: String = "", symbol: String? = nil) {
+            let item = menu.addItem(withTitle: title, action: action, keyEquivalent: key); item.target = self
+            if let symbol { item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) }
+        }
+        add("打开面板", #selector(showPanel), symbol: "rectangle")
+        add("收起面板", #selector(collapsePanel), symbol: "rectangle.compress.vertical")
+        add("隐藏悬浮球", #selector(toggleBall), symbol: "eye.slash")
+        add("锁定位置", #selector(togglePositionLock), symbol: "lock")
+        let themeItem = NSMenuItem(title: "界面主题", action: nil, keyEquivalent: "")
+        let themes = NSMenu(); themes.delegate = self
+        for preset in LensUITheme.allCases {
+            let choice = themes.addItem(withTitle: preset.title, action: #selector(chooseUITheme(_:)), keyEquivalent: "")
+            choice.target = self; choice.representedObject = preset.rawValue
+        }
+        themeItem.submenu = themes; menu.addItem(themeItem)
+        menu.addItem(.separator())
+        add("设置…", #selector(showSettings), key: ",", symbol: "slider.horizontal.3")
+        menu.addItem(.separator())
+        add("退出 Context Lens", #selector(quit), key: "q")
+        return menu
+    }
+
+    private func showBallMenu(at point: NSPoint) {
+        guard visibility.ball, !positioning, !ballMenuOpen,
+              let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }) ?? ball.screen else { return }
+        ballMenuOpen = true
+        closeOrbit(reason: "ball-menu", immediately: true)
+        defer {
+            suppressBallHover = ball.frame.contains(NSEvent.mouseLocation)
+            ballMenuOpen = false
+        }
+        menuWillOpen(ballMenu)
+        let anchor = menuAnchor(point, size: ballMenu.size, screen: screen.visibleFrame.insetBy(dx: 8, dy: 8),
+                                rightToLeft: NSApp.userInterfaceLayoutDirection == .rightToLeft)
+        ballMenu.popUp(positioning: nil, at: anchor, in: nil)
     }
 
     private func startHoverTracking() {
@@ -1137,7 +1223,7 @@ struct LensVisibility {
     }
     private func toggleOrbit() { traceEvent("ball-toggle"); if orbitOpen { closeOrbit(reason: "ball-toggle") } else if showOrbit() { pinned = true } }
     private func trackHover() {
-        guard !positioning, orbitOpen else { return }
+        guard !positioning, !ballMenuOpen, orbitOpen else { return }
         let mouse = NSEvent.mouseLocation
         let local = NSPoint(x: mouse.x - orbit.frame.minX, y: mouse.y - orbit.frame.minY)
         let island = LensIsland.at(local, material: uiStyle.island)
@@ -1215,7 +1301,6 @@ struct LensVisibility {
         if #available(macOS 26.0, *), let glass = panel.contentView as? NSGlassEffectView { glass.cornerRadius = uiStyle.theme.cardRadius }
         else { panel.contentView?.layer?.cornerRadius = uiStyle.theme.cardRadius }
         if visibility.panel && !settingsPresented { fitDetail(height: islandHeights[activeIsland] ?? activeIsland.height, width: uiStyle.theme.width(for: activeIsland), animated: false) }
-        for (preset,item) in uiThemeItems { item.state = preset == uiStyle.theme ? .on : .off }
         if webReady { dispatch("context-lens-ui-style", uiStyle.message) }
         traceEvent("ui-theme-" + uiStyle.theme.rawValue); recordUIAudit()
     }
@@ -1237,11 +1322,19 @@ struct LensVisibility {
         }
     }
     func menuWillOpen(_ menu: NSMenu) {
-        hideItem.title = visibility.ball ? "隐藏悬浮球" : "恢复悬浮球"
-        hideItem.image = NSImage(systemSymbolName: visibility.ball ? "eye.slash" : "eye", accessibilityDescription: nil)
-        collapseItem.isEnabled = visibility.panel
-        lockItem.title = isPositionLocked ? "解锁位置" : "锁定位置"
-        lockItem.image = NSImage(systemSymbolName: isPositionLocked ? "lock.open" : "lock", accessibilityDescription: nil)
+        for item in menu.items {
+            switch item.action {
+            case #selector(toggleBall):
+                item.title = visibility.ball ? "隐藏悬浮球" : "恢复悬浮球"
+                item.image = NSImage(systemSymbolName: visibility.ball ? "eye.slash" : "eye", accessibilityDescription: nil)
+            case #selector(collapsePanel): item.isEnabled = visibility.panel
+            case #selector(togglePositionLock):
+                item.title = isPositionLocked ? "解锁位置" : "锁定位置"
+                item.image = NSImage(systemSymbolName: isPositionLocked ? "lock.open" : "lock", accessibilityDescription: nil)
+            case #selector(chooseUITheme(_:)): item.state = (item.representedObject as? String) == uiStyle.theme.rawValue ? .on : .off
+            default: break
+            }
+        }
     }
     func windowShouldClose(_ sender: NSWindow) -> Bool { traceEvent("window-close"); collapsePanel(); return false }
     func windowDidResignKey(_ notification: Notification) { traceEvent("resign-key"); pinned = false }
@@ -1263,7 +1356,7 @@ struct LensVisibility {
         if let tool = agentClient(bundle: bundle, name: app.localizedName ?? "") { client = tool; supported = true }
         else {
             client = nil
-            supported = ["com.apple.Terminal", "com.googlecode.iterm2", "com.mitchellh.ghostty", "dev.warp.Warp-Stable", "net.kovidgoyal.kitty", "org.alacritty"].contains(bundle)
+            supported = terminalHost(bundle: bundle)
         }
         targetRevision += 1; supportedForeground = supported
         targetClient = client; targetPid = supported ? Int(app.processIdentifier) : nil
@@ -1325,7 +1418,7 @@ struct LensVisibility {
             ? targetPid.flatMap { NSRunningApplication(processIdentifier: pid_t($0)) } : current
         guard let app else { dispatch("context-lens-detection", ["state": "waiting"]); return }
         let client = agentClient(bundle: app.bundleIdentifier ?? "", name: app.localizedName ?? "")
-        let terminal = ["com.apple.Terminal", "com.googlecode.iterm2", "com.mitchellh.ghostty", "dev.warp.Warp-Stable", "net.kovidgoyal.kitty", "org.alacritty"].contains(app.bundleIdentifier ?? "")
+        let terminal = terminalHost(bundle: app.bundleIdentifier ?? "")
         guard client != nil || terminal else { dispatch("context-lens-detection", ["state": "waiting"]); return }
         supportedForeground = true; targetClient = client; targetPid = Int(app.processIdentifier)
         if current?.bundleIdentifier != Bundle.main.bundleIdentifier { visibleHint = frontmostSession(app, client: client) }
@@ -1831,6 +1924,7 @@ struct LensVisibility {
             precondition(visibleSessionId("file:///Users/workspace") == nil)
             precondition(agentClient(bundle: "com.openai.codex", name: "Codex") == "codex")
             precondition(agentClient(bundle: "com.google.antigravity", name: "Antigravity") == "agy")
+            precondition(terminalHost(bundle: "com.stablyai.orca"))
             let agyFixture = "20000000-0000-0000-0000-000000000001"
             precondition(antigravitySessionId("http://127.0.0.1:53492/c/\(agyFixture)?project=1") == agyFixture)
             precondition(antigravitySessionId("https://example.com/c/\(agyFixture)") == nil)
@@ -1838,6 +1932,10 @@ struct LensVisibility {
             precondition(clampedOrigin(NSPoint(x: -10, y: 200), size: NSSize(width: 56, height: 56), screen: NSRect(x: 0, y: 0, width: 100, height: 100)) == NSPoint(x: 0, y: 44))
             precondition(clampedOrigin(NSPoint(x: -1400, y: -200), size: NSSize(width: 420, height: 620), screen: NSRect(x: -1920, y: 0, width: 1920, height: 1080)) == NSPoint(x: -1400, y: 0))
             precondition(fittedFrame(NSRect(x: 800, y: 300, width: 1440, height: 1200), screen: NSRect(x: 0, y: 24, width: 1024, height: 744)) == NSRect(x: 0, y: 24, width: 1024, height: 744))
+            let menuScreen = NSRect(x: -1200, y: 40, width: 1200, height: 900)
+            let menuSize = NSSize(width: 220, height: 250)
+            precondition(menuAnchor(NSPoint(x: -6, y: 54), size: menuSize, screen: menuScreen, rightToLeft: false) == NSPoint(x: -220, y: 290))
+            precondition(menuAnchor(NSPoint(x: -1197, y: 1100), size: menuSize, screen: menuScreen, rightToLeft: true) == NSPoint(x: -980, y: 940))
             checkpoint("visibility")
             var state = LensVisibility()
             state.activate("codex:1", supported: true); precondition(state.ball && !state.panel)

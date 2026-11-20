@@ -336,7 +336,14 @@ export async function main({ argv = process.argv, env = process.env } = {}) {
       try {
         lens = await import('./dist/lens/statusline.js');
         const window = setting('display', 'autoCompactWindow');
-        contextBudget = lens.captureStatusline(stdin, showTerminal, Number.isInteger(window) && window > 0 ? window : null);
+        const authUserLength = setting('display', 'authUserLength');
+        contextBudget = lens.captureStatusline(stdin, showTerminal, Number.isInteger(window) && window > 0 ? window : null, {
+          path: paths.claudeJson,
+          showAuth: setting('display', 'showAuth') === true,
+          showAuthUser: setting('display', 'showAuthUser') === true,
+          authUserFullEmail: setting('display', 'authUserFullEmail') === true,
+          authUserLength: Number.isSafeInteger(authUserLength) && authUserLength >= 0 ? authUserLength : undefined,
+        });
       } catch (error) {
         if (env.DEBUG) process.stderr.write(String(error));
       }

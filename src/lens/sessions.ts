@@ -3,11 +3,13 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { getClaudeConfigDir } from '../claude-config-dir.js';
-import { sanitizeDisplayText } from '../utils/sanitize.js';
+import { displayLabel, sanitizeDisplayText } from '../utils/sanitize.js';
 import { atomicJson, lensHome, record, launchSettings, type LaunchSettings } from './settings.js';
 import { mergeCumulative, mergeRequests, TOKEN_KEYS } from './usage.js';
 import { percentageNumber, tokenNumber } from './context.js';
-import type { SessionInfo, RequestUsage } from './types.js';
+import { claudeQuota } from './quota.js';
+import { getOutputSpeed } from '../speed.js';
+import type { SessionInfo, RequestUsage, QuotaLimit, SessionTelemetry } from './types.js';
 import type { StdinData } from '../types.js';
 
 export interface SessionFile extends SessionInfo { file: string; size: number; mtimeMs: number; lastUserAt?: number }
@@ -32,6 +34,10 @@ function* logFiles(dir: string, depth = 0): Generator<string> {
 
 const records = (text: string): any[] => text.split('\n').flatMap(line => { try { return [JSON.parse(line)]; } catch { return []; } });
 const titleText = (value: unknown): string => typeof value === 'string' ? sanitizeDisplayText(value).replace(/\s+/g, ' ').trim().slice(0, 200) : '';
+export const sessionTitle = (value: unknown): string | undefined => {
+  const title = titleText(value);
+  return title && title !== '未命名对话' ? title : undefined;
+};
 const discoveryCache = new Map<string, { stamp: string; value: SessionFile; fallbackTitle: string }>();
 
 /** Read only explicit user activity; file modification times also include background output. */
@@ -104,8 +110,9 @@ export function discoverSessions(roots: { claude?: string; codex?: string } = {}
           : record(record(record(meta.source).subagent).thread_spawn).parent_thread_id;
         const uniqueId = client === 'claude' && validId(parentId) ? `${parentId}_${id}` : id;
         if (!validId(uniqueId)) continue;
+        const ownTitle = (type: string, field: string) => sessionTitle(entries.filter(e => e?.type === type && (!e.sessionId || e.sessionId === id)).at(-1)?.[field]);
         const title = client === 'codex' ? titles.get(id) || titleText(meta.title)
-          : titleText(entries.filter(e => e?.type === 'custom-title' && (!e.sessionId || e.sessionId === id)).at(-1)?.customTitle);
+          : ownTitle('custom-title', 'customTitle') || ownTitle('ai-title', 'aiTitle');
         const turn = client === 'codex' ? entries.filter(e => e?.type === 'turn_context' && typeof e.payload?.model === 'string' && e.payload.model).at(-1) : undefined;
         const value: SessionFile = { id: uniqueId, client, file, cwd: typeof meta.cwd === 'string' ? sanitizeDisplayText(meta.cwd) : '',
           model: typeof turn?.payload.model === 'string' ? sanitizeDisplayText(turn.payload.model).slice(0, 160) : '',
@@ -121,11 +128,14 @@ export function discoverSessions(roots: { claude?: string; codex?: string } = {}
   return files.sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
 
-export interface LiveClaude { stdin: StdinData; at: string; launch?: LaunchSettings; hudWindow?: number; environment: Record<string, string> }
+export interface LiveClaude {
+  stdin: StdinData; at: string; launch?: LaunchSettings; hudWindow?: number;
+  environment: Record<string, string>; quota?: QuotaLimit[]; telemetry?: SessionTelemetry;
+}
 const envKeys = ['CLAUDE_CODE_AUTO_COMPACT_WINDOW', 'DISABLE_AUTO_COMPACT', 'DISABLE_COMPACT'];
-export function captureClaude(stdin: StdinData, launch?: LaunchSettings, hudWindow?: number): void {
+export function captureClaude(stdin: StdinData, launch?: LaunchSettings, hudWindow?: number, account?: Pick<SessionTelemetry, 'authMethod' | 'authUser'>): void {
   if (!validId(stdin.session_id)) return;
-  // Persist only counters and identifiers; never prompts, tool schemas, or credentials.
+  // 仅持久化窗口、用量和允许显示的状态栏字段。
   const c = record(stdin.context_window); const u = record(c.current_usage); const pc = record(stdin.prompt_cache);
   const clean: StdinData = {
     session_id: stdin.session_id, cwd: typeof stdin.cwd === 'string' ? stdin.cwd : undefined,
@@ -142,7 +152,21 @@ export function captureClaude(stdin: StdinData, launch?: LaunchSettings, hudWind
   };
   const environment: Record<string, string> = {};
   for (const key of envKeys) if (process.env[key] !== undefined) environment[key] = process.env[key]!;
+  const quota = claudeQuota(stdin.rate_limits);
+  const workspace = record(stdin.workspace), worktree = record(stdin.worktree);
+  const addedDirs = Array.isArray(workspace.added_dirs) ? workspace.added_dirs.slice(0, 32).map(dir => displayLabel(dir, 1024)).filter(Boolean) : [];
+  const telemetry: SessionTelemetry = {
+    effort: displayLabel(stdin.effort?.level, 32) || undefined,
+    outputStyle: displayLabel(stdin.output_style?.name, 80) || undefined,
+    outputSpeed: typeof stdin.transcript_path === 'string' ? getOutputSpeed(stdin, path.join(lensHome(), 'live')) ?? undefined : undefined,
+    launchDir: displayLabel(workspace.project_dir, 1024) || undefined,
+    addedDirs: addedDirs.length ? addedDirs : undefined,
+    worktree: displayLabel(worktree.name ?? workspace.git_worktree, 160) || undefined,
+    ...account,
+  };
   atomicJson(dataPath('live', { client: 'claude', id: stdin.session_id }), { stdin: clean, at: new Date().toISOString(), launch, environment,
+    ...(quota.length ? { quota } : {}),
+    telemetry,
     ...(typeof hudWindow === 'number' && tokenNumber(hudWindow) && hudWindow > 0 ? { hudWindow } : {}) });
 }
 

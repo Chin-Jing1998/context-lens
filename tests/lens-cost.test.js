@@ -15,6 +15,7 @@ import { ZERO_TOKENS, mergeRequests } from '../dist/lens/usage.js';
 import { parseOfficialPrices, officialPrice } from '../dist/lens/pricing.js';
 import { BUNDLED_PRICES } from '../dist/lens/pricing-data.js';
 import { startServer } from '../dist/lens/server.js';
+import { SessionCollector } from '../dist/lens/snapshot.js';
 
 const home = fs.mkdtempSync(path.join(tmpdir(), 'lens-cost-'));
 const previous = process.env.CONTEXT_LENS_HOME; process.env.CONTEXT_LENS_HOME = home;
@@ -24,6 +25,41 @@ const now = new Date('2026-10-07T12:00:00Z');
 const query = { period: '7d', timeZone: 'Asia/Shanghai' };
 const request = (id, at, model = 'alpha', input = 1000000) => ({ ...ZERO_TOKENS, id, at, timestampKnown: true, model, input, complete: true });
 const session = (tool, id, requests, extra = {}) => ({ tool, toolName: tool, id, requests, complete: true, ...extra });
+
+test('按会话查询保留真实标题并按所选日期分页', () => {
+  const rows = [
+    session('codex', 'older', [request('older', '2026-09-25T01:00:00Z')], { title: '核对缓存读取' }),
+    session('codex', 'current', [request('current', '2026-10-07T01:00:00Z')], { title: '校验会话费用' }),
+  ];
+  const args = { period: 'week', sessionScope: 'period', timeZone: 'Asia/Shanghai' };
+  const period = buildCostReport(rows, cfg, args, { now });
+  assert.equal(period.range.start, '2026-10-05');
+  assert.deepEqual(period.sessions.map(row => [row.id, row.title]), [['current', '校验会话费用']]);
+  const cumulative = buildCostReport(rows, cfg, { ...args, sessionScope: 'cumulative' }, { now });
+  assert.deepEqual(cumulative.sessions.map(row => row.title), ['校验会话费用', '核对缓存读取']);
+});
+
+test('费用账本在日志未变动时同步 Codex 改名', async () => {
+  const root = path.join(home, 'title-refresh'), codex = path.join(root, 'codex', 'sessions');
+  fs.mkdirSync(codex, { recursive: true });
+  const index = path.join(path.dirname(codex), 'session_index.jsonl');
+  const writeTitle = title => fs.writeFileSync(index, JSON.stringify({ id: 'named', thread_name: title }) + '\n');
+  writeTitle('检查费用口径');
+  const timestamp = '2026-10-07T01:00:00Z';
+  fs.writeFileSync(path.join(codex, 'named.jsonl'), [
+    { type: 'session_meta', timestamp, payload: { id: 'named', model: 'alpha' } },
+    { type: 'token_usage_record', timestamp, payload: { response_id: 'request-named', usage: { input_tokens: 120, output_tokens: 42, cached_input_tokens: 17 } } },
+  ].map(JSON.stringify).join('\n') + '\n');
+  const collector = new SessionCollector({ claude: path.join(root, 'none'), codex });
+  const history = new CostHistory({ home: root, native: () => collector.list(true), sources: [] });
+  const query = { period: 'custom', start: '2026-10-07', end: '2026-10-07', timeZone: 'UTC' };
+  await history.refresh(true);
+  assert.equal(history.report(query).sessions[0].title, '检查费用口径');
+  writeTitle('核对按会话费用');
+  await history.refresh(true);
+  assert.equal(history.report(query).sessions[0].title, '核对按会话费用');
+  assert.equal(history.report(query).totals.period.requests, 1);
+});
 
 test('calendar periods use inclusive local dates, calendar month/quarter/year and leap days', () => {
   const expected = { today: '2026-10-07', '7d': '2026-10-01', '14d': '2026-09-24', month: '2026-10-01', quarter: '2026-10-01', year: '2026-01-01' };

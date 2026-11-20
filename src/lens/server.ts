@@ -22,7 +22,7 @@ const costKey = (key: string) => {
 
 export async function startServer(options: { port?: number; collector?: SessionCollector; pricingRefresh?: boolean; costHistory?: CostHistory } = {}): Promise<{ server: http.Server; url: string }> {
   const collector = options.collector ?? new SessionCollector();
-  const costs = options.costHistory ?? new CostHistory(options.collector ? { native: () => collector.list().filter(file => file.client !== 'agy'), sources: [] } : {});
+  const costs = options.costHistory ?? new CostHistory(options.collector ? { native: () => collector.list(), sources: [] } : {});
   const active = new ActiveSessions();
   const assets: Record<string, [string, string]> = {
     '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'],
@@ -68,7 +68,7 @@ export async function startServer(options: { port?: number; collector?: SessionC
         const view = url.searchParams.get('view') === 'model' ? 'model' : 'budget';
         if (costKey(key)) { const snapshot = costs.snapshot(key, view); json(snapshot ? 200 : 404, snapshot ?? { error: 'Session is no longer available' }); return; }
         if (!collector.list().some(s => sessionKey(s) === key)) { json(404, { error: 'Session is no longer available' }); return; }
-        json(200, await collector.get(key, { view }));
+        json(200, await collector.get(key, { view, git: true }));
       } else if (req.method === 'GET' && url.pathname === '/api/details') {
         const key = url.searchParams.get('session') || '';
         if (!nativeKey(key)) { json(400, { error: '请选择有本地日志的会话' }); return; }
@@ -82,7 +82,8 @@ export async function startServer(options: { port?: number; collector?: SessionC
       } else if (req.method === 'GET' && url.pathname === '/api/costs') {
         const query: CostQuery = { period: url.searchParams.get('period') || undefined, start: url.searchParams.get('start') || undefined,
           end: url.searchParams.get('end') || undefined, timeZone: url.searchParams.get('timeZone') || undefined,
-          tool: url.searchParams.get('tool') || undefined, page: url.searchParams.has('page') ? Number(url.searchParams.get('page')) : undefined };
+          tool: url.searchParams.get('tool') || undefined, page: url.searchParams.has('page') ? Number(url.searchParams.get('page')) : undefined,
+          sessionScope: url.searchParams.get('sessionScope') ?? undefined };
         try { costRange(query); } catch { json(400, { error: 'Invalid period, dates, timezone, tool or page' }); return; }
         json(200, costs.report(query));
       } else if (req.method === 'POST' && url.pathname === '/api/costs/import') {

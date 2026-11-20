@@ -68,6 +68,7 @@ export function buildSessionDetails(key: string, sources: DetailSource[], prices
         if (child) linkedAgents.add(child.file.id);
         const requests = child ? ownRequests.get(child.file.id)! : null;
         add({ ...agent, childSessionId: child?.file.id ?? null, childSessionKey: child ? sessionKey(child.file) : null,
+          effort: child?.parsed.telemetry?.effort,
           totals: requests ? sumRequests(requests, requestCoverage(child!)) : null,
           cost: requests ? estimateCost(requests, prices, requestCoverage(child!), catalog) : null,
           timing: child?.parsed.timing ? sessionTiming(child.parsed.timing) : null, accountingScope: 'own' });
@@ -80,6 +81,7 @@ export function buildSessionDetails(key: string, sources: DetailSource[], prices
     const requests = ownRequests.get(child.file.id)!;
     rows.push({ id: `session:${child.file.id}`, sessionId: parent.file.id, scope: parent === root ? 'main' : 'agent',
       at: null, status: 'unknown', description: null, model: child.parsed.info.model, childSessionId: child.file.id,
+      effort: child.parsed.telemetry?.effort,
       childSessionKey: sessionKey(child.file), totals: sumRequests(requests, requestCoverage(child)),
       cost: estimateCost(requests, prices, requestCoverage(child), catalog), accountingScope: 'own',
       timing: child.parsed.timing ? sessionTiming(child.parsed.timing) : null });

@@ -7,8 +7,11 @@ export interface CostSession {
   requests: RequestUsage[]; complete: boolean;
   excludedRequestIds?: string[];
 }
-export type CostPeriod = 'today' | '7d' | '14d' | 'month' | 'quarter' | 'year' | 'custom';
-export interface CostQuery { period?: string; start?: string; end?: string; timeZone?: string; tool?: string; page?: number }
+export type CostPeriod = 'today' | 'week' | '7d' | '14d' | 'month' | 'quarter' | 'year' | 'custom';
+export interface CostQuery {
+  period?: string; start?: string; end?: string; timeZone?: string; tool?: string; page?: number;
+  sessionScope?: string;
+}
 export interface CostAmount { amount: number | null; complete: boolean; requests: number }
 export interface CostPair { period: CostAmount; cumulative: CostAmount }
 export interface CostReport {
@@ -28,7 +31,7 @@ function day(format: Intl.DateTimeFormat, date: Date): string {
 }
 export function costRange(query: CostQuery, now = new Date()): CostReport['range'] {
   const period = (query.period ?? 'today') as CostPeriod;
-  if (!['today', '7d', '14d', 'month', 'quarter', 'year', 'custom'].includes(period)) throw new Error('Invalid period');
+  if (!['today', 'week', '7d', '14d', 'month', 'quarter', 'year', 'custom'].includes(period)) throw new Error('Invalid period');
   const timeZone = query.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   if (timeZone.length > 100) throw new Error('Invalid timezone');
   const today = day(dateFormatter(timeZone), now);
@@ -38,11 +41,14 @@ export function costRange(query: CostQuery, now = new Date()): CostReport['range
     if (!validDate(start) || !validDate(end) || start > end || end > today || start < '1970-01-01') throw new Error('Invalid date range');
   } else if (period === '7d' || period === '14d') {
     const date = new Date(today); date.setUTCDate(date.getUTCDate() - (period === '7d' ? 6 : 13)); start = date.toISOString().slice(0, 10);
+  } else if (period === 'week') {
+    const date = new Date(today); date.setUTCDate(date.getUTCDate() - (date.getUTCDay() + 6) % 7); start = date.toISOString().slice(0, 10);
   } else if (period === 'month') start = today.slice(0, 7) + '-01';
   else if (period === 'quarter') start = `${today.slice(0, 4)}-${String(Math.floor((Number(today.slice(5, 7)) - 1) / 3) * 3 + 1).padStart(2, '0')}-01`;
   else if (period === 'year') start = today.slice(0, 4) + '-01-01';
   if (query.tool && (query.tool.length > 80 || /[\x00-\x1f]/.test(query.tool))) throw new Error('Invalid tool');
   if (query.page !== undefined && (!Number.isSafeInteger(query.page) || query.page < 1)) throw new Error('Invalid page');
+  if (query.sessionScope !== undefined && !['period', 'cumulative'].includes(query.sessionScope)) throw new Error('Invalid session scope');
   return { period, start, end, timeZone };
 }
 const empty = (): CostAmount => ({ amount: 0, complete: true, requests: 0 });
@@ -109,7 +115,9 @@ export function buildCostReport(sessions: CostSession[], config: LensConfig, que
     for (const { session, row } of requests.values()) if (key(session.tool, session.id) === id) undatedModels.add(row.model);
   }
   for (const [id, m] of models) if (undatedModels.has(id)) { m.period.complete = false; m.cumulative.complete = false; }
-  const all = [...conversations.values()].sort((a, b) => (b.period.amount ?? -1) - (a.period.amount ?? -1) || b.lastAt.localeCompare(a.lastAt) || a.id.localeCompare(b.id));
+  const order = query.sessionScope === 'cumulative' ? 'cumulative' : 'period';
+  const all = [...conversations.values()].filter(session => query.sessionScope !== 'period' || session.period.requests > 0)
+    .sort((a, b) => (b[order].amount ?? -1) - (a[order].amount ?? -1) || b.lastAt.localeCompare(a.lastAt) || a.id.localeCompare(b.id));
   const pages = Math.max(1, Math.ceil(all.length / 20)), page = Math.min(query.page ?? 1, pages);
   return { range, currency: config.currency, tool: query.tool ?? '', tools: [...tools].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
     totals, models: [...models.values()].sort((a, b) => (b.period.amount ?? -1) - (a.period.amount ?? -1) || a.model.localeCompare(b.model)),

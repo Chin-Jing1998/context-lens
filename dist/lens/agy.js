@@ -11,6 +11,7 @@ import { atomicJson, lensHome, record } from './settings.js';
 import { fields, nested, readVarint, string, timestamp } from './agy-wire.js';
 import { agyContextBreakdown } from './agy-context.js';
 import { AgyTranscriptActivities, readAgyActivities } from './agy-activity.js';
+import { agyQuota } from './quota.js';
 export const agyId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const maxBlob = 16 * 1024 * 1024;
 const maxRead = 128 * 1024 * 1024;
@@ -38,6 +39,10 @@ export function agyHistory(root, id) {
         return undefined;
     const file = path.join(root, 'brain', id, '.system_generated', 'logs', 'transcript.jsonl');
     return regular(file) ? file : undefined;
+}
+export function agySessionHistory(file) {
+    return file.client === 'agy' && file.surface === 'cli' && file.file.endsWith('.db')
+        ? agyHistory(path.dirname(path.dirname(file.file)), file.id) : undefined;
 }
 export function agyStamp(file) {
     const stat = regular(file), wal = regular(file + '-wal');
@@ -163,7 +168,7 @@ function generation(data, info, index, stepTime) {
     return { model, modelName, modelNumber: tokenNumber(usage.get(1) ?? chat.get(3)),
         used: tokenNumber(window.get(1)) || null, capacity: tokenNumber(window.get(4)) || null, breakdown: window.get(3), at, request };
 }
-export function readAgySession(file) {
+export function readAgySession(file, usageOnly = false) {
     const { id, client, surface, cwd, title, updatedAt, parentId } = file;
     const info = { id, client, surface, cwd, title, updatedAt, parentId, model: '' };
     const db = open(file.file);
@@ -213,7 +218,7 @@ export function readAgySession(file) {
                         result.capacity = item.capacity;
                         result.windowEstimated = item.used !== null;
                         result.at = item.at ?? info.updatedAt;
-                        if (item.used !== null && item.breakdown) {
+                        if (!usageOnly && item.used !== null && item.breakdown) {
                             try {
                                 const detail = agyContextBreakdown(item.breakdown, item.used, result.at);
                                 if (detail) {
@@ -240,11 +245,13 @@ export function readAgySession(file) {
         }
         const latest = result.requests[0];
         if (hasSteps) {
-            try {
-                result.activity = readAgyActivities(db, info);
-            }
-            catch {
-                result.activity = { calls: [], complete: false };
+            if (!usageOnly) {
+                try {
+                    result.activity = readAgyActivities(db, info);
+                }
+                catch {
+                    result.activity = { calls: [], complete: false };
+                }
             }
             // CHECKPOINT 的压缩请求单独存放在 steps，普通模型请求已由 gen_metadata 计量。
             const checkpoints = db.prepare(`SELECT idx, length(metadata) AS bytes, CASE WHEN length(metadata)<=${maxBlob} THEN metadata END AS metadata
@@ -291,7 +298,7 @@ export function readAgySession(file) {
         db.close();
     }
 }
-export async function readAgyTranscript(file) {
+export async function readAgyTranscript(file, usageOnly = false) {
     const { id, client, surface, cwd, title, updatedAt, parentId } = file;
     const info = { id, client, surface, cwd, title, updatedAt, parentId, model: '' };
     const result = { info, used: null, capacity: null, requests: [], categories: {},
@@ -314,7 +321,7 @@ export async function readAgyTranscript(file) {
                     first ??= at;
                     last = at;
                 }
-                if (index !== null)
+                if (!usageOnly && index !== null)
                     activities.accept(entry, index);
                 if (index === null || tokenNumber(entry.input_tokens) === null || !['PLANNER_RESPONSE', 'CHECKPOINT'].includes(entry.type))
                     continue;
@@ -339,10 +346,24 @@ export async function readAgyTranscript(file) {
         stream.destroy();
     }
     result.requests = mergeRequests(result.requests);
-    result.activity = activities.finish(result.complete);
+    if (!usageOnly)
+        result.activity = activities.finish(result.complete);
     if (first !== null)
         result.timing = { startedAt: first, reportedStart: false, lastActivityAt: last, turns: [], complete: false };
     return result;
+}
+export async function readAgyFile(file, history, usageOnly = false) {
+    const data = file.file.endsWith('.jsonl') ? await readAgyTranscript(file, usageOnly) : readAgySession(file, usageOnly);
+    if (!history || data.requests.length && (usageOnly || data.activity))
+        return data;
+    const oldHistory = await readAgyTranscript({ ...file, file: history }, usageOnly);
+    if (!data.requests.length && oldHistory.requests.length) {
+        return { ...oldHistory, used: data.used ?? oldHistory.used, capacity: data.capacity, at: data.at ?? oldHistory.at,
+            windowEstimated: data.windowEstimated, categories: data.categories, messageBreakdown: data.messageBreakdown,
+            activity: data.activity ?? oldHistory.activity };
+    }
+    data.activity ??= oldHistory.activity;
+    return data;
 }
 const livePath = (id) => path.join(lensHome(), 'live', `agy-cli-${id}.json`);
 export async function captureAgyStatusline() {
@@ -361,13 +382,20 @@ export async function captureAgyStatusline() {
         const size = tokenNumber(window.context_window_size) || null;
         const used = tokenNumber(window.total_input_tokens), input = tokenNumber(current.input_tokens);
         const usage = used && input !== null ? [used, input, tokenNumber(current.output_tokens), tokenNumber(current.cache_read_input_tokens)].join(':') : undefined;
-        // 只保存会话身份和窗口读数，账本继续以数据库中的请求为准。
-        const live = { id, at: new Date().toISOString(), model: display(model.id) || display(model.display_name),
-            size, percent: size !== null ? percentageNumber(window.used_percentage) || null : null, usage };
+        const now = Date.now(), quota = agyQuota(data.quota, now);
+        // 状态行只保存窗口与额度读数，账本继续以数据库中的请求为准。
+        const live = { id, at: new Date(now).toISOString(), model: display(model.id) || display(model.display_name),
+            size, percent: size !== null ? percentageNumber(window.used_percentage) || null : null, usage,
+            telemetry: { effort: display(model.effort, 32) || undefined, launchDir: display(data.cwd, 1024) || undefined } };
+        if (quota.length)
+            live.quota = quota;
         if (size === null && usage) {
             const previous = readAgyLive({ id, client: 'agy', surface: 'cli', model: live.model, cwd: '', updatedAt: live.at });
-            if (previous?.size && previous.usage === usage)
-                return;
+            if (previous?.size && previous.usage === usage) {
+                live.size = previous.size;
+                live.percent = previous.percent;
+                live.contextAt = previous.contextAt ?? previous.at;
+            }
         }
         atomicJson(livePath(id), live);
     }
@@ -378,15 +406,18 @@ export function readAgyLive(info, lastContextAt) {
         return undefined;
     try {
         const file = livePath(info.id), stat = regular(file);
-        if (!stat || stat.size > 4096)
+        if (!stat || stat.size > 32 * 1024)
             return undefined;
         const live = JSON.parse(fs.readFileSync(file, 'utf8'));
-        if (live.id !== info.id || live.model !== info.model && live.model !== info.modelName || typeof live.at !== 'string')
+        if (live.id !== info.id || typeof live.at !== 'string')
             return undefined;
         const at = Date.parse(live.at);
-        if (!Number.isFinite(at) || at > Date.now() + 60_000 || lastContextAt && at < Date.parse(lastContextAt))
+        if (!Number.isFinite(at) || at > Date.now() + 60_000)
             return undefined;
-        const size = tokenNumber(live.size) || null;
+        const contextAt = live.contextAt === undefined ? at : Date.parse(live.contextAt);
+        const currentWindow = (live.model === info.model || live.model === info.modelName)
+            && Number.isFinite(contextAt) && contextAt <= at && (!lastContextAt || contextAt >= Date.parse(lastContextAt));
+        const size = currentWindow ? tokenNumber(live.size) || null : null;
         return { ...live, size, percent: size !== null ? percentageNumber(live.percent) || null : null };
     }
     catch {

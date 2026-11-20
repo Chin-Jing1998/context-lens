@@ -32,13 +32,16 @@ export interface WindowsProcess {
 export declare function isClaudeProcess(command: string): boolean;
 export declare function windowsResumeCandidates(files: ActiveSessionInfo[], processes: WindowsProcess[]): Running[];
 export declare function visibleSession(files: ActiveSessionInfo[], client?: string, hint?: VisibleSessionHint): string | null | undefined;
+export declare function inProcessTree(pid: number, targetPid: number, parents: Map<number, number>): boolean;
 export declare function chooseActive(candidates: Running[], parents: Map<number, number>, targetPid?: number, activity?: Map<string, number>): ActiveResult;
 export declare function agyLockCandidates(output: string, directory: string, commands: Map<number, string>): Running[];
+export declare function codexResumeCandidates(output: string, files: ActiveSessionInfo[], pids: ReadonlySet<number>): Running[];
 /** Read live ownership evidence, never infer the active session from the newest historical log. */
 export declare class ActiveSessions {
     private at;
     private running;
     private parents;
+    private commands;
     private error;
     private lastInteraction;
     private desktop;
@@ -47,6 +50,7 @@ export declare class ActiveSessions {
         now?: () => number;
     });
     get(files: ActiveSessionInfo[], client?: string, targetPid?: number, hint?: VisibleSessionHint): ActiveResult;
+    private resumedCodex;
     private scan;
 }
 export {};

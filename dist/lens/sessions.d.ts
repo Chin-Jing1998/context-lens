@@ -1,5 +1,5 @@
 import { type LaunchSettings } from './settings.js';
-import type { SessionInfo, RequestUsage } from './types.js';
+import type { SessionInfo, RequestUsage, QuotaLimit, SessionTelemetry } from './types.js';
 import type { StdinData } from '../types.js';
 export interface SessionFile extends SessionInfo {
     file: string;
@@ -14,6 +14,7 @@ export declare const sessionKey: (s: {
     id: string;
 }) => string;
 export declare const dataPath: (kind: string, s: Pick<SessionInfo, 'client' | 'id'>) => string;
+export declare const sessionTitle: (value: unknown) => string | undefined;
 /** Read only explicit user activity; file modification times also include background output. */
 export declare function lastUserActivity(entries: any[], client: 'claude' | 'codex'): number | undefined;
 export declare function discoverSessions(roots?: {
@@ -26,8 +27,10 @@ export interface LiveClaude {
     launch?: LaunchSettings;
     hudWindow?: number;
     environment: Record<string, string>;
+    quota?: QuotaLimit[];
+    telemetry?: SessionTelemetry;
 }
-export declare function captureClaude(stdin: StdinData, launch?: LaunchSettings, hudWindow?: number): void;
+export declare function captureClaude(stdin: StdinData, launch?: LaunchSettings, hudWindow?: number, account?: Pick<SessionTelemetry, 'authMethod' | 'authUser'>): void;
 export declare function readLiveClaude(session: SessionInfo): LiveClaude | null;
 /** ps exposes launch flags on macOS; values are never logged or persisted as command text. */
 export declare function claudeLaunchSettings(): LaunchSettings | undefined;

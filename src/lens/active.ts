@@ -7,6 +7,7 @@ import { readDocument } from './settings.js';
 import { sessionKey, validId, type SessionFile } from './sessions.js';
 import { ClaudeDesktopSessions, claudeDesktopSessions } from './claude-desktop.js';
 import { agyId, agyRoots } from './agy.js';
+import { isOrcaApp, isOrcaTerminalHost, orcaPanePid, orcaSelectedTab, orcaWorkspace, withinWorkspace } from './orca.js';
 
 interface Running { key: string; pid: number; evidence: string }
 export interface ActiveResult { selected: string | null; reason: string; candidates: Running[] }
@@ -35,16 +36,16 @@ export function visibleSession(files: ActiveSessionInfo[], client?: string, hint
   return matches.length === 1 ? sessionKey(matches[0]) : null;
 }
 
+export function inProcessTree(pid: number, targetPid: number, parents: Map<number, number>): boolean {
+  for (let i = 0; i < 30 && pid > 1; i++) {
+    if (pid === targetPid) return true;
+    pid = parents.get(pid) ?? 0;
+  }
+  return false;
+}
+
 export function chooseActive(candidates: Running[], parents: Map<number, number>, targetPid?: number, activity = new Map<string, number>()): ActiveResult {
-  const matching = candidates.filter(candidate => {
-    if (!targetPid) return true;
-    let pid = candidate.pid;
-    for (let i = 0; i < 30 && pid > 1; i++) {
-      if (pid === targetPid) return true;
-      pid = parents.get(pid) ?? 0;
-    }
-    return false;
-  });
+  const matching = targetPid ? candidates.filter(candidate => inProcessTree(candidate.pid, targetPid, parents)) : candidates;
   const unique = [...new Map(matching.map(c => [c.key, c])).values()];
   const recent = unique.filter(c => (activity.get(c.key) ?? 0) > 0).sort((a, b) => activity.get(b.key)! - activity.get(a.key)!);
   const latest = recent.length && (recent.length === 1 || activity.get(recent[0].key)! > activity.get(recent[1].key)!) ? recent[0] : undefined;
@@ -69,11 +70,27 @@ export function agyLockCandidates(output: string, directory: string, commands: M
   return result;
 }
 
+export function codexResumeCandidates(output: string, files: ActiveSessionInfo[], pids: ReadonlySet<number>): Running[] {
+  const ids = new Set(files.filter(file => file.client === 'codex' && !file.parentId).map(file => file.id));
+  return output.split('\n').flatMap(line => {
+    const row = /^\s*(\d+)\s+(.+)$/.exec(line);
+    if (!row || !pids.has(Number(row[1]))) return [];
+    // Orca 在子命令之前注入守护进程开关和 TOML 配置，配置里的 UUID 不是会话 ID。
+    const resume = /^(?:\/[^"\r\n]*\/)?codex(?:\s+--no-daemon|\s+(?:-c|--config)\s+[a-z0-9_.-]+=(?:"(?:\\.|[^"\\])*"|'[^']*'|[^\s"']+))*\s+resume\s+(.+)$/i.exec(row[2])?.[1] ?? '';
+    if (/(?:^|\s)--last(?=\s|=|$)/.test(resume)) return [];
+    // macOS 的 ps 将参数合并为文本。只接受末尾唯一的显式 UUID。
+    const matches = [...resume.matchAll(/(?:^|\s)([a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})(?=\s|$)/gi)];
+    const id = matches.length === 1 && resume.trimEnd().endsWith(matches[0][1]) ? matches[0][1] : '';
+    return ids.has(id) ? [{ key: `codex:${id}`, pid: Number(row[1]), evidence: 'Codex 显式恢复会话' }] : [];
+  });
+}
+
 /** Read live ownership evidence, never infer the active session from the newest historical log. */
 export class ActiveSessions {
   private at = 0;
   private running: Running[] = [];
   private parents = new Map<number, number>();
+  private commands = new Map<number, string>();
   private error = '';
   private lastInteraction = new Map<string, number>();
   private desktop: ClaudeDesktopSessions;
@@ -119,6 +136,28 @@ export class ActiveSessions {
         running = running.filter(c => pids.has(c.pid));
       } catch { running = []; }
     }
+    if (targetPid && isOrcaApp(this.commands.get(targetPid) ?? '')) {
+      const workspace = orcaWorkspace();
+      const owners = [...this.commands].filter(([, command]) => isOrcaTerminalHost(command)).map(([pid]) => pid);
+      const scoped = running.filter(candidate => {
+        const local = inProcessTree(candidate.pid, targetPid, this.parents);
+        if (!workspace) return local;
+        const file = files.find(file => sessionKey(file) === candidate.key);
+        return !!file && withinWorkspace(file.cwd, workspace.cwd)
+          && (local || owners.some(pid => inProcessTree(candidate.pid, pid, this.parents)));
+      });
+      const tab = workspace && workspace.terminals > 0 ? orcaSelectedTab(workspace) : undefined;
+      const needsPane = !!workspace && (tab !== undefined || workspace.terminals > 1 || new Set(scoped.map(candidate => candidate.key)).size > 1);
+      const pane = workspace && tab !== null && (needsPane || !scoped.length && workspace.terminals === 1)
+        ? orcaPanePid(workspace, undefined, tab) : undefined;
+      let result = chooseActive(needsPane && !pane ? [] : scoped, this.parents, pane);
+      if (workspace && pane && !result.candidates.length && process.platform === 'darwin'
+        && (inProcessTree(pane, targetPid, this.parents) || owners.some(pid => inProcessTree(pane, pid, this.parents)))) {
+        result = chooseActive(this.resumedCodex(files, pane, workspace.cwd), this.parents);
+      }
+      if (!result.selected) result.reason = '等待 Orca 前台唯一会话';
+      return result;
+    }
     const result = chooseActive(running, this.parents, targetPid, activity);
     if (result.candidates.length > 1 && result.candidates.some(candidate => candidate.key.startsWith('agy:'))) {
       result.selected = null; result.reason = '等待唯一的前台终端会话';
@@ -127,11 +166,23 @@ export class ActiveSessions {
     return result;
   }
 
+  private resumedCodex(files: ActiveSessionInfo[], pane: number, cwd: string): Running[] {
+    const pids = [...this.commands].filter(([pid, command]) => path.basename(command) === 'codex'
+      && inProcessTree(pid, pane, this.parents)).map(([pid]) => pid).slice(0, 24);
+    if (!pids.length) return [];
+    try {
+      const output = execFileSync('/bin/ps', ['-ww', '-p', pids.join(','), '-o', 'pid=,command='],
+        { encoding: 'utf8', timeout: 700, maxBuffer: 256 * 1024 });
+      return codexResumeCandidates(output, files.filter(file => withinWorkspace(file.cwd, cwd)), new Set(pids));
+    } catch { return []; }
+  }
+
   private scan(files: ActiveSessionInfo[]): void {
     this.at = Date.now(); this.running = []; this.parents.clear(); this.error = '';
     if (!['darwin', 'win32'].includes(process.platform)) { this.error = '自动定位目前支持 macOS 和 Windows'; return; }
     const keys = new Set(files.filter(f => !f.parentId).map(sessionKey));
-    const commands = new Map<number, string>();
+    const commands = this.commands;
+    commands.clear();
     try {
       if (process.platform === 'win32') {
         const command = "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); @(Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,CommandLine) | ConvertTo-Json -Compress";

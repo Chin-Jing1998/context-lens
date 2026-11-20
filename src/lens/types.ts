@@ -1,3 +1,5 @@
+import type { GitStatus } from '../git.js';
+
 export type Client = 'claude' | 'codex' | 'agy';
 export type Accuracy = 'reported' | 'estimated' | 'configured' | 'derived' | 'unknown';
 export type Category = 'mcpTools' | 'systemTools' | 'skills' | 'systemPrompt' | 'memoryFiles'
@@ -85,6 +87,25 @@ export interface SessionTiming {
   completedTurns: number | null; status: 'running' | 'waiting' | 'interrupted' | 'unknown';
   activeAccuracy: 'reported' | 'derived' | 'unknown'; complete: boolean;
 }
+export type QuotaLimit = {
+  id: string;
+  name: string;
+  windowMinutes?: number;
+  resetAt?: string;
+} & ({ remainingPercent: number } | { remainingAmount: number });
+
+export interface SessionTelemetry {
+  effort?: string;
+  advisorModel?: string;
+  outputStyle?: string;
+  outputSpeed?: number;
+  authMethod?: string;
+  authUser?: string;
+  launchDir?: string;
+  addedDirs?: string[];
+  worktree?: string;
+}
+
 export interface HudSnapshot {
   session: Omit<SessionInfo, 'client'> & { client: string }; context: Context;
   totals: { main: Totals; agents: Totals; all: Totals; agentCount: number };
@@ -92,6 +113,10 @@ export interface HudSnapshot {
   activity?: SessionActivity;
   timing?: SessionTiming;
   insights?: SessionInsights;
+  quota?: QuotaLimit[];
+  hasRequestDetails?: boolean;
+  telemetry?: SessionTelemetry;
+  git?: GitStatus;
   warnings: string[]; capturedAt: string;
 }
 

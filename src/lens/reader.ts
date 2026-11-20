@@ -11,7 +11,9 @@ import { ActivityReader, type ActivityLog } from './activity.js';
 import { TimingReader, type TimingLog } from './timing.js';
 import { PromptWindow } from './prompt-window.js';
 import { ClaudeDetailsReader } from './claude-details.js';
-import type { Category, ClaudeDetails, Measurement, MessageSegment, RequestUsage, SessionInfo } from './types.js';
+import { codexQuota } from './quota.js';
+import { sessionTitle } from './sessions.js';
+import type { Category, ClaudeDetails, Measurement, MessageSegment, QuotaLimit, RequestUsage, SessionInfo, SessionTelemetry } from './types.js';
 
 export interface ParsedSession {
   info: SessionInfo; requests: RequestUsage[]; cumulative?: RequestUsage;
@@ -25,6 +27,8 @@ export interface ParsedSession {
   timing?: TimingLog;
   details?: ClaudeDetails;
   messageBreakdown?: MessageSegment[];
+  quota?: QuotaLimit[];
+  telemetry?: SessionTelemetry;
 }
 let tokenizer: ReturnType<typeof getEncoding> | undefined;
 const require = createRequire(import.meta.url);
@@ -73,9 +77,11 @@ export async function parseEvents(info: SessionInfo, events: AsyncIterable<unkno
   let modernTotal: RequestUsage | undefined;
   const legacyRequests: RequestUsage[] = [];
   const seen = new Set<string>();
+  const codexLimits = new Map<string, { at: string; limits: QuotaLimit[] }>();
   let lastContextId = '';
   let claudeContextId = '';
   let awaitingCodexUsage = false;
+  let customTitle: string | undefined, aiTitle: string | undefined;
   for await (const value of events) {
     const entry = record(value);
     const at = timestamp(entry.timestamp, info.updatedAt);
@@ -84,6 +90,10 @@ export async function parseEvents(info: SessionInfo, events: AsyncIterable<unkno
       if (entry.isSidechain === true && !info.parentId) continue;
       const owner = entry.sessionId ?? entry.session_id;
       if (typeof owner === 'string' && owner !== info.id && !info.parentId) continue;
+      if (!info.parentId) {
+        if (entry.type === 'custom-title') customTitle = sessionTitle(entry.customTitle) ?? customTitle;
+        if (entry.type === 'ai-title') aiTitle = sessionTitle(entry.aiTitle) ?? aiTitle;
+      }
       if (entry.type !== 'assistant' && typeof entry.uuid === 'string') {
         if (seenClaudeEvents.has(entry.uuid)) continue;
         seenClaudeEvents.add(entry.uuid);
@@ -153,6 +163,10 @@ export async function parseEvents(info: SessionInfo, events: AsyncIterable<unkno
       if (message.model === '<synthetic>' || entry.isApiErrorMessage === true || entry.error) continue;
       const id = display(message.id || entry.requestId, 200);
       const nextModel = display(message.model) || model || fallbackModel;
+      if (!options.usageOnly) {
+        const effort = display(entry.effort, 32), advisorModel = display(entry.advisorModel, 64);
+        if (effort || advisorModel) result.telemetry = { ...result.telemetry, ...(effort && { effort }), ...(advisorModel && { advisorModel }) };
+      }
       const usage = record(message.usage);
       const row = Object.keys(usage).length ? normalizeUsage('claude', usage, `claude:${id}`, nextModel, at) : undefined;
       if (row) {
@@ -199,6 +213,10 @@ export async function parseEvents(info: SessionInfo, events: AsyncIterable<unkno
           prompt?.invalidate();
         }
         model = nextModel;
+        if (!options.usageOnly) {
+          const effort = display(payload.effort ?? payload.reasoning_effort, 32);
+          if (effort) result.telemetry = { ...result.telemetry, effort };
+        }
         const capacity = tokenNumber(payload.model_context_window) || null;
         if (capacity !== null) result.capacity = capacity;
         for (const key of ['model_auto_compact_token_limit', 'model_auto_compact_token_limit_scope'])
@@ -207,6 +225,12 @@ export async function parseEvents(info: SessionInfo, events: AsyncIterable<unkno
       if (entry.type === 'compacted' || (entry.type === 'event_msg' && ['context_compacted', 'compaction_completed'].includes(payload.type))) {
         result.used = null; result.at = at; result.categories = {}; result.compacted = true;
         awaitingCodexUsage = true; lastContextId = '';
+      }
+      if (!options.usageOnly && ownTurn && timestampKnown && entry.type === 'event_msg' && payload.type === 'token_count'
+        && payload.rate_limits && (!payload.thread_id || payload.thread_id === info.id)) {
+        const sample = codexQuota(payload.rate_limits);
+        if (sample && at >= (codexLimits.get(sample.id)?.at ?? '') && (codexLimits.has(sample.id) || codexLimits.size < 32))
+          codexLimits.set(sample.id, { at, limits: sample.limits });
       }
       if (entry.type === 'token_usage_record' && (!payload.thread_id || payload.thread_id === info.id)) {
         const id = display(payload.response_id, 200);
@@ -260,6 +284,7 @@ export async function parseEvents(info: SessionInfo, events: AsyncIterable<unkno
     }
   }
   result.info.model = model || fallbackModel || 'unknown';
+  result.info.title = customTitle ?? sessionTitle(info.title) ?? aiTitle ?? info.title;
   result.messageBreakdown = prompt?.publish(result.categories);
   if (options.usageOnly && !result.requests.length) { result.requests = legacyRequests; if (info.parentId && legacy) result.complete = false; }
   result.requests = mergeRequests(result.requests);
@@ -277,6 +302,7 @@ export async function parseEvents(info: SessionInfo, events: AsyncIterable<unkno
   result.activity = activity?.finish(true);
   result.timing = timing?.finish();
   result.details = details?.finish();
+  if (codexLimits.size) result.quota = [...codexLimits.values()].flatMap(sample => sample.limits);
   return result;
 }
 

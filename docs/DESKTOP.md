@@ -8,15 +8,15 @@ Context Lens 以悬浮球和七个环形岛展示当前会话的上下文、用�
 
 | 平台 | 文件 | 系统要求 |
 | --- | --- | --- |
-| macOS | [Context-Lens-0.14.0-mac-arm64.zip](https://github.com/Chin-Jing1998/context-lens/releases/download/v0.14.0/Context-Lens-0.14.0-mac-arm64.zip) | macOS 13.5 及以上，Apple Silicon |
-| Windows 安装版 | [Context-Lens-0.14.0-win-x64-setup.exe](https://github.com/Chin-Jing1998/context-lens/releases/download/v0.14.0/Context-Lens-0.14.0-win-x64-setup.exe) | Windows 10 及以上，x64 |
-| Windows 便携版 | [Context-Lens-0.14.0-win-x64-portable.exe](https://github.com/Chin-Jing1998/context-lens/releases/download/v0.14.0/Context-Lens-0.14.0-win-x64-portable.exe) | Windows 10 及以上，x64 |
+| macOS | [Context-Lens-0.14.1-mac-arm64.zip](https://github.com/Chin-Jing1998/context-lens/releases/download/v0.14.1/Context-Lens-0.14.1-mac-arm64.zip) | macOS 13.5 及以上，Apple Silicon |
+| Windows 安装版 | [Context-Lens-0.14.1-win-x64-setup.exe](https://github.com/Chin-Jing1998/context-lens/releases/download/v0.14.1/Context-Lens-0.14.1-win-x64-setup.exe) | Windows 10 及以上，x64 |
+| Windows 便携版 | [Context-Lens-0.14.1-win-x64-portable.exe](https://github.com/Chin-Jing1998/context-lens/releases/download/v0.14.1/Context-Lens-0.14.1-win-x64-portable.exe) | Windows 10 及以上，x64 |
 
 macOS 将应用放入 Applications 后启动；需要读取前台会话时，在系统设置的“隐私与安全”中为实际安装的 Context Lens 授予辅助功能权限。源码安装运行 `npm ci`、`npm run build` 和 `node scripts/build-desktop.mjs --install`，该方式同时注册登录启动任务。
 
 ### macOS 首次打开
 
-v0.14.0 的 macOS 包使用临时签名，尚未通过 Apple 公证。浏览器下载后，macOS 会拦截首次启动并提示无法验证开发者；这与辅助功能授权是两项独立检查。
+v0.14.1 的 macOS 包使用临时签名，尚未通过 Apple 公证。浏览器下载后，macOS 会拦截首次启动并提示无法验证开发者；这与辅助功能授权是两项独立检查。
 
 1. 将 `Context Lens.app` 放入 Applications，尝试打开一次。
 2. 打开“系统设置 → 隐私与安全性”，在对应 Context Lens 的拦截记录处选择“仍要打开”，再确认“打开”。这是 [Apple 提供的单个应用启动例外流程](https://support.apple.com/zh-cn/102445)。
@@ -44,7 +44,7 @@ Windows 安装版可以选择安装目录并创建桌面及开始菜单快捷方
 
 设置中的“界面主题”提供原生玻璃、清透玻璃、石墨仪表、白瓷柔光、光谱轨道、墨芯玻璃、水墨宋韵、青铜书卷、青蓝刻度。每个主题固定字体、色彩、材质和动效，直接切换即可。数字和英文采用 Times New Roman，中文按主题采用系统中文、宋体、仿宋或楷体。
 
-会话详情按当前内容调整窗口高度；长记录通过页码、筛选和排序查询。用量页保持固定高度，费用默认展示当前会话，累计查询与逐请求账单各自独立。列表滚动条在操作时显示，停止操作后隐藏。“桌面行为”的减少动效设置适用于环形岛与详情切换。
+会话详情按当前内容调整窗口高度，长记录支持分页、筛选和排序。用量页在客户端上报额度时显示「订阅额度」。费用页默认显示当前会话，累计查询可按模型或会话查看，逐请求账单展示记录中的 Token 分项。列表滚动条在操作时显示，停止操作后隐藏。“桌面行为”的减少动效设置适用于环形岛与详情切换。
 
 设置窗口在打开时按屏幕可用区域确定尺寸。切换设置分类和主题时，内容可在窗口内滚动。
 
@@ -52,7 +52,7 @@ Windows 安装版可以选择安装目录并创建桌面及开始菜单快捷方
 
 macOS 支持独立 Antigravity 应用和 `agy` CLI。桌面悬浮球跟随前台的 Antigravity 对话。终端内可通过进程会话锁自动识别唯一的 `agy` 会话，也可用 `context-lens list --client agy` 查找会话，再用 `context-lens watch --session agy:<ID>` 查看。源码环境的 AGY 读取使用 Node.js 24 的 SQLite 模块。
 
-会话数据库提供当前上下文预算。`agy` 的原生状态行提供完整窗口时，Context Lens 可读取该窗口和占用率。可在该次 CLI 启动中接入采样：
+会话数据库提供当前上下文预算。`agy` 的原生状态行也提供完整窗口、占用率和已上报的订阅额度。可在该次 CLI 启动中接入采样：
 
 ```sh
 agy --settings '{"statusLine":{"type":"command","command":"context-lens agy-statusline","stack_with_default":true}}'
@@ -61,6 +61,10 @@ agy --settings '{"statusLine":{"type":"command","command":"context-lens agy-stat
 每次请求的输入总量包含未缓存输入、缓存读取和缓存写入。界面单列各分项，累计时每次请求只计一次。输出总量包含推理输出。Antigravity 的常规模型请求与压缩请求均计入会话累计。缺失字段显示 `—`。
 
 上下文页使用当前生成快照的分类，可查看系统提示词、系统工具、MCP 工具、技能、规则及对话内容等已上报的占用。对话内容可展开看用户消息、助手回复、工具交互与压缩摘要。命令行、MCP 和技能页按当前会话的执行记录展示调用数量、结果与可用耗时，技能读取按会话实际访问的 `SKILL.md` 计量。
+
+### Orca
+
+在 macOS 前台 Orca 工作区内运行本机 Agent 时，Context Lens 将工作区与终端进程关联到本地会话。多个终端会话按能唯一验证的选中窗格定位。
 
 ### 第三方模型与单价
 

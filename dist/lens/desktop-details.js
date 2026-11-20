@@ -32,25 +32,44 @@ function row(title, subtitle, value, detail, state = '') {
     root.append(copy, reading);
     return root;
 }
+function detailMetrics(row, items) {
+    const metrics = node('dl', '', 'request-metrics');
+    for (const [label, value] of items) {
+        if (value === null)
+            continue;
+        const pair = node('div');
+        pair.append(node('dt', label), node('dd', value, 'number'));
+        metrics.append(pair);
+    }
+    if (metrics.childElementCount) {
+        row.classList.add('metric-detail-row');
+        row.append(metrics);
+    }
+    return row;
+}
+const exact = (value) => numeric(value) ? value.toLocaleString('zh-CN') : null;
 function format(section, item) {
     const scope = item.scope === 'agent' ? '子代理' : '主会话';
     if (section === 'requests') {
-        const request = row(item.model || '模型', time(item.at) + ' · ' + scope, money(item.cost), '');
+        const request = row(item.model || '模型', [item.at ? time(item.at) : '', scope].filter(Boolean).join(' · '), numeric(item.cost?.amount) ? money(item.cost) : '', '');
         request.classList.add('request-row');
-        const metrics = node('dl', '', 'request-metrics');
-        for (const [label, key] of [['输入总量', 'input'], ['输出总量', 'output'], ['未缓存输入', 'uncachedInput'], ['缓存读取', 'cacheRead']]) {
-            const value = item.missingTokens?.includes(key) ? null : item[key];
-            const pair = node('div'), reading = node('dd', count(value), 'number');
-            if (numeric(value))
-                reading.title = value.toLocaleString('zh-CN');
-            pair.append(node('dt', label), reading);
-            metrics.append(pair);
+        const tokens = [];
+        for (const [label, key] of [['输入总量', 'input'], ['输出总量', 'output'], ['未缓存输入', 'uncachedInput'],
+            ['缓存读取', 'cacheRead'], ['缓存写入', 'cacheWrite'], ['写入 5 分钟', 'cacheWrite5m'], ['写入 1 小时', 'cacheWrite1h'], ['推理输出', 'reasoning']]) {
+            if (item.missingTokens?.includes(key))
+                continue;
+            const required = key === 'input' || key === 'output' || key === 'uncachedInput';
+            if (numeric(item[key]) && (required || item[key] > 0))
+                tokens.push([label, exact(item[key])]);
         }
-        request.append(metrics);
-        return request;
+        if (typeof item.serviceTier === 'string' && item.serviceTier.trim())
+            tokens.push(['服务档位', item.serviceTier.trim()]);
+        return detailMetrics(request, tokens);
     }
-    if (section === 'compactions')
-        return row({ auto: '自动压缩', manual: '手动压缩' }[item.trigger] || '压缩', time(item.at) + ' · ' + duration(item.durationMs), count(item.beforeTokens) + ' → ' + count(item.afterTokens), numeric(item.releasedTokens) ? '释放 ' + count(item.releasedTokens) + ' tokens' : '—');
+    if (section === 'compactions') {
+        const event = row({ auto: '自动压缩', manual: '手动压缩' }[item.trigger] || '压缩', [item.at ? time(item.at) : '', numeric(item.durationMs) ? duration(item.durationMs) : ''].filter(Boolean).join(' · '), numeric(item.beforeTokens) || numeric(item.afterTokens) ? count(item.beforeTokens) + ' → ' + count(item.afterTokens) : '', numeric(item.releasedTokens) ? '释放 ' + count(item.releasedTokens) + ' tokens' : '');
+        return detailMetrics(event, [['累计丢弃', exact(item.cumulativeDroppedTokens)], ['保留消息', exact(item.retainedMessages)]]);
+    }
     if (section === 'hooks')
         return row(item.name || item.event || 'Hook', item.event + ' · ' + time(item.at), duration(item.durationMs), (states[item.status] || '状态未知') + (numeric(item.exitCode) ? ' · exit ' + item.exitCode : ''), item.status);
     if (section === 'hookStops')
@@ -65,13 +84,24 @@ function format(section, item) {
     }
     if (section === 'tasks')
         return row(item.title || item.id, time(item.at), states[item.status] || '状态未知', '', item.status);
-    if (section === 'agents')
-        return row(item.description || item.type || item.childSessionId || 'Agent', (item.model || '—') + (item.totals ? ' · ' + (item.totals.complete ? '' : '≥') + count(item.totals.requests) + ' 次请求' : ''), item.totals ? (item.totals.complete ? '' : '≥') + count(item.totals.input + item.totals.output) + ' tokens' : '—', (states[item.status] || '状态未知') + ' · ' + money(item.cost), item.status);
+    if (section === 'agents') {
+        const requestCount = item.totals?.requests;
+        const subtitle = [item.model, item.effort, typeof item.background === 'boolean' ? (item.background ? '后台' : '前台') : '',
+            numeric(requestCount) ? (item.totals.complete ? '' : '≥') + count(requestCount) + ' 次请求' : ''].filter(Boolean).join(' · ');
+        const agent = row(item.description || item.type || item.childSessionId || 'Agent', subtitle, item.totals ? (item.totals.complete ? '' : '≥') + count(item.totals.input + item.totals.output) + ' tokens' : '', [states[item.status], numeric(item.cost?.amount) ? money(item.cost) : ''].filter(Boolean).join(' · '), item.status);
+        const started = item.at || item.timing?.startedAt;
+        const finished = item.endedAt;
+        const span = finished && started ? Date.parse(finished) - Date.parse(started) : item.timing?.activeMs;
+        return detailMetrics(agent, [['启动时间', started ? time(started) : null], ['结束时间', finished ? time(finished) : null],
+            ['运行时长', numeric(span) && span >= 0 ? duration(span) : null]]);
+    }
     return row(item.name, [time(item.at), scope, item.detail].filter(Boolean).join(' · '), duration(item.durationMs), states[item.status] || '状态未知', item.status);
 }
 export function createDetailsUI(options) {
     const widgets = [], groups = [];
-    let session = '', messageSignature = '', stopsRevision = 0, stopsAt = 0, stopsLoading = false;
+    let session = '', messageSignature = '', quotaSignature = '', runtimeSignature = '', stopsRevision = 0, stopsAt = 0, stopsLoading = false;
+    options.scroll($('quota-list'));
+    options.scroll($('workspace-files'));
     const animations = new Map();
     const cancelAnimations = () => { animations.forEach(animation => animation.cancel()); animations.clear(); };
     new MutationObserver(() => {
@@ -254,7 +284,13 @@ export function createDetailsUI(options) {
         cancelAnimations();
         session = '';
         messageSignature = '';
+        quotaSignature = '';
+        runtimeSignature = '';
         widgets.forEach(widget => widget.reset());
+        $('quota-rows').replaceChildren();
+        $('quota-list').scrollTop = 0;
+        $('runtime-extra').hidden = true;
+        $('workspace-files').scrollTop = 0;
         stopsRevision++;
         stopsAt = 0;
         stopsLoading = false;
@@ -270,6 +306,61 @@ export function createDetailsUI(options) {
             $('runtime-' + name + '-row').hidden = true;
         updateGroups();
     }
+    function definitions(id, values) {
+        const list = $(id);
+        const rows = values.flatMap(([label, value]) => {
+            if (!value)
+                return [];
+            const item = node('div'), reading = node('dd', value);
+            reading.title = value;
+            item.append(node('dt', label), reading);
+            return [item];
+        });
+        list.replaceChildren(...rows);
+        list.hidden = rows.length === 0;
+    }
+    function runtimeDetails(snapshot) {
+        const { git, insights, session, telemetry } = snapshot;
+        const cwd = session.cwd;
+        const launchDir = telemetry?.launchDir && telemetry.launchDir !== cwd ? telemetry.launchDir : undefined;
+        available('runtime-workspace-tab', !!(git || launchDir || telemetry?.worktree || telemetry?.addedDirs?.length));
+        const signature = JSON.stringify([git, insights, cwd, telemetry]);
+        if (signature === runtimeSignature)
+            return;
+        runtimeSignature = signature;
+        const { hooks, files, tasks, agents } = insights ?? {};
+        definitions('runtime-extra', [
+            ['推理强度', telemetry?.effort], ['输出速度', numeric(telemetry?.outputSpeed) ? telemetry.outputSpeed.toFixed(1) + ' tok/s' : undefined],
+            ['顾问模型', telemetry?.advisorModel], ['输出风格', telemetry?.outputStyle],
+            ['认证／套餐', telemetry?.authMethod], ['账号', telemetry?.authUser],
+            ['任务完成', tasks ? count(tasks.completed) + ' / ' + count(tasks.total) : undefined],
+            ['Hook 失败', hooks?.total ? count(hooks.failed) + ' / ' + count(hooks.total) : undefined],
+            ['停止拦截', hooks?.blockedStops ? count(hooks.blockedStops) : undefined],
+            ['涉及文件', files ? count(files.uniquePaths) : undefined],
+            ['子代理完成', agents ? count(agents.completed) + ' / ' + count(agents.total) : undefined],
+        ]);
+        const stats = git?.fileStats;
+        definitions('workspace-info', [
+            ['工作目录', cwd], ['启动目录', launchDir], ['附加目录', telemetry?.addedDirs?.join('\n')],
+            ['工作树', telemetry?.worktree], ['Git 分支', git?.branch],
+            ['领先提交', git?.ahead ? count(git.ahead) : undefined],
+            ['落后提交', git?.behind ? count(git.behind) : undefined],
+            ['增删行', git?.lineDiff ? '+' + count(git.lineDiff.added) + ' / −' + count(git.lineDiff.deleted) : undefined],
+            ['未跟踪文件', stats?.untracked ? count(stats.untracked) : undefined],
+        ]);
+        const tracked = stats?.trackedFiles ?? [], hasDiff = tracked.some(file => file.lineDiff);
+        $('workspace-files').hidden = tracked.length === 0;
+        $('workspace-diff-heading').hidden = !hasDiff;
+        $('workspace-file-rows').replaceChildren(...tracked.map(file => {
+            const item = node('tr'), label = node('th', file.fullPath);
+            label.scope = 'row';
+            label.title = file.fullPath;
+            item.append(label, node('td', ({ added: '新增', deleted: '删除', modified: '修改' })[file.type]));
+            if (hasDiff)
+                item.append(node('td', file.lineDiff ? '+' + count(file.lineDiff.added) + ' / −' + count(file.lineDiff.deleted) : '', 'number'));
+            return item;
+        }));
+    }
     function update(snapshot) {
         const key = options.session();
         if (key !== session) {
@@ -279,10 +370,32 @@ export function createDetailsUI(options) {
         const messages = snapshot.context.messageBreakdown?.filter(item => numeric(item.tokens) && item.tokens > 0) || [];
         available('context-messages-tab', messages.length > 0);
         available('context-compactions-tab', (snapshot.insights?.compactions?.count ?? 0) > 0);
+        const quota = snapshot.quota ?? [];
+        available('usage-quota-tab', quota.length > 0);
+        const nextQuota = JSON.stringify(quota);
+        if (quotaSignature !== nextQuota) {
+            quotaSignature = nextQuota;
+            const hasReset = quota.some(limit => limit.resetAt);
+            $('quota-reset-heading').hidden = !hasReset;
+            $('quota-rows').replaceChildren(...quota.map(limit => {
+                const window = limit.windowMinutes;
+                const length = !window ? '' : window % 1440 === 0 ? window / 1440 + ' 天' : window % 60 === 0 ? window / 60 + ' 小时' : window + ' 分钟';
+                const label = node('th', [limit.name, length].filter(Boolean).join(' · '));
+                label.scope = 'row';
+                const percent = 'remainingPercent' in limit;
+                const value = (percent ? limit.remainingPercent : limit.remainingAmount).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+                const reading = node('tr');
+                reading.append(label, node('td', value + (percent ? '%' : ''), 'number'));
+                if (hasReset)
+                    reading.append(node('td', limit.resetAt ? time(limit.resetAt) : '', 'number'));
+                return reading;
+            }));
+        }
         available('usage-agents-tab', snapshot.totals.agentCount > 0 || (snapshot.insights?.agents?.total ?? 0) > 0);
         available('runtime-hooks-tab', (snapshot.insights?.hooks?.total ?? 0) > 0);
         available('runtime-files-tab', (snapshot.insights?.files?.operations ?? 0) > 0);
         available('runtime-tasks-tab', (snapshot.insights?.tasks?.total ?? 0) > 0);
+        runtimeDetails(snapshot);
         if (snapshot.insights?.hooks && document.querySelector('.runtime-panel').getClientRects().length && !stopsLoading && Date.now() - stopsAt >= 5000) {
             const revision = ++stopsRevision;
             stopsLoading = true;
@@ -297,8 +410,7 @@ export function createDetailsUI(options) {
                 stopsAt = Date.now();
             } });
         }
-        const native = ['claude', 'codex', 'agy'].includes(snapshot.session.client);
-        available('cost-requests-tab', native && ((snapshot.totals.all.requests ?? 0) > 0 || snapshot.totals.all.input > 0));
+        available('cost-requests-tab', snapshot.hasRequestDetails === true);
         if ($('cost-requests-tab').hidden && $('cost-requests-tab').getAttribute('aria-selected') === 'true')
             options.currentCost();
         updateGroups();

@@ -3,12 +3,16 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { ActiveSessions, agyLockCandidates } from '../dist/lens/active.js';
 import { ClaudeDesktopSessions } from '../dist/lens/claude-desktop.js';
 import { validateCostSession } from '../dist/lens/cost-adapters.js';
 import { officialPrice, readOfficialPrices, referenceRates } from '../dist/lens/pricing.js';
 import { parseEvents } from '../dist/lens/reader.js';
 import { SessionCollector } from '../dist/lens/snapshot.js';
+import { CostHistory } from '../dist/lens/cost-history.js';
+import { currentQuota } from '../dist/lens/quota.js';
 import { estimateCost, mergeRequests, normalizeUsage, sumRequests } from '../dist/lens/usage.js';
 
 const one = '20000000-0000-0000-0000-000000000001';
@@ -113,6 +117,25 @@ test('Antigravity 从两个数据根定位会话、读取活动 WAL 并按响应
   const sampled = await collector.get(`agy:${two}`);
   assert.deepEqual([sampled.context.view, sampled.context.modelTokens, sampled.context.budget.tokens, sampled.context.percent, sampled.totals.all.output],
     ['model', 1048576, 512000, 2.1, 29]);
+  const reset = new Date(Date.now() + 60_000).toISOString();
+  const capture = spawnSync(process.execPath, [fileURLToPath(new URL('../scripts/context-lens.mjs', import.meta.url)), 'agy-statusline'], {
+    input: JSON.stringify({ product: 'antigravity', conversation_id: two, model: { id: 'gemini-4-neon', effort: 'high' },
+      quota: { 'gemini-5h': { remaining_fraction: 0, reset_time: reset }, '3p-weekly': { remaining_fraction: 0.6, reset_time: reset },
+        'disabled': { remaining_fraction: 1, disabled: true }, 'invalid': { remaining_fraction: 1.2 } } }),
+    encoding: 'utf8',
+  });
+  assert.equal(capture.status, 0, capture.stderr);
+  const quotaSnapshot = await collector.get(`agy:${two}`);
+  assert.deepEqual(quotaSnapshot.quota.map(row => [row.name, row.windowMinutes, row.remainingPercent]),
+    [['Claude / GPT', 10080, 60], ['Gemini', 300, 0]]);
+  assert.equal((await collector.get(`agy:${one}`)).quota, undefined);
+  assert.equal(currentQuota(quotaSnapshot.quota, Date.parse(reset)), undefined);
+  assert.equal(quotaSnapshot.telemetry.effort, 'high');
+  const historyCosts = new CostHistory({ home: path.join(root, 'history-costs'), native: () => collector.list(), sources: [] });
+  await historyCosts.refresh(true);
+  const report = historyCosts.report({ period: 'custom', start: '2026-01-02', end: '2026-01-02', tool: 'agy', timeZone: 'UTC' });
+  assert.equal(report.totals.period.requests, 3);
+  assert.ok(report.sessions.every(row => row.toolName === 'Antigravity' && row.title === '同名会话'));
   desktopInsert.run(2, agyGeneration('third', 49, 900, 31, 22500));
   const changed = await collector.get(`agy:${one}`);
   assert.deepEqual([changed.context.usedTokens, changed.totals.all.input, changed.totals.all.output, changed.totals.all.cacheRead], [22500, 1483, 58, 1400]);
@@ -139,6 +162,21 @@ test('Antigravity 从两个数据根定位会话、读取活动 WAL 并按响应
   assert.deepEqual([old.totals.all.uncachedInput, old.totals.all.cacheRead, old.totals.all.output], [17, 90, 5]);
   assert.ok(old.totals.all.missingTokens.includes('cacheWrite'));
   assert.deepEqual([old.activity.skills.reads, old.activity.commands.total, old.activity.complete], [1, 0, false]);
+});
+
+test('Codex 仅采用自己会话中各额度窗口的最新有效记录', async () => {
+  const reset = Date.parse(at(59)) / 1000;
+  const quotaEvent = (second, by, limits) => ({ type: 'event_msg', timestamp: at(second), payload: {
+    type: 'token_count', thread_id: by, info: null, rate_limits: limits,
+  } });
+  const limits = used_percent => ({ limit_id: 'codex', primary: { used_percent, window_minutes: 300, resets_at: reset },
+    secondary: { used_percent: 100, window_minutes: 10080, resets_at: reset } });
+  const events = [quotaEvent(12, one, limits(21.5)), quotaEvent(13, two, limits(67)), quotaEvent(11, one, limits(1))];
+  const data = await parseEvents(info('codex'), events);
+  assert.deepEqual(data.quota?.map(row => [row.windowMinutes, row.remainingPercent]), [[300, 78.5], [10080, 0]]);
+  assert.equal(currentQuota(data.quota, Date.parse(at(59))), undefined);
+  const cleared = await parseEvents(info('codex'), [...events, quotaEvent(14, one, { limit_id: 'codex', primary: null, secondary: null })]);
+  assert.equal(currentQuota(cleared.quota, Date.parse(at(14))), undefined);
 });
 
 test('Claude 桌面第三方元数据补足身份与模型，空采样保留日志中的当前用量', async t => {

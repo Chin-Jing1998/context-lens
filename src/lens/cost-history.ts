@@ -3,8 +3,10 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { atomicJson, lensHome, readPrices, record } from './settings.js';
-import { discoverSessions, type SessionFile } from './sessions.js';
+import { discoverSessions, sessionTitle, type SessionFile } from './sessions.js';
+import { claudeDesktopSessions } from './claude-desktop.js';
 import { readSession } from './reader.js';
+import { agySessionHistory, agyStamp, discoverAgySessions, readAgyFile } from './agy.js';
 import { mergeRequests, sumRequests, estimateCost } from './usage.js';
 import { buildContext } from './context.js';
 import type { HudSnapshot } from './types.js';
@@ -16,7 +18,7 @@ interface SavedSession { version: 1; session: CostSession }
 const key = (s: Pick<CostSession, 'tool' | 'id'>) => JSON.stringify([s.tool, s.id]);
 const stamp = (file: string): string => { const s = fs.statSync(file); return `${s.ino}:${s.size}:${s.mtimeMs}`; };
 function defaultNative(): SessionFile[] {
-  return [...discoverSessions(), ...discoverSessions({ claude: '/__context_lens_no_claude__',
+  return [...claudeDesktopSessions.describe(discoverSessions()), ...discoverAgySessions(), ...discoverSessions({ claude: '/__context_lens_no_claude__',
     codex: path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'archived_sessions') })];
 }
 export class CostHistory {
@@ -75,9 +77,12 @@ export class CostHistory {
         catch { failed = true; }
       };
       for (const file of this.native()) {
-        await collect(file.file, `${file.size}:${file.mtimeMs}`, async () => {
-          const parsed = await readSession(file.file, file, { usageOnly: true });
-          return [{ tool: file.client, toolName: file.client === 'claude' ? 'Claude Code' : 'Codex', id: file.id, title: file.title,
+        const history = agySessionHistory(file);
+        const version = file.client === 'agy' ? agyStamp(file.file) + (history ? ':' + agyStamp(history) : '') : `${file.size}:${file.mtimeMs}`;
+        await collect(file.file, JSON.stringify([version, file.title]), async () => {
+          const parsed = file.client === 'agy' ? await readAgyFile(file, history, true) : await readSession(file.file, file, { usageOnly: true });
+          const toolName = file.client === 'agy' ? 'Antigravity' : file.client === 'claude' ? 'Claude Code' : 'Codex';
+          return [{ tool: file.client, toolName, id: file.id, title: sessionTitle(parsed.info.title),
             parentId: file.parentId, requests: parsed.requests, complete: parsed.complete }];
         });
       }
@@ -111,7 +116,7 @@ export class CostHistory {
     return buildCostReport([...this.sessions.values()], readPrices(), query, { loading: !this.initialized, failed: this.failed });
   }
   activeFiles(): (HudSnapshot['session'] & { lastUserAt?: number })[] {
-    return [...this.sessions.values()].filter(s => !['claude', 'codex'].includes(s.tool)).map(s => {
+    return [...this.sessions.values()].filter(s => !['claude', 'codex', 'agy'].includes(s.tool)).map(s => {
       const latest = [...s.requests].filter(r => r.at && r.timestampKnown !== false).sort((a, b) => b.at.localeCompare(a.at))[0];
       return { client: s.tool, id: s.id, title: s.title, parentId: s.parentId, cwd: '', model: latest?.model ?? 'unknown', updatedAt: latest?.at ?? '' };
     });

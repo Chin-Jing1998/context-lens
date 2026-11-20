@@ -9,7 +9,7 @@ function day(format, date) {
 }
 export function costRange(query, now = new Date()) {
     const period = (query.period ?? 'today');
-    if (!['today', '7d', '14d', 'month', 'quarter', 'year', 'custom'].includes(period))
+    if (!['today', 'week', '7d', '14d', 'month', 'quarter', 'year', 'custom'].includes(period))
         throw new Error('Invalid period');
     const timeZone = query.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
     if (timeZone.length > 100)
@@ -27,6 +27,11 @@ export function costRange(query, now = new Date()) {
         date.setUTCDate(date.getUTCDate() - (period === '7d' ? 6 : 13));
         start = date.toISOString().slice(0, 10);
     }
+    else if (period === 'week') {
+        const date = new Date(today);
+        date.setUTCDate(date.getUTCDate() - (date.getUTCDay() + 6) % 7);
+        start = date.toISOString().slice(0, 10);
+    }
     else if (period === 'month')
         start = today.slice(0, 7) + '-01';
     else if (period === 'quarter')
@@ -37,6 +42,8 @@ export function costRange(query, now = new Date()) {
         throw new Error('Invalid tool');
     if (query.page !== undefined && (!Number.isSafeInteger(query.page) || query.page < 1))
         throw new Error('Invalid page');
+    if (query.sessionScope !== undefined && !['period', 'cumulative'].includes(query.sessionScope))
+        throw new Error('Invalid session scope');
     return { period, start, end, timeZone };
 }
 const empty = () => ({ amount: 0, complete: true, requests: 0 });
@@ -138,7 +145,9 @@ export function buildCostReport(sessions, config, query = {}, options = {}) {
             m.period.complete = false;
             m.cumulative.complete = false;
         }
-    const all = [...conversations.values()].sort((a, b) => (b.period.amount ?? -1) - (a.period.amount ?? -1) || b.lastAt.localeCompare(a.lastAt) || a.id.localeCompare(b.id));
+    const order = query.sessionScope === 'cumulative' ? 'cumulative' : 'period';
+    const all = [...conversations.values()].filter(session => query.sessionScope !== 'period' || session.period.requests > 0)
+        .sort((a, b) => (b[order].amount ?? -1) - (a[order].amount ?? -1) || b.lastAt.localeCompare(a.lastAt) || a.id.localeCompare(b.id));
     const pages = Math.max(1, Math.ceil(all.length / 20)), page = Math.min(query.page ?? 1, pages);
     return { range, currency: config.currency, tool: query.tool ?? '', tools: [...tools].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
         totals, models: [...models.values()].sort((a, b) => (b.period.amount ?? -1) - (a.period.amount ?? -1) || a.model.localeCompare(b.model)),
