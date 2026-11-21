@@ -51,7 +51,7 @@ const exact = (value) => numeric(value) ? value.toLocaleString('zh-CN') : null;
 function format(section, item) {
     const scope = item.scope === 'agent' ? '子代理' : '主会话';
     if (section === 'requests') {
-        const request = row(item.model || '模型', [item.at ? time(item.at) : '', scope].filter(Boolean).join(' · '), numeric(item.cost?.amount) ? money(item.cost) : '', '');
+        const request = row(item.model || '模型', [item.at ? time(item.at) : '', scope].filter(Boolean).join(' · '), numeric(item.cost?.amount) ? money(item.cost) : item.cost?.unpricedModels?.length ? '未定价' : '', '');
         request.classList.add('request-row');
         const tokens = [];
         for (const [label, key] of [['输入总量', 'input'], ['输出总量', 'output'], ['未缓存输入', 'uncachedInput'],

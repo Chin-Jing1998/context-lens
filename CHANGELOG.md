@@ -4,6 +4,18 @@ All notable changes to Context Lens are documented in this file. Earlier Claude 
 
 ## [Unreleased]
 
+## [0.14.2] - 2026-11-21
+
+### 会话与悬浮球
+
+- macOS 和 Windows 现在按 Orca 当前工作区、选中的聊天或终端窗格跟随会话。切换对话时，之前的请求即使稍后返回，也不会覆盖当前读数。
+- 悬浮球优先显示上下文占用率。只有已用 token 时直接显示数量，悬停或展开可查看模型、窗口剩余量和距自动压缩的余量。
+- Antigravity 支持从会话数据库或同一会话的转录读取用量，迁移前后的重复请求只计一次。Windows 支持通过进程持有的会话锁定位 AGY 终端。
+
+### 第三方模型费用
+
+- 修复 Claude Code 经 `codex/` 路由使用 GPT 模型时的缺价问题。完整路由的自定义单价优先，费用岛、逐请求明细和历史汇总使用相同的计价规则。
+
 ## [0.14.1] - 2026-11-20
 
 ### 新增

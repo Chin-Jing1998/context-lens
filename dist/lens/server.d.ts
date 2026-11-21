@@ -3,6 +3,7 @@ import { SessionCollector } from './snapshot.js';
 import { CostHistory } from './cost-history.js';
 export declare function startServer(options?: {
     port?: number;
+    orcaRoot?: string;
     collector?: SessionCollector;
     pricingRefresh?: boolean;
     costHistory?: CostHistory;

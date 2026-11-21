@@ -12,6 +12,7 @@ import { officialModelMetadata } from './model-metadata.js';
 import { agySessionHistory, agyStamp, discoverAgySessions, readAgyFile, readAgyLive } from './agy.js';
 import { currentQuota } from './quota.js';
 import { readWorkspaceGit } from './workspace.js';
+import { orcaAccountRoots } from './orca-session.js';
 import { claudeDesktopSessions } from './claude-desktop.js';
 function totals(parsed, requests) {
     const sum = sumRequests(requests, parsed.complete);
@@ -62,8 +63,9 @@ export class SessionCollector {
     }
     list(refresh = false) {
         if (refresh || Date.now() - this.scanned > 2000) {
-            const files = [...claudeDesktopSessions.describe(discoverSessions(this.roots)),
-                ...discoverAgySessions(this.roots ? this.roots.agy ?? {} : undefined)];
+            const extra = this.roots ? undefined : orcaAccountRoots();
+            const files = [...claudeDesktopSessions.describe(discoverSessions(this.roots, extra)),
+                ...discoverAgySessions(this.roots ? this.roots.agy ?? {} : undefined, extra?.agy)];
             this.files = files.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
             this.scanned = Date.now();
         }
@@ -261,6 +263,8 @@ export class SessionCollector {
         const context = buildContext({ used, capacity: settings.capacity, budget: settings.budget, reportedPercent,
             categories: main.categories, buffer, view: file.client === 'agy' ? (agyBudgetView ? 'budget' : 'model') : options.view,
             at, windowEstimated: main.windowEstimated || agyLive?.percent != null });
+        if (file.client === 'codex' && used !== null && settings.budget.scope === 'total' && settings.budget.accuracy === 'reported' && settings.budget.tokens !== null)
+            context.remainingBeforeCompaction = Math.max(0, settings.budget.tokens - used);
         if (main.messageBreakdown?.length)
             context.messageBreakdown = main.messageBreakdown;
         let prices;

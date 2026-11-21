@@ -7,7 +7,7 @@ export declare const agyRoots: () => Required<AgyRoots>;
 export declare function agyHistory(root: string, id: string): string | undefined;
 export declare function agySessionHistory(file: SessionFile): string | undefined;
 export declare function agyStamp(file: string): string;
-export declare function discoverAgySessions(roots?: AgyRoots): SessionFile[];
+export declare function discoverAgySessions(roots?: AgyRoots, cliRoots?: string[]): SessionFile[];
 export declare function readAgySession(file: SessionFile, usageOnly?: boolean): ParsedSession;
 export declare function readAgyTranscript(file: SessionFile, usageOnly?: boolean): Promise<ParsedSession>;
 export declare function readAgyFile(file: SessionFile, history?: string, usageOnly?: boolean): Promise<ParsedSession>;

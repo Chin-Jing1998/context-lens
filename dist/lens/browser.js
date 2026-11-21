@@ -27,7 +27,7 @@ const storage = {
     catch { /* Private browsing can deny storage. */ } },
 };
 const params = new URLSearchParams(location.search);
-let selected = '';
+let selected = '', orcaSession = '';
 let view = params.get('view') === 'model' ? 'model' : 'budget';
 let theme = storage.get('theme') || 'auto';
 if (!['auto', 'light', 'dark'].includes(theme))
@@ -344,7 +344,7 @@ function renderRuntime(reset = false) {
             text($(id), value || '—');
         $(id).title = value || '';
     }
-    text($('runtime-client'), latest ? clientName(latest.session.client) + (latest.session.surface === 'cli' ? ' CLI' : '') : '—');
+    text($('runtime-client'), latest ? clientName(latest.session.agent ?? latest.session.client) + (latest.session.surface === 'cli' ? ' CLI' : '') : '—');
 }
 setInterval(() => { if (!document.documentElement.dataset.island || document.documentElement.dataset.island === 'runtime')
     renderRuntime(); }, 1000);
@@ -486,14 +486,22 @@ function render(snapshot) {
     const primaryPercent = claude ? c.windowPercent ?? null : c.percent;
     const approximate = c.windowEstimated || (!claude && c.view === 'budget' && c.budget.accuracy === 'estimated') ? '≈' : '';
     text($('context-title'), claude ? '上下文窗口' : snapshot.session.client === 'agy' ? (c.view === 'model' ? '上下文窗口' : '上下文预算') : '上下文');
-    const model = snapshot.session.modelName || (snapshot.session.model === 'unknown' ? '' : snapshot.session.model);
+    const model = snapshot.session.modelName || (snapshot.session.model === 'unknown' ? '' : snapshot.session.model)
+        || (snapshot.session.selectedModel ? '所选模型 ' + snapshot.session.selectedModel : '');
     text($('context-model'), model);
     $('context-model').hidden = !model;
     $('context-model').title = model;
-    text($('context-percent'), (primaryPercent === null ? '' : approximate) + pct(primaryPercent));
-    text($('settings-preview-percent'), primaryPercent === null ? '—' : approximate + Math.round(primaryPercent) + '%');
+    const primary = primaryPercent === null ? count(c.usedTokens) : approximate + pct(primaryPercent);
+    text($('context-percent'), primary);
+    text($('settings-preview-percent'), primaryPercent === null ? count(c.usedTokens) : approximate + Math.round(primaryPercent) + '%');
     $('settings-preview-percent').title = $('context-percent').textContent || '—';
     $('settings-preview-percent').parentElement.style.setProperty('--preview-usage', Math.max(0, Math.min(100, primaryPercent ?? 0)) * 3.6 + 'deg');
+    const summary = [
+        c.remainingWindowTokens == null ? '' : '窗口剩余 ' + c.remainingWindowTokens.toLocaleString('zh-CN'),
+        c.remainingBeforeCompaction == null ? '' : '距自动压缩 ' + c.remainingBeforeCompaction.toLocaleString('zh-CN'),
+    ].filter(Boolean).join(' · ');
+    text($('context-remaining'), summary);
+    $('context-remaining').hidden = !summary;
     const limit = claude ? c.modelTokens : c.denominator;
     text($('context-used'), (c.windowEstimated && c.usedTokens !== null ? '≈' : '') + count(c.usedTokens));
     text($('context-limit'), count(limit));
@@ -596,7 +604,7 @@ function render(snapshot) {
     const states = { warm: '有效', cold: '未建立', expired: '已过期', unknown: '未知' };
     text($('cache-status'), '主会话缓存：' + states[snapshot.cache.state]);
     $('cache-status').dataset.state = snapshot.cache.state;
-    text($('cost'), costNumber(snapshot.cost, snapshot.cost.currency));
+    text($('cost'), snapshot.cost.amount === null && snapshot.cost.unpricedModels.length ? '未定价' : costNumber(snapshot.cost, snapshot.cost.currency));
     $('cost').title = snapshot.cost.amount === null ? '' : snapshot.cost.amount + ' ' + snapshot.cost.currency;
     $('cost').classList.toggle('number', snapshot.cost.amount !== null);
     text($('cost-current-currency'), snapshot.cost.currency);
@@ -604,7 +612,7 @@ function render(snapshot) {
     text($('cost-session-model'), model || '—');
     $('cost-session-title').title = snapshot.session.title || snapshot.session.id;
     $('cost-session-model').title = snapshot.session.model || '';
-    text($('cost-session-client'), clientName(snapshot.session.client));
+    text($('cost-session-client'), clientName(snapshot.session.agent ?? snapshot.session.client));
     text($('cost-session-input'), count(usageValue(all, 'input')));
     text($('cost-session-output'), count(usageValue(all, 'output')));
     text($('cost-session-uncached'), count(all.uncachedInput ?? null));
@@ -632,7 +640,7 @@ async function refreshSnapshot() {
         return;
     }
     try {
-        const data = await api('/api/snapshot?session=' + encodeURIComponent(key) + '&view=' + mode);
+        const data = await api('/api/snapshot?' + new URLSearchParams({ session: key, view: mode, ...(orcaSession && { orcaSession }) }));
         if (request !== version || key !== selected || mode !== view || `${data.session.client}:${data.session.id}` !== key)
             return;
         render(data);
@@ -660,18 +668,19 @@ async function refreshActive() {
     try {
         const data = await api('/api/active');
         activeStatus(data.reason);
-        selectSession(data.selected || '');
+        selectSession(data.selected || '', data.orcaSession);
     }
     catch {
         activeStatus('自动定位连接中断');
     }
 }
-function selectSession(key) {
-    if (key === selected) {
+function selectSession(key, host = '') {
+    if (key === selected && host === orcaSession) {
         updateSelection();
         return;
     }
     selected = key;
+    orcaSession = host;
     latest = null;
     version++;
     detailUI.clear();
@@ -688,7 +697,7 @@ function selectSession(key) {
 }
 function costNumber(value, currency = '') {
     if (value.amount === null)
-        return '—';
+        return value.unpriced ? '未定价' : '—';
     const symbol = currency ? { USD: '$', CNY: '¥', JPY: '¥', EUR: '€', GBP: '£' }[currency] || currency + ' ' : '';
     const digits = value.amount > 0 && value.amount < 0.000001 ? 12 : value.amount > 0 && value.amount < 0.01 ? 6 : 2;
     const amount = value.amount > 0 && value.amount < 0.000000000001 ? value.amount.toExponential(2) : value.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: digits });
@@ -1436,7 +1445,7 @@ document.documentElement.dataset.theme = theme;
 window.addEventListener('context-lens-active', event => {
     const data = event.detail;
     activeStatus(data.reason);
-    selectSession(data.session);
+    selectSession(data.session, data.orcaSession);
 });
 window.addEventListener('context-lens-island', event => {
     const section = event.detail;

@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { atomicJson, lensHome, readPrices, record } from './settings.js';
 import { discoverSessions, sessionTitle } from './sessions.js';
+import { orcaAccountRoots } from './orca-session.js';
 import { claudeDesktopSessions } from './claude-desktop.js';
 import { readSession } from './reader.js';
 import { agySessionHistory, agyStamp, discoverAgySessions, readAgyFile } from './agy.js';
@@ -15,7 +16,8 @@ import { currentDeepSeekLogs, readDeepSeekCosts } from './cost-deepseek.js';
 const key = (s) => JSON.stringify([s.tool, s.id]);
 const stamp = (file) => { const s = fs.statSync(file); return `${s.ino}:${s.size}:${s.mtimeMs}`; };
 function defaultNative() {
-    return [...claudeDesktopSessions.describe(discoverSessions()), ...discoverAgySessions(), ...discoverSessions({ claude: '/__context_lens_no_claude__',
+    const extra = orcaAccountRoots();
+    return [...claudeDesktopSessions.describe(discoverSessions({}, extra)), ...discoverAgySessions(undefined, extra.agy), ...discoverSessions({ claude: '/__context_lens_no_claude__',
             codex: path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'archived_sessions') })];
 }
 export class CostHistory {
@@ -52,9 +54,16 @@ export class CostHistory {
     save(session, replaceSamples = false) {
         const id = key(session), previous = this.sessions.get(id);
         const excluded = new Set([...(previous?.excludedRequestIds ?? []), ...(session.excludedRequestIds ?? [])]);
+        let retained = previous?.requests ?? [];
+        if (session.tool === 'agy' && session.requests.length) {
+            // 同一历史从转录迁入数据库时，两种格式的请求 ID 不同，只保留当前格式的一份账。
+            const prefix = 'agy:' + session.id + ':step:';
+            const fromTranscript = session.requests.every(row => row.id.startsWith(prefix));
+            retained = retained.filter(row => row.id.startsWith(prefix) === fromTranscript);
+        }
         const next = { ...previous, ...session, title: session.title || previous?.title,
-            requests: replaceSamples ? [...new Map([...(previous?.requests ?? []), ...session.requests].map(r => [r.id, r])).values()]
-                : mergeRequests([...(previous?.requests ?? []), ...session.requests]) };
+            requests: replaceSamples ? [...new Map([...retained, ...session.requests].map(r => [r.id, r])).values()]
+                : mergeRequests([...retained, ...session.requests]) };
         if (excluded.size) {
             next.excludedRequestIds = [...excluded];
             next.requests = next.requests.filter(r => !excluded.has(r.id));

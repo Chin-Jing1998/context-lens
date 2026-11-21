@@ -12,7 +12,7 @@ export function officialModelMetadata(model) {
 export function priceModelIds(model) {
     const id = model.trim().toLowerCase()
         .replace(/^(?:google\/(?:models\/)?|models\/)(?=gemini-)/, '')
-        .replace(/^openai\/(?=gpt-|o[134](?:-|$))/, '')
+        .replace(/^(?:openai|codex)\/(?=gpt-|o[134](?:-|$))/, '')
         .replace(/^anthropic\/(?=claude-)/, '')
         .replace(/^deepseek\/(?=deepseek-)/, '')
         .replace(/^(?:z-ai|zai)\/(?=glm-)/, '')

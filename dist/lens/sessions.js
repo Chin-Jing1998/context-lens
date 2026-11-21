@@ -78,14 +78,23 @@ function codexTitles(root) {
     catch { /* Older clients can omit the title index. */ }
     return titles;
 }
-export function discoverSessions(roots = {}) {
+export function discoverSessions(roots = {}, additional) {
     const files = [];
     const claude = roots.claude ?? path.join(getClaudeConfigDir(os.homedir()), 'projects');
     const codex = roots.codex ?? path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'sessions');
-    const titles = codexTitles(codex);
     const desktopClaude = path.join(os.homedir(), '.claude', 'projects');
     const claudeRoots = !roots.claude && process.platform === 'darwin' && claude !== desktopClaude ? [claude, desktopClaude] : [claude];
-    for (const [client, root] of [...claudeRoots.map(root => ['claude', root]), ['codex', codex]]) {
+    const uniqueRoots = (values) => [...new Set(values.flatMap(value => {
+            try {
+                return [fs.realpathSync(value)];
+            }
+            catch {
+                return [];
+            }
+        }))];
+    for (const [client, root] of [...uniqueRoots([...claudeRoots, ...additional?.claude ?? []]).map(root => ['claude', root]),
+        ...uniqueRoots([codex, ...additional?.codex ?? []]).map(root => ['codex', root])]) {
+        const titles = client === 'codex' ? codexTitles(root) : new Map();
         for (const file of logFiles(root)) {
             try {
                 const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
@@ -148,7 +157,10 @@ export function discoverSessions(roots = {}) {
             catch { /* A session being rotated or removed is absent from this scan. */ }
         }
     }
-    return files.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    const counts = new Map();
+    for (const file of files)
+        counts.set(sessionKey(file), (counts.get(sessionKey(file)) ?? 0) + 1);
+    return files.filter(f => counts.get(sessionKey(f)) === 1).sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
 const envKeys = ['CLAUDE_CODE_AUTO_COMPACT_WINDOW', 'DISABLE_AUTO_COMPACT', 'DISABLE_COMPACT'];
 export function captureClaude(stdin, launch, hudWindow, account) {

@@ -56,6 +56,8 @@ function add(target, value) {
         target.amount = (target.amount ?? 0) + value.amount;
     target.requests += value.requests;
     target.complete &&= value.complete;
+    if (value.unpriced)
+        target.unpriced = true;
 }
 const key = (tool, id) => JSON.stringify([tool, id]);
 export function buildCostReport(sessions, config, query = {}, options = {}) {
@@ -110,7 +112,7 @@ export function buildCostReport(sessions, config, query = {}, options = {}) {
             continue;
         const cost = estimateCost([row], config, true, catalog);
         cost.unpricedModels.forEach(model => unpriced.add(model));
-        const value = { amount: cost.amount, complete: cost.complete, requests: 1 };
+        const value = { amount: cost.amount, complete: cost.complete, requests: 1, ...(cost.unpricedModels.length && { unpriced: true }) };
         const m = models.get(row.model) ?? { model: row.model || '未知模型', ...pair() };
         const id = key(session.tool, session.id);
         const s = conversations.get(id) ?? { tool: session.tool, toolName: session.toolName, id: session.id, title: session.title, lastAt: row.at, ...pair() };

@@ -24,6 +24,7 @@ export interface CostAmount {
     amount: number | null;
     complete: boolean;
     requests: number;
+    unpriced?: boolean;
 }
 export interface CostPair {
     period: CostAmount;

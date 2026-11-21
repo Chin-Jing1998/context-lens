@@ -20,6 +20,9 @@ export declare function lastUserActivity(entries: any[], client: 'claude' | 'cod
 export declare function discoverSessions(roots?: {
     claude?: string;
     codex?: string;
+}, additional?: {
+    claude: string[];
+    codex: string[];
 }): SessionFile[];
 export interface LiveClaude {
     stdin: StdinData;

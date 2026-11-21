@@ -34,6 +34,8 @@ export interface Context {
     warnings: string[];
     updatedAt: string | null;
     windowEstimated?: boolean;
+    remainingWindowTokens?: number;
+    remainingBeforeCompaction?: number;
     messageBreakdown?: MessageSegment[];
 }
 export type MessageKind = 'user' | 'assistant' | 'thinking' | 'toolCall' | 'toolResult' | 'tools' | 'system' | 'file' | 'plan' | 'summary' | 'other';
@@ -187,6 +189,8 @@ export interface SessionTelemetry {
 export interface HudSnapshot {
     session: Omit<SessionInfo, 'client'> & {
         client: string;
+        agent?: string;
+        selectedModel?: string;
     };
     context: Context;
     totals: {

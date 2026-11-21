@@ -65,7 +65,11 @@ export function buildContext(args) {
         const tokens = tokenNumber(m.tokens);
         return { ...m, tokens, id, label, color, percent: tokens !== null && denominator ? tokens / denominator * 100 : null };
     });
+    const remainingWindowTokens = args.used !== null && modelTokens !== null ? Math.max(0, modelTokens - args.used) : undefined;
+    const remainingBeforeCompaction = args.used !== null && !budget.disabled && budget.scope === 'total'
+        && budget.tokens !== null && budget.accuracy === 'configured' ? Math.max(0, budget.tokens - args.used) : undefined;
     return { usedTokens, modelTokens, budget, denominator, view, segments, warnings, windowPercent,
+        remainingWindowTokens, remainingBeforeCompaction,
         ...(args.windowEstimated ? { windowEstimated: true } : {}),
         percent: view === 'model' ? windowPercent : usedTokens !== null && denominator ? usedTokens / denominator * 100 : null, updatedAt: args.at ?? null };
 }
