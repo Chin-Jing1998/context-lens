@@ -98,7 +98,8 @@ export function orcaForegroundSelection(workspace: OrcaWorkspace, root = default
         WHERE domain='workspaceSession' AND part_key IN (?,?,?,?,?,?,?,?,?) AND length(payload)<=${MAX_STATE_BYTES}`).all(...keys);
       const parts = new Map(rows.map(row => [row.part_key, JSON.parse(String(row.payload)) as unknown]));
       if (parts.size < 3 || !parts.has(keys[0]) || !parts.has(keys[1])) return undefined;
-      if (parts.get(keys[0]) !== workspace.id || parts.get(keys[1]) !== 'local') return { kind: 'other' };
+      const workspaceHost = parts.get(keys[1]);
+      if (parts.get(keys[0]) !== workspace.id || (workspaceHost !== 'local' && workspaceHost !== null)) return { kind: 'other' };
 
       const tabType = parts.get(keys[4]);
       const visible = visibleGroupIds(parts.get(keys[7]));
@@ -111,33 +112,28 @@ export function orcaForegroundSelection(workspace: OrcaWorkspace, root = default
         ? groups.filter(g => g.id === activeGroupId)
         : groups.length === 1 ? groups : [];
       const group = matchedGroups.length === 1 ? matchedGroups[0] : undefined;
-      const groupTabId = typeof group?.activeTabId === 'string' ? group.activeTabId : undefined;
+      const fallbackTabId = tabType === 'agent-session' && groups.length === 0 ? parts.get(keys[3]) : undefined;
+      const tabId = typeof group?.activeTabId === 'string' ? group.activeTabId : fallbackTabId;
       const rawTabs = parts.get(keys[8]);
       const tabs = Array.isArray(rawTabs) ? rawTabs.map(record) : [];
-      const findUnifiedTab = (tabId: string) => {
-        const matches = tabs.filter(t => t.id === tabId
-          && (!group || !t.groupId || t.groupId === group.id)
-          && (!t.worktreeId || t.worktreeId === workspace.id));
-        return matches.length === 1 ? matches[0] : undefined;
-      };
+      const matches = typeof tabId === 'string' && tabId ? tabs.filter(t => t.id === tabId
+        && (!group || !t.groupId || t.groupId === group.id)
+        && (!t.worktreeId || t.worktreeId === workspace.id)) : [];
+      const tab = matches.length === 1 ? matches[0] : undefined;
+      const entityId = tab?.executionHostId === 'local' && tab.contentType === tabType
+        && typeof tab.entityId === 'string' && ORCA_ID.test(tab.entityId) ? tab.entityId : null;
 
-      if (tabType === 'agent-session') {
-        const targetTabId = groupTabId ?? (groups.length === 0 && typeof parts.get(keys[3]) === 'string' ? parts.get(keys[3]) as string : undefined);
-        const tab = targetTabId ? findUnifiedTab(targetTabId) : undefined;
-        const entityId = tab?.contentType === 'agent-session' && tab.executionHostId === 'local'
-          && typeof tab.entityId === 'string' && ORCA_ID.test(tab.entityId) ? tab.entityId : null;
-        return { kind: 'agent-session', sessionId: entityId };
-      }
+      // worktree activate 会清空工作区主机，此时由选中组和本机标签共同确认会话归属。
+      if (workspaceHost === null && (!entityId || group?.worktreeId !== workspace.id
+        || tab?.worktreeId !== workspace.id || tab.groupId !== group.id)) return { kind: 'other' };
+      if (tabType === 'agent-session') return { kind: 'agent-session', sessionId: entityId };
 
       if (tabType === 'terminal') {
         const legacyTab = parts.get(keys[2]);
         // 切换到聊天或文件时，全局终端标识可能仍保留上一次的值。
-        const tab = groupTabId ? findUnifiedTab(groupTabId) : undefined;
         if ((!tab || tab.contentType !== 'terminal') && parts.get(keys[3]) === legacyTab && typeof legacyTab === 'string' && ORCA_ID.test(legacyTab)) {
           return { kind: 'terminal', tabId: legacyTab };
         }
-        const entityId = tab?.contentType === 'terminal' && tab.executionHostId === 'local'
-          && typeof tab.entityId === 'string' && ORCA_ID.test(tab.entityId) ? tab.entityId : null;
         const worktreeTab = parts.get(keys[3]);
         if (entityId && (worktreeTab == null || worktreeTab === entityId || worktreeTab === tab?.id)) {
           return { kind: 'terminal', tabId: entityId };

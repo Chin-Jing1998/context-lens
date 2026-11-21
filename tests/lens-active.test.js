@@ -98,20 +98,72 @@ test('background output, tool results and synthetic inputs cannot move the activ
   assert.equal(lastUserActivity([{ type: 'user', timestamp: 'invalid', message: { content: 'Input' } }], 'claude'), undefined);
 });
 
+function openOrcaProfile(root) {
+  const profileDir = path.join(root, 'profiles', 'default');
+  fs.mkdirSync(profileDir, { recursive: true });
+  fs.writeFileSync(path.join(root, 'orca-profile-index.json'), JSON.stringify({ activeProfileId: 'default' }));
+  const profileDb = new DatabaseSync(path.join(profileDir, 'profile-state.db'));
+  profileDb.exec('CREATE TABLE profile_state_document_parts (domain TEXT, part_key TEXT, payload TEXT NOT NULL, PRIMARY KEY (domain, part_key))');
+  const write = profileDb.prepare("INSERT OR REPLACE INTO profile_state_document_parts VALUES ('workspaceSession', ?, ?)");
+  return { profileDb, setPart: (key, value) => write.run(JSON.stringify(key), JSON.stringify(value)) };
+}
+
+test('orca worktree activate 清空执行主机后，跟随各工作区唯一选中的本机标签', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'context-lens-orca-'));
+  const { profileDb, setPart } = openOrcaProfile(root);
+  try {
+    const claude = { id: 'wt-claude', cwd: '/project/claude', terminals: 0 };
+    const agy = { id: 'wt-agy', cwd: '/project/agy', terminals: 0 };
+    const tabFor = w => ({ id: 'tab', groupId: 'group', worktreeId: w.id,
+      executionHostId: 'local', contentType: 'agent-session', entityId: 'session-' + w.id });
+    for (const w of [claude, agy]) {
+      setPart(['activeTabTypeByWorktree', w.id], 'agent-session');
+      setPart(['activeTabIdByWorktree', w.id], null);
+      setPart(['activeGroupIdByWorktree', w.id], 'group');
+      setPart(['tabGroupLayouts', w.id], { type: 'leaf', groupId: 'group' });
+      setPart(['tabGroups', w.id], [{ id: 'group', worktreeId: w.id, activeTabId: 'tab' }]);
+      setPart(['unifiedTabs', w.id], [tabFor(w)]);
+    }
+    setPart(['activeWorktreeId'], claude.id);
+    assert.equal(orcaForegroundSelection(claude, root), undefined);
+    setPart(['activeWorkspaceExecutionHostId'], null);
+    const other = { kind: 'other' };
+    for (const [selected, inactive] of [[claude, agy], [agy, claude], [claude, agy]]) {
+      setPart(['activeWorktreeId'], selected.id);
+      assert.deepEqual(orcaForegroundSelection(selected, root), { kind: 'agent-session', sessionId: tabFor(selected).entityId });
+      assert.deepEqual(orcaForegroundSelection(inactive, root), other);
+    }
+    setPart(['activeWorkspaceExecutionHostId'], 'ssh:box');
+    assert.deepEqual(orcaForegroundSelection(claude, root), other);
+    setPart(['activeWorkspaceExecutionHostId'], null);
+    const tab = tabFor(claude);
+    for (const tabs of [[{ ...tab, executionHostId: 'ssh:box' }], [tabFor(agy)], [{ ...tab, worktreeId: null }],
+      [{ ...tab, groupId: 'other' }], [tab, { ...tab, entityId: 'another-session' }]]) {
+      setPart(['unifiedTabs', claude.id], tabs);
+      assert.deepEqual(orcaForegroundSelection(claude, root), other);
+    }
+    setPart(['activeTabTypeByWorktree', claude.id], 'terminal');
+    setPart(['activeTabId'], 'term');
+    setPart(['activeTabIdByWorktree', claude.id], 'term');
+    setPart(['unifiedTabs', claude.id], [tab]);
+    assert.deepEqual(orcaForegroundSelection(claude, root), other);
+    setPart(['unifiedTabs', claude.id], [{ ...tab, contentType: 'terminal', entityId: 'term' }]);
+    assert.deepEqual(orcaForegroundSelection(claude, root), { kind: 'terminal', tabId: 'term' });
+    setPart(['tabGroups', claude.id], []);
+    setPart(['activeTabTypeByWorktree', claude.id], 'agent-session');
+    setPart(['activeTabIdByWorktree', claude.id], tab.id);
+    setPart(['unifiedTabs', claude.id], [tab]);
+    assert.deepEqual(orcaForegroundSelection(claude, root), other);
+  } finally {
+    profileDb.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('Orca 前台结构化代理会话与选项卡识别只采信本机工作区的唯一选中项', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'context-lens-orca-'));
   try {
-    const profileDir = path.join(root, 'profiles', 'default');
-    fs.mkdirSync(profileDir, { recursive: true });
-    fs.writeFileSync(path.join(root, 'orca-profile-index.json'), JSON.stringify({ activeProfileId: 'default' }));
-
-    const profileDb = new DatabaseSync(path.join(profileDir, 'profile-state.db'));
-    profileDb.exec('CREATE TABLE profile_state_document_parts (domain TEXT NOT NULL, part_key TEXT NOT NULL, payload TEXT NOT NULL)');
-    const setPart = (key, value) => {
-      const partKey = JSON.stringify(key);
-      profileDb.prepare("DELETE FROM profile_state_document_parts WHERE domain='workspaceSession' AND part_key=?").run(partKey);
-      profileDb.prepare("INSERT INTO profile_state_document_parts (domain, part_key, payload) VALUES ('workspaceSession', ?, ?)").run(partKey, JSON.stringify(value));
-    };
+    const { profileDb, setPart } = openOrcaProfile(root);
 
     const domainDb = new DatabaseSync(path.join(root, 'agent-session-domain.db'));
     domainDb.exec('CREATE TABLE agent_session_records (session_id TEXT PRIMARY KEY, record_json TEXT NOT NULL)');
