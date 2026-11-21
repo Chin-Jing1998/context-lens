@@ -1,6 +1,6 @@
 {
   "name": "context-lens",
-  "version": "0.14.2",
+  "version": "0.14.3",
   "description": "Context and usage HUD maintained by Chin-Jing1998, derived from Claude HUD",
   "type": "module",
   "main": "dist/index.js",

@@ -4,6 +4,13 @@ All notable changes to Context Lens are documented in this file. Earlier Claude 
 
 ## [Unreleased]
 
+## [0.14.3] - 2026-11-21
+
+### 修复
+
+- 使用 `orca worktree activate` 切换本机工作区后，悬浮球会跟随该工作区选中的 Claude Code 或 AGY 对话，自动更新上下文和费用。工作区执行主机字段为空时，按选中的标签组和标签核对会话归属。
+- macOS 悬浮球首次汇总长对话及子代理时可等待快照读取完成。切换对话时会取消旧请求，避免迟到的数据覆盖当前读数。
+
 ## [0.14.2] - 2026-11-21
 
 ### 会话与悬浮球
