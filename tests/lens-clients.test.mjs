@@ -48,6 +48,8 @@ function agyGeneration(response, uncached, read, output, used, breakdown) {
 test('Antigravity 从两个数据根定位会话、读取活动 WAL 并按响应去重', async t => {
   const sqlite = await import('node:sqlite').catch(() => null);
   if (!sqlite) { t.skip('当前 Node 未提供 SQLite'); return; }
+  const openDatabases = [];
+  t.after(() => { for (const database of openDatabases) database.close(); });
   const root = temp(t);
   const desktop = path.join(root, 'desktop'), cli = path.join(root, 'cli');
   const summary = `CREATE TABLE conversation_summaries (conversation_id TEXT, title TEXT, workspace_uris TEXT,
@@ -64,7 +66,7 @@ test('Antigravity 从两个数据根定位会话、读取活动 WAL 并按响应
   const session = (directory, id) => {
     const db = new sqlite.DatabaseSync(path.join(directory, 'conversations', id + '.db'));
     db.exec('PRAGMA journal_mode=WAL; CREATE TABLE trajectory_meta (cascade_id TEXT); CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB); CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, metadata BLOB, status INTEGER, step_payload BLOB)');
-    db.prepare('INSERT INTO trajectory_meta VALUES (?)').run(id); t.after(() => db.close());
+    db.prepare('INSERT INTO trajectory_meta VALUES (?)').run(id); openDatabases.push(db);
     return db;
   };
   const desktopDb = session(desktop, one), cliDb = session(cli, two);
@@ -162,6 +164,15 @@ test('Antigravity 从两个数据根定位会话、读取活动 WAL 并按响应
   assert.deepEqual([old.totals.all.uncachedInput, old.totals.all.cacheRead, old.totals.all.output], [17, 90, 5]);
   assert.ok(old.totals.all.missingTokens.includes('cacheWrite'));
   assert.deepEqual([old.activity.skills.reads, old.activity.commands.total, old.activity.complete], [1, 0, false]);
+  const migrated = session(cli, oldId);
+  collector.list(true);
+  assert.equal((await collector.get('agy:' + oldId)).totals.all.input, 107);
+  await historyCosts.refresh(true);
+  migrated.prepare('INSERT INTO gen_metadata VALUES (?,?)').run(0, agyGeneration('migrated-request',17,90,5,12100));
+  assert.equal((await collector.get('agy:' + oldId)).totals.all.requests, 1);
+  await historyCosts.refresh(true);
+  const migratedReport = historyCosts.report({ period:'custom', start:'2026-01-02', end:'2026-01-02', timeZone:'UTC' });
+  assert.equal(migratedReport.sessions.find(s => s.id === oldId).cumulative.requests, 1);
 });
 
 test('Codex 仅采用自己会话中各额度窗口的最新有效记录', async () => {

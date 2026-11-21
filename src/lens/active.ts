@@ -7,7 +7,7 @@ import { readDocument } from './settings.js';
 import { sessionKey, validId, type SessionFile } from './sessions.js';
 import { ClaudeDesktopSessions, claudeDesktopSessions } from './claude-desktop.js';
 import { agyId, agyRoots } from './agy.js';
-import { isOrcaApp, isOrcaTerminalHost, orcaPaneAgent, orcaForegroundSelection, orcaPanePid, orcaWorkspace, withinWorkspace } from './orca.js';
+import { isOrcaApp, isOrcaTerminalHost, useWindowsOrcaInstall, orcaPaneAgent, orcaForegroundSelection, orcaPanePid, orcaWorkspace, withinWorkspace } from './orca.js';
 
 import { readOrcaSession, orcaLocalPath, orcaAccountRoots, type OrcaSession } from './orca-session.js';
 
@@ -15,7 +15,7 @@ interface Running { key: string; pid: number; evidence: string }
 export interface ActiveResult { orcaSession?: string; selected: string | null; reason: string; candidates: Running[] }
 export interface VisibleSessionHint { id?: string; title?: string; cwd?: string; tty?: string }
 export interface ActiveSessionInfo { id: string; client: string; surface?: 'desktop' | 'cli'; parentId?: string; title?: string; cwd: string; lastUserAt?: number }
-export interface WindowsProcess { ProcessId: number; ParentProcessId: number; Name: string; CommandLine?: string | null }
+export interface WindowsProcess { ProcessId: number; ParentProcessId: number; Name: string; CommandLine?: string | null; ExecutablePath?: string }
 export function isClaudeProcess(command: string): boolean {
   return /(?:^|\/|\s)claude(?:\.exe)?(?:$|\s)|@anthropic-ai\/claude-code(?:\/|$)/i.test(command.replaceAll('\\', '/'));
 }
@@ -103,6 +103,7 @@ export function orcaAgentSessionResult(key: string | null, available: ReadonlySe
 /** Read live ownership evidence, never infer the active session from the newest historical log. */
 export class ActiveSessions {
   private paneAgent?: OrcaSession;
+  private windowsOrca = new Map<number, string>();
   private windowsOwners: Running[] = [];
   private ownersPending = false;
   terminalSession(id: string): OrcaSession | undefined { return this.paneAgent?.id === id ? this.paneAgent : undefined; }
@@ -157,6 +158,7 @@ export class ActiveSessions {
       } catch { running = []; }
     }
     if (targetPid && isOrcaApp(this.commands.get(targetPid) ?? '')) {
+      useWindowsOrcaInstall(this.windowsOrca.get(targetPid));
       const workspace = orcaWorkspace();
       const selection = workspace ? orcaForegroundSelection(workspace) : undefined;
       if (!workspace || !selection) return orcaAgentSessionResult(null, available, client);
@@ -256,12 +258,14 @@ export class ActiveSessions {
     commands.clear();
     try {
       if (process.platform === 'win32') {
-        const command = "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); @(Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,CommandLine) | ConvertTo-Json -Compress";
+        const command = "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); @(Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,CommandLine,ExecutablePath) | ConvertTo-Json -Compress";
         const ps = execFileSync(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe'),
           ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64')],
           { encoding: 'utf8', timeout: 3500, maxBuffer: 4 * 1024 * 1024, windowsHide: true });
         const rows: WindowsProcess[] = JSON.parse(ps.replace(/^\uFEFF/, ''));
+        this.windowsOrca.clear();
         for (const row of rows) {
+          if (/^orca\.exe$/i.test(row.Name) && row.ExecutablePath) this.windowsOrca.set(row.ProcessId, row.ExecutablePath);
           if (!Number.isSafeInteger(row.ProcessId) || row.ProcessId < 2) continue;
           this.parents.set(row.ProcessId, row.ParentProcessId); commands.set(row.ProcessId, row.Name + ' ' + (row.CommandLine || ''));
         }

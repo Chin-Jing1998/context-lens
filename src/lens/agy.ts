@@ -266,6 +266,9 @@ export async function readAgyTranscript(file: SessionFile, usageOnly = false): P
       if (line.length > maxBlob) { result.complete = false; continue; }
       try {
         const entry = record(JSON.parse(line)), at = time(entry.created_at), index = tokenNumber(entry.step_index);
+        if ([entry.session_id, entry.conversation_id].some(value => typeof value === 'string' && value && value !== id)) {
+          result.complete = false; continue;
+        }
         if (at !== undefined) { first ??= at; last = at; }
         if (!usageOnly && index !== null) activities.accept(entry, index);
         if (index === null || tokenNumber(entry.input_tokens) === null || !['PLANNER_RESPONSE', 'CHECKPOINT'].includes(entry.type)) continue;

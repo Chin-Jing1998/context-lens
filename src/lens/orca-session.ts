@@ -103,8 +103,9 @@ export function orcaLocalPath(value: unknown, distro: unknown, platform = proces
   if (typeof value !== 'string' || !value || value.includes('\0')) return undefined;
   if (platform !== 'win32') return path.posix.isAbsolute(value) ? value : undefined;
   if (/^[a-z]:[\\/]/i.test(value)) return path.win32.normalize(value);
-  if (typeof distro !== 'string' || !/^[\w][\w. -]{0,79}$/.test(distro)) return undefined;
   const unc = /^\\\\(?:wsl\.localhost|wsl\$)\\([^\\]+)\\(.*)$/i.exec(value);
+  distro ??= unc?.[1];
+  if (typeof distro !== 'string' || !/^[\w][\w. -]{0,79}$/.test(distro)) return undefined;
   if (unc && unc[1].toLowerCase() !== distro.toLowerCase()) return undefined;
   const linux = unc ? '/' + unc[2].replaceAll('\\', '/') : value;
   if (!linux.startsWith('/') || linux.startsWith('//') || linux.includes('\\') || linux.split('/').includes('..')) return undefined;
@@ -171,11 +172,11 @@ export function readOrcaSession(id: string, workspaceId?: string, root = default
     db.exec('BEGIN');
     const row = db.prepare(`SELECT session_id, json_extract(record_json,'$.sessionId') id,
       json_extract(record_json,'$.provider') agent, json_extract(record_json,'$.location.workspaceId') AS workspace_id,
-      json_extract(record_json,'$.providerHandleChain') handles, json_extract(record_json,'$.lease.provenHandleLinkId') proven,
+      CASE WHEN length(json_extract(record_json,'$.providerHandleChain')) <= 262144 THEN json_extract(record_json,'$.providerHandleChain') END handles, json_extract(record_json,'$.lease.provenHandleLinkId') proven,
       json_extract(record_json,'$.options.model') model, json_extract(record_json,'$.options.effort') effort,
       json_extract(record_json,'$.conversationName') title, json_extract(record_json,'$.lastTurn.state') state,
       json_extract(record_json,'$.lastTurn.outcome') outcome, json_extract(record_json,'$.createdAt') created,
-      json_extract(record_json,'$.updatedAt') updated FROM agent_session_records WHERE session_id=? AND length(record_json)<=262144
+      json_extract(record_json,'$.updatedAt') updated FROM agent_session_records WHERE session_id=?
       AND json_extract(record_json,'$.location.executionHostId')='local'`).get(id);
     if (!row || row.id !== id || typeof row.workspace_id !== 'string' || workspaceId !== undefined && workspaceId !== row.workspace_id) return undefined;
     const agent = displayLabel(row.agent, 80);

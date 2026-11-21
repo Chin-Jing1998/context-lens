@@ -74,7 +74,9 @@ export function discoverSessions(roots: { claude?: string; codex?: string } = {}
   const codex = roots.codex ?? path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'sessions');
   const desktopClaude = path.join(os.homedir(), '.claude', 'projects');
   const claudeRoots = !roots.claude && process.platform === 'darwin' && claude !== desktopClaude ? [claude, desktopClaude] : [claude];
-  const uniqueRoots = (values: string[]) => [...new Set(values.map(v => path.resolve(v)))];
+  const uniqueRoots = (values: string[]) => [...new Set(values.flatMap(value => {
+    try { return [fs.realpathSync(value)]; } catch { return []; }
+  }))];
   for (const [client, root] of [...uniqueRoots([...claudeRoots, ...additional?.claude ?? []]).map(root => ['claude', root] as const),
     ...uniqueRoots([codex, ...additional?.codex ?? []]).map(root => ['codex', root] as const)]) {
     const titles = client === 'codex' ? codexTitles(root) : new Map<string, string>();
@@ -127,7 +129,9 @@ export function discoverSessions(roots: { claude?: string; codex?: string } = {}
       } catch { /* A session being rotated or removed is absent from this scan. */ }
     }
   }
-  return files.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const counts = new Map<string, number>();
+  for (const file of files) counts.set(sessionKey(file), (counts.get(sessionKey(file)) ?? 0) + 1);
+  return files.filter(f => counts.get(sessionKey(f)) === 1).sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
 
 export interface LiveClaude {

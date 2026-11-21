@@ -25,10 +25,18 @@ export function withinWorkspace(cwd: string, workspace: string): boolean {
   return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith('..' + path.sep));
 }
 
+let foregroundCli: string | undefined;
+export function useWindowsOrcaInstall(executable: string | undefined): void {
+  if (process.platform !== 'win32') return;
+  foregroundCli = executable && path.win32.isAbsolute(executable) && path.win32.basename(executable).toLowerCase() === 'orca.exe'
+    ? path.win32.join(path.win32.dirname(executable), 'resources', 'bin', 'orca.exe') : undefined;
+}
+
 function orcaResult(args: string[]): Record<string, any> {
   const candidates = process.platform === 'darwin'
     ? [path.join(os.homedir(), 'Applications/Orca.app/Contents/Resources/bin/orca'), '/Applications/Orca.app/Contents/Resources/bin/orca']
-    : [path.join(process.env.LOCALAPPDATA ?? os.homedir(), 'Programs/Orca/resources/bin/orca.exe')];
+    : [foregroundCli, path.join(process.env.LOCALAPPDATA ?? os.homedir(), 'Programs/Orca/resources/bin/orca.exe'),
+      path.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'Orca/resources/bin/orca.exe')].filter((p): p is string => !!p);
   const executable = candidates.find(existsSync);
   if (!executable) return {};
   try {
@@ -124,10 +132,10 @@ export function orcaForegroundSelection(workspace: OrcaWorkspace, root = default
       if (tabType === 'terminal') {
         const legacyTab = parts.get(keys[2]);
         // 切换到聊天或文件时，全局终端标识可能仍保留上一次的值。
-        if (parts.get(keys[3]) === legacyTab && typeof legacyTab === 'string' && ORCA_ID.test(legacyTab)) {
+        const tab = groupTabId ? findUnifiedTab(groupTabId) : undefined;
+        if ((!tab || tab.contentType !== 'terminal') && parts.get(keys[3]) === legacyTab && typeof legacyTab === 'string' && ORCA_ID.test(legacyTab)) {
           return { kind: 'terminal', tabId: legacyTab };
         }
-        const tab = groupTabId ? findUnifiedTab(groupTabId) : undefined;
         const entityId = tab?.contentType === 'terminal' && tab.executionHostId === 'local'
           && typeof tab.entityId === 'string' && ORCA_ID.test(tab.entityId) ? tab.entityId : null;
         const worktreeTab = parts.get(keys[3]);

@@ -24,6 +24,7 @@ const report = (now=at) => ({used:{kind:'report',model,usedTokens:371493,windowT
 
 test('Orca 当前代次按回合、清空边界和主线程选择读数，A/B/A 互不串读', t => {
   const f=fixture(t); f.record('a','claude','native-a'); f.record('b','custom-agent');
+  f.db.prepare("UPDATE agent_session_records SET record_json=json_set(record_json,'$.lastTurn.reply',?) WHERE session_id='a'").run('x'.repeat(300000));
   f.add('a',2,report()); f.add('a',3,{used:{kind:'unknown',capturedAt:at+3}},{hidden:1});
   f.add('a',4,{used:{kind:'unknown',capturedAt:at+4}},{root:0});
   f.add('a',8,{used:{kind:'unknown',capturedAt:at+8}},{epoch:'previous'});
