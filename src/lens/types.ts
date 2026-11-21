@@ -109,7 +109,7 @@ export interface SessionTelemetry {
 }
 
 export interface HudSnapshot {
-  session: Omit<SessionInfo, 'client'> & { client: string; agent?: string }; context: Context;
+  session: Omit<SessionInfo, 'client'> & { client: string; agent?: string; selectedModel?: string }; context: Context;
   totals: { main: Totals; agents: Totals; all: Totals; agentCount: number };
   cache: CacheState; cost: CostEstimate; nativeCostUsd: number | null;
   activity?: SessionActivity;

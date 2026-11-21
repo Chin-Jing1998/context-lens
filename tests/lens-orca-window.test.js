@@ -70,6 +70,7 @@ test('Orca 路由从本地 HTTP 快照、逐请求明细和历史账本按同一
   assert.equal(history.totals.period.amount,main.cost.amount);
   assert.equal((await fetch(url+'/api/snapshot?session=claude:local&orcaSession=other')).status,404);
   const other=await get('/api/snapshot?session=orca:other');assert.equal(other.session.agent,'other-agent');assert.equal(other.totals.all.requests,null);
+  assert.equal(other.session.model,'');assert.equal(other.session.selectedModel,model);
   assert.equal((await get('/api/details?session=orca:other')).supported,false);
   const writePrices=prices=>fs.writeFileSync(path.join(f.root,'config.json'),JSON.stringify({currency:'USD',prices}));
   writePrices({'*':{input:1,output:1,cacheRead:1},[model]:{input:0,output:0,cacheRead:0}});

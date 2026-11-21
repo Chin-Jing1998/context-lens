@@ -1009,6 +1009,8 @@ struct LensVisibility {
                                     "settingsPresented": settingsPresented,
                                     "orbitVisible": orbit.isVisible, "orbitOpen": orbitOpen, "island": activeIsland.rawValue,
                                     "selection": selection, "targetPid": targetPid ?? 0,
+                                    "ballReading": contextReading(ballView.percent, usedTokens: ballView.usedTokens),
+                                    "contextIsland": orbitView.labels[.context]?.value ?? "—", "costIsland": orbitView.labels[.cost]?.value ?? "—",
                                     "ballWindow": ball.windowNumber, "orbitWindow": orbit.windowNumber, "panelWindow": panel.windowNumber,
                                     "ballFrame": NSStringFromRect(ball.frame), "orbitFrame": NSStringFromRect(orbit.frame), "panelFrame": NSStringFromRect(panel.frame),
                                     "contentWidth": web.frame.width, "contentHeight": web.frame.height,
@@ -1625,6 +1627,7 @@ struct LensVisibility {
         }
     }
     private func readBallSnapshot(key: String, mode: String, revision: Int) async {
+        defer { if revision == targetRevision { recordUIAudit() } }
         var url = URLComponents(url: origin.appendingPathComponent("api/snapshot"), resolvingAgainstBaseURL: false)!
         url.queryItems = [URLQueryItem(name: "session", value: key), URLQueryItem(name: "view", value: mode), URLQueryItem(name: "git", value: "0")]
         if !orcaSession.isEmpty { url.queryItems?.append(URLQueryItem(name: "orcaSession", value: orcaSession)) }
@@ -1657,7 +1660,8 @@ struct LensVisibility {
             } else { orbitView.labels[.runtime]?.value = "—" }
             let tool = session["agent"] as? String ?? client
             let name = ["claude": "Claude", "codex": "Codex", "agy": "Antigravity", "antigravity": "Antigravity", "opencode": "OpenCode", "mimocode": "MiMo", "deepseek": "DeepSeek", "zcode": "ZCode"][tool] ?? tool
-            let model = (session["modelName"] ?? session["model"]) as? String ?? ""
+            let served = (session["modelName"] ?? session["model"]) as? String ?? ""
+            let model = served.isEmpty || served == "unknown" ? (session["selectedModel"] as? String).map { "所选模型 " + $0 } ?? "" : served
             let contextMode = context["view"] as? String ?? mode
             let help = tool == "claude" ? "当前会话上下文窗口" : tool == "agy" && contextMode == "budget" ? "上下文预算" : contextMode == "budget" ? "压缩预算" : "模型窗口"
             var summary = [model, help].filter { !$0.isEmpty && $0 != "unknown" }

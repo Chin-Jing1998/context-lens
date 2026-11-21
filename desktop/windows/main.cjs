@@ -68,7 +68,9 @@ function surface() {
     cost: typeof cost?.amount === 'number' ? (cost.complete ? '' : '≥') + (cost.currency === 'USD' ? '$' : cost.currency === 'CNY' ? '¥' : cost.currency + ' ') + (cost.amount > 0 && cost.amount < .01 ? Number(cost.amount.toPrecision(3)).toString() : cost.amount.toFixed(2)) : cost?.unpricedModels?.length ? '未定价' : '—',
     commands: activityCount('commands'), skills: activityCount('skills'), mcp: activityCount('mcp'),
     runtime: seconds === null ? '—' : (timing.startAccuracy === 'observed' ? '≈' : '') + (seconds >= 3600 ? Math.floor(seconds / 3600) + 'h ' + String(Math.floor(seconds / 60) % 60).padStart(2, '0') + 'm' : Math.floor(seconds / 60) + 'm ' + String(seconds % 60).padStart(2, '0') + 's') };
-  const summary = [snapshot?.session?.modelName || snapshot?.session?.model, percent === null && Number.isFinite(tokens) ? '已用 token' : '',
+  const model = snapshot?.session?.modelName || (snapshot?.session?.model !== 'unknown' && snapshot?.session?.model)
+    || (snapshot?.session?.selectedModel ? '所选模型 ' + snapshot.session.selectedModel : '');
+  const summary = [model, percent === null && Number.isFinite(tokens) ? '已用 token' : '',
     Number.isFinite(context?.remainingWindowTokens) ? '窗口剩余 ' + context.remainingWindowTokens.toLocaleString('zh-CN') + ' token' : '',
     Number.isFinite(context?.remainingBeforeCompaction) ? '距自动压缩 ' + context.remainingBeforeCompaction.toLocaleString('zh-CN') + ' token' : ''].filter(s => s && s !== 'unknown').join('\n');
   const data = { summary, estimated: context?.windowEstimated === true, style: surfaceStyle(), reduceMotion: preferences.reduceMotion || nativeTheme.prefersReducedMotion, percent, values, island };

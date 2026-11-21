@@ -40,7 +40,9 @@ host.onEvent((name, detail) => {
   const text = percent === null ? typeof detail.values?.context === 'string' ? detail.values.context : '—' : (detail.estimated ? '≈' : '') + Math.round(percent) + '%';
   const ballValue = document.getElementById('ball-value'); reading.textContent = ballValue.textContent = text;
   for (const item of [reading, ballValue]) item.style.fontSize = text.length > 4 ? '12px' : '';
-  const arc = 2 * Math.PI * 23; document.getElementById('ball-progress').style.strokeDasharray = `${percent === null ? 0 : arc * Math.min(100, percent) / 100} ${arc}`;
+  const progress = document.getElementById('ball-progress');
+  progress.style.visibility = percent === null ? 'hidden' : 'visible';
+  const arc = 2 * Math.PI * 23; progress.style.strokeDasharray = `${percent === null ? 0 : arc * Math.min(100, percent) / 100} ${arc}`;
   for (const [key, item] of sectors) { item.value.textContent = detail.values?.[key] ?? '—'; item.group.setAttribute('aria-pressed', String(detail.island === key)); }
 });
 host.postMessage({ action: 'surface-ready' });

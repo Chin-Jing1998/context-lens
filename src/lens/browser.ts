@@ -332,7 +332,8 @@ function render(snapshot: HudSnapshot): void {
   const primaryPercent = claude ? c.windowPercent ?? null : c.percent;
   const approximate = c.windowEstimated || (!claude && c.view === 'budget' && c.budget.accuracy === 'estimated') ? '≈' : '';
   text($('context-title'), claude ? '上下文窗口' : snapshot.session.client === 'agy' ? (c.view === 'model' ? '上下文窗口' : '上下文预算') : '上下文');
-  const model = snapshot.session.modelName || (snapshot.session.model === 'unknown' ? '' : snapshot.session.model);
+  const model = snapshot.session.modelName || (snapshot.session.model === 'unknown' ? '' : snapshot.session.model)
+    || (snapshot.session.selectedModel ? '所选模型 ' + snapshot.session.selectedModel : '');
   text($('context-model'), model); $('context-model').hidden = !model; $('context-model').title = model;
   const primary = primaryPercent === null ? count(c.usedTokens) : approximate + pct(primaryPercent);
   text($('context-percent'), primary);

@@ -14,7 +14,7 @@ export function orcaSnapshot(host: OrcaSession, view: 'model' | 'budget', native
   timing.status = states[host.state] ?? 'unknown';
   const unknown = { ...sumRequests([], false), requests: null };
   const base: HudSnapshot = native ?? {
-    session: { client: 'orca', agent: host.agent, id: host.id, model: host.model, title: host.title, cwd: '',
+    session: { client: 'orca', agent: host.agent, id: host.id, model: '', title: host.title, cwd: '',
       updatedAt: host.updatedAt === null ? '' : new Date(host.updatedAt).toISOString() },
     context: buildContext({ capacity: null, used: null, budget: unknownBudget, view: 'model' }),
     totals: { main: unknown, agents: unknown, all: unknown, agentCount: 0 }, nativeCostUsd: null,
@@ -22,7 +22,7 @@ export function orcaSnapshot(host: OrcaSession, view: 'model' | 'budget', native
     cache: { state: 'unknown', accuracy: 'unknown', source: '缓存状态未上报', expiresAt: null },
     warnings: [], capturedAt: stamp, hasRequestDetails: false
   };
-  const result: HudSnapshot = { ...base, session: { ...base.session, model: base.session.model && base.session.model !== 'unknown' ? base.session.model : host.model || base.session.model, title: base.session.title && base.session.title !== '未命名对话' ? base.session.title : host.title || base.session.title },
+  const result: HudSnapshot = { ...base, session: { ...base.session, ...(host.model && { selectedModel: host.model }), title: base.session.title && base.session.title !== '未命名对话' ? base.session.title : host.title || base.session.title },
     timing: base.timing?.status && base.timing.status !== 'unknown' ? base.timing : { ...(base.timing ?? timing), status: timing.status },
     telemetry: { ...(host.effort && {effort: host.effort}), ...base.telemetry } };
   const fact = host.facts;
