@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { SessionCollector } from './snapshot.js';
 import { atomicJson, configPath, readPrices, validatePrices } from './settings.js';
 import { nativeClients, sessionKey, validId } from './sessions.js';
+import { readOrcaSession } from './orca-session.js';
+import { orcaSnapshot } from './orca-context.js';
 import { ActiveSessions } from './active.js';
 import { readOfficialPrices, referenceRates, refreshOfficialPrices } from './pricing.js';
 import { CostHistory } from './cost-history.js';
@@ -20,10 +22,12 @@ const costKey = (key: string) => {
   return extra === undefined && costClients.includes(client) && validId(id);
 };
 
-export async function startServer(options: { port?: number; collector?: SessionCollector; pricingRefresh?: boolean; costHistory?: CostHistory } = {}): Promise<{ server: http.Server; url: string }> {
+export async function startServer(options: { port?: number; orcaRoot?: string; collector?: SessionCollector; pricingRefresh?: boolean; costHistory?: CostHistory } = {}): Promise<{ server: http.Server; url: string }> {
   const collector = options.collector ?? new SessionCollector();
   const costs = options.costHistory ?? new CostHistory(options.collector ? { native: () => collector.list(), sources: [] } : {});
   const active = new ActiveSessions();
+  const hostSession = (id: string) => readOrcaSession(id, undefined, options.orcaRoot) ?? active.terminalSession(id);
+  const isHostKey = (key: string) => key.startsWith('orca:') && validId(key.slice(5));
   const assets: Record<string, [string, string]> = {
     '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'],
     '/desktop-details.js': ['desktop-details.js', 'text/javascript; charset=utf-8'],
@@ -64,17 +68,45 @@ export async function startServer(options: { port?: number; collector?: SessionC
         json(200, collector.list(true).map(({ id, client, cwd, model, updatedAt, parentId, title, surface }) => ({ id, key: sessionKey({ client, id }), client, cwd, model, updatedAt, parentId, title, surface })));
       } else if (req.method === 'GET' && url.pathname === '/api/snapshot') {
         const key = url.searchParams.get('session') || '';
-        if (!nativeKey(key) && !costKey(key)) { json(400, { error: 'Select a valid session' }); return; }
+        if (!nativeKey(key) && !costKey(key) && !isHostKey(key)) { json(400, { error: 'Select a valid session' }); return; }
         const view = url.searchParams.get('view') === 'model' ? 'model' : 'budget';
-        if (costKey(key)) { const snapshot = costs.snapshot(key, view); json(snapshot ? 200 : 404, snapshot ?? { error: 'Session is no longer available' }); return; }
-        if (!collector.list().some(s => sessionKey(s) === key)) { json(404, { error: 'Session is no longer available' }); return; }
-        json(200, await collector.get(key, { view, git: true }));
+        const hostId = isHostKey(key) ? key.slice(5) : url.searchParams.get('orcaSession');
+        const host = hostId ? hostSession(hostId) : undefined;
+        if (hostId && (!host || !isHostKey(key) && host.nativeKey !== key)) {
+          json(404, { error: 'Orca 会话归属已变化' }); return;
+        }
+        const source = isHostKey(key) ? host?.nativeKey : key;
+        let snapshot;
+        if (source && costKey(source)) snapshot = costs.snapshot(source, view);
+        else if (source && collector.list().some(s => sessionKey(s) === source)) {
+          try { snapshot = await collector.get(source, { view, git: url.searchParams.get('git') !== '0' }); }
+          catch (error) { if (!host) throw error; }
+        }
+        if (host) {
+          snapshot = orcaSnapshot(host, view, snapshot);
+          if (isHostKey(key)) snapshot.session = { ...snapshot.session, client: 'orca', id: host.id, agent: host.agent };
+          else if (!source || snapshot.session.client === 'orca') {
+            const [client, id] = key.split(':');
+            snapshot.session = { ...snapshot.session, client, id, agent: host.agent };
+          }
+        }
+        json(snapshot ? 200 : 404, snapshot ?? { error: 'Session is no longer available' });
       } else if (req.method === 'GET' && url.pathname === '/api/details') {
         const key = url.searchParams.get('session') || '';
-        if (!nativeKey(key)) { json(400, { error: '请选择有本地日志的会话' }); return; }
+        if (!nativeKey(key) && !isHostKey(key)) { json(400, { error: '请选择有本地日志的会话' }); return; }
         const query: DetailQuery = Object.fromEntries(['section', 'scope', 'status', 'kind', 'sort'].flatMap(name => url.searchParams.has(name) ? [[name, url.searchParams.get(name)!]] : []));
         for (const name of ['page', 'pageSize'] as const) if (url.searchParams.has(name)) query[name] = Number(url.searchParams.get(name));
         try { validateDetailQuery(query); } catch { json(400, { error: 'Invalid detail section, filter, sort or page' }); return; }
+        if (isHostKey(key)) {
+          const host = hostSession(key.slice(5));
+          if (!host) { json(404, { error: 'Orca 会话已关闭' }); return; }
+          if (host.nativeKey && collector.list().some(s => sessionKey(s) === host.nativeKey)) {
+            json(200, { ...await collector.details(host.nativeKey, query), session: key }); return;
+          }
+          const { section, scope, pageSize } = validateDetailQuery(query);
+          json(200, { session: key, section, scope, pageSize, page: 1, pages: 1, total: 0, items: [],
+            supported: false, complete: false, unavailable: [], capturedAt: new Date().toISOString() }); return;
+        }
         if (!collector.list().some(s => sessionKey(s) === key)) { json(404, { error: 'Session is no longer available' }); return; }
         json(200, await collector.details(key, query));
       } else if (req.method === 'GET' && url.pathname === '/api/config') {

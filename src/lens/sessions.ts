@@ -68,14 +68,16 @@ function codexTitles(root: string): Map<string, string> {
   return titles;
 }
 
-export function discoverSessions(roots: { claude?: string; codex?: string } = {}): SessionFile[] {
+export function discoverSessions(roots: { claude?: string; codex?: string } = {}, additional?: { claude: string[]; codex: string[] }): SessionFile[] {
   const files: SessionFile[] = [];
   const claude = roots.claude ?? path.join(getClaudeConfigDir(os.homedir()), 'projects');
   const codex = roots.codex ?? path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'sessions');
-  const titles = codexTitles(codex);
   const desktopClaude = path.join(os.homedir(), '.claude', 'projects');
   const claudeRoots = !roots.claude && process.platform === 'darwin' && claude !== desktopClaude ? [claude, desktopClaude] : [claude];
-  for (const [client, root] of [...claudeRoots.map(root => ['claude', root] as const), ['codex', codex] as const]) {
+  const uniqueRoots = (values: string[]) => [...new Set(values.map(v => path.resolve(v)))];
+  for (const [client, root] of [...uniqueRoots([...claudeRoots, ...additional?.claude ?? []]).map(root => ['claude', root] as const),
+    ...uniqueRoots([codex, ...additional?.codex ?? []]).map(root => ['codex', root] as const)]) {
+    const titles = client === 'codex' ? codexTitles(root) : new Map<string, string>();
     for (const file of logFiles(root)) {
       try {
         const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));

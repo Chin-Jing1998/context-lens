@@ -21,7 +21,7 @@ const storage = {
   set(key: string, value: string): void { try { localStorage.setItem('context-lens-' + key, value); } catch { /* Private browsing can deny storage. */ } },
 };
 const params = new URLSearchParams(location.search);
-let selected = '';
+let selected = '', orcaSession = '';
 let view = params.get('view') === 'model' ? 'model' : 'budget';
 let theme = storage.get('theme') || 'auto';
 if (!['auto', 'light', 'dark'].includes(theme)) theme = 'auto';
@@ -236,7 +236,7 @@ function renderRuntime(reset = false): void {
   for (const [id, value] of [['runtime-model', latest?.session.model], ['runtime-directory', latest?.session.cwd], ['runtime-session-title', latest?.session.title || latest?.session.id]] as [string, string | undefined][]) {
     if (id !== 'runtime-session-title') text($(id), value || '—'); $(id).title = value || '';
   }
-  text($('runtime-client'), latest ? clientName(latest.session.client) + (latest.session.surface === 'cli' ? ' CLI' : '') : '—');
+  text($('runtime-client'), latest ? clientName(latest.session.agent ?? latest.session.client) + (latest.session.surface === 'cli' ? ' CLI' : '') : '—');
 }
 setInterval(() => { if (!document.documentElement.dataset.island || document.documentElement.dataset.island === 'runtime') renderRuntime(); }, 1000);
 for (const node of [document.documentElement, $('model-cost-details'), $('session-cost-list'), $('price-list'), document.querySelector<HTMLElement>('.settings-scroll')!]) autoScrollbar(node);
@@ -334,10 +334,16 @@ function render(snapshot: HudSnapshot): void {
   text($('context-title'), claude ? '上下文窗口' : snapshot.session.client === 'agy' ? (c.view === 'model' ? '上下文窗口' : '上下文预算') : '上下文');
   const model = snapshot.session.modelName || (snapshot.session.model === 'unknown' ? '' : snapshot.session.model);
   text($('context-model'), model); $('context-model').hidden = !model; $('context-model').title = model;
-  text($('context-percent'), (primaryPercent === null ? '' : approximate) + pct(primaryPercent));
-  text($('settings-preview-percent'), primaryPercent === null ? '—' : approximate + Math.round(primaryPercent) + '%');
+  const primary = primaryPercent === null ? count(c.usedTokens) : approximate + pct(primaryPercent);
+  text($('context-percent'), primary);
+  text($('settings-preview-percent'), primaryPercent === null ? count(c.usedTokens) : approximate + Math.round(primaryPercent) + '%');
   $('settings-preview-percent').title = $('context-percent').textContent || '—';
   $('settings-preview-percent').parentElement!.style.setProperty('--preview-usage', Math.max(0, Math.min(100, primaryPercent ?? 0)) * 3.6 + 'deg');
+  const summary = [
+    c.remainingWindowTokens == null ? '' : '窗口剩余 ' + c.remainingWindowTokens.toLocaleString('zh-CN'),
+    c.remainingBeforeCompaction == null ? '' : '距自动压缩 ' + c.remainingBeforeCompaction.toLocaleString('zh-CN'),
+  ].filter(Boolean).join(' · ');
+  text($('context-remaining'), summary); $('context-remaining').hidden = !summary;
   const limit = claude ? c.modelTokens : c.denominator;
   text($('context-used'), (c.windowEstimated && c.usedTokens !== null ? '≈' : '') + count(c.usedTokens));
   text($('context-limit'), count(limit)); $('context-capacity').hidden = !limit;
@@ -412,7 +418,7 @@ function render(snapshot: HudSnapshot): void {
   });
   const states = { warm: '有效', cold: '未建立', expired: '已过期', unknown: '未知' };
   text($('cache-status'), '主会话缓存：' + states[snapshot.cache.state]); $('cache-status').dataset.state = snapshot.cache.state;
-  text($('cost'), costNumber(snapshot.cost, snapshot.cost.currency));
+  text($('cost'), snapshot.cost.amount === null && snapshot.cost.unpricedModels.length ? '未定价' : costNumber(snapshot.cost, snapshot.cost.currency));
   $('cost').title = snapshot.cost.amount === null ? '' : snapshot.cost.amount + ' ' + snapshot.cost.currency;
   $('cost').classList.toggle('number', snapshot.cost.amount !== null);
   text($('cost-current-currency'), snapshot.cost.currency);
@@ -420,7 +426,7 @@ function render(snapshot: HudSnapshot): void {
   text($('cost-session-model'), model || '—');
   $('cost-session-title').title = snapshot.session.title || snapshot.session.id;
   $('cost-session-model').title = snapshot.session.model || '';
-  text($('cost-session-client'), clientName(snapshot.session.client));
+  text($('cost-session-client'), clientName(snapshot.session.agent ?? snapshot.session.client));
   text($('cost-session-input'), count(usageValue(all, 'input'))); text($('cost-session-output'), count(usageValue(all, 'output')));
   text($('cost-session-uncached'), count(all.uncachedInput ?? null)); text($('cost-session-cache-read'), count(usageValue(all, 'cacheRead')));
   text($('cost-session-requests'), count(snapshot.totals.all.requests));
@@ -436,7 +442,7 @@ async function refreshSnapshot(): Promise<void> {
   const key = selected, mode = view, request = ++version;
   if (!key) { $('dashboard').hidden = true; $('empty').hidden = false; hideContextSegment(); clearCurrentCost(); text($('empty-message'), '等待当前活跃对话。'); return; }
   try {
-    const data = await api<HudSnapshot>('/api/snapshot?session=' + encodeURIComponent(key) + '&view=' + mode);
+    const data = await api<HudSnapshot>('/api/snapshot?' + new URLSearchParams({ session: key, view: mode, ...(orcaSession && { orcaSession }) }));
     if (request !== version || key !== selected || mode !== view || `${data.session.client}:${data.session.id}` !== key) return;
     render(data); status('已连接 · 本机');
   } catch {
@@ -449,13 +455,13 @@ async function refreshSnapshot(): Promise<void> {
 async function refreshActive(): Promise<void> {
   if (bridge) { notifyDesktop('refresh'); return; }
   try {
-    const data = await api<{ selected: string | null; reason: string }>('/api/active');
-    activeStatus(data.reason); selectSession(data.selected || '');
+    const data = await api<{ selected: string | null; reason: string; orcaSession?: string }>('/api/active');
+    activeStatus(data.reason); selectSession(data.selected || '', data.orcaSession);
   } catch { activeStatus('自动定位连接中断'); }
 }
-function selectSession(key: string): void {
-  if (key === selected) { updateSelection(); return; }
-  selected = key; latest = null; version++;
+function selectSession(key: string, host = ''): void {
+  if (key === selected && host === orcaSession) { updateSelection(); return; }
+  selected = key; orcaSession = host; latest = null; version++;
   detailUI.clear();
   renderActivities();
   renderRuntime(true);
@@ -465,8 +471,8 @@ function selectSession(key: string): void {
   $('dashboard').hidden = true; $('empty').hidden = false; text($('empty-message'), '正在读取所选会话…');
   updateSelection(); void refreshSnapshot();
 }
-function costNumber(value: Pick<CostAmount, 'amount' | 'complete'>, currency = ''): string {
-  if (value.amount === null) return '—';
+function costNumber(value: Pick<CostAmount, 'amount' | 'complete' | 'unpriced'>, currency = ''): string {
+  if (value.amount === null) return value.unpriced ? '未定价' : '—';
   const symbol = currency ? ({ USD: '$', CNY: '¥', JPY: '¥', EUR: '€', GBP: '£' } as Record<string, string>)[currency] || currency + ' ' : '';
   const digits = value.amount > 0 && value.amount < 0.000001 ? 12 : value.amount > 0 && value.amount < 0.01 ? 6 : 2;
   const amount = value.amount > 0 && value.amount < 0.000000000001 ? value.amount.toExponential(2) : value.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: digits });
@@ -945,8 +951,8 @@ document.querySelectorAll<HTMLInputElement>('input[name=theme]').forEach(input =
 });
 document.documentElement.dataset.theme = theme;
 window.addEventListener('context-lens-active', event => {
-  const data = (event as CustomEvent<{ session: string; reason: string }>).detail;
-  activeStatus(data.reason); selectSession(data.session);
+  const data = (event as CustomEvent<{ session: string; reason: string; orcaSession?: string }>).detail;
+  activeStatus(data.reason); selectSession(data.session, data.orcaSession);
 });
 window.addEventListener('context-lens-island', event => {
   const section = (event as CustomEvent<string>).detail;

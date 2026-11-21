@@ -8,7 +8,7 @@ import CoreText
 }
 
 func validSession(_ value: String) -> Bool {
-    value.range(of: "^(claude|codex|agy|opencode|mimocode|deepseek|zcode):[a-zA-Z0-9_-]{1,100}$", options: .regularExpression) != nil
+    value.range(of: "^(claude|codex|agy|orca|opencode|mimocode|deepseek|zcode):[a-zA-Z0-9_-]{1,100}$", options: .regularExpression) != nil
 }
 
 func agentClient(bundle: String, name: String) -> String? {
@@ -46,19 +46,45 @@ func visibleSessionId(_ value: String) -> String? {
           let range = Range(match.range(at: 1), in: candidate) else { return nil }
     return String(candidate[range])
 }
-func antigravitySessionId(_ value: String) -> String? {
+func antigravityLocalOrigin(_ value: String) -> URLComponents? {
     guard !value.isEmpty, value.utf8.count <= 8192, !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
           let url = URLComponents(string: value), ["http", "https"].contains(url.scheme ?? ""),
-          ["127.0.0.1", "localhost", "[::1]"].contains(url.host ?? ""), url.user == nil, url.password == nil,
+          ["127.0.0.1", "localhost", "[::1]"].contains(url.host ?? ""), url.user == nil, url.password == nil else { return nil }
+    return url
+}
+func antigravitySessionId(_ value: String) -> String? {
+    guard let url = antigravityLocalOrigin(value),
           url.percentEncodedPath.range(of: #"^/c/[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}/?$"#,
                                        options: .regularExpression) != nil else { return nil }
     return String(url.percentEncodedPath.dropFirst(3).prefix(36)).lowercased()
+}
+// Electron 44 在 macOS 14+ 默认关闭渲染进程 Web 无障碍树，且非 VoiceOver 启用存在 2 秒防抖；
+// 按目标进程记录冷却时间，避免每 2 秒重复设置导致防抖计时器被持续重置。
+struct AntigravityAXGate {
+    struct ProcessKey: Hashable {
+        let pid: pid_t
+        let launchedAt: TimeInterval?
+    }
+    static let retryInterval: TimeInterval = 15.0
+    private var requested: [ProcessKey: TimeInterval] = [:]
+
+    mutating func shouldRequest(pid: pid_t, launchedAt: TimeInterval?, now: TimeInterval) -> Bool {
+        let key = ProcessKey(pid: pid, launchedAt: launchedAt)
+        if let last = requested[key], now - last < Self.retryInterval { return false }
+        if requested.count >= 8 && requested[key] == nil,
+           let oldest = requested.min(by: { $0.value < $1.value })?.key {
+            requested.removeValue(forKey: oldest)
+        }
+        requested[key] = now
+        return true
+    }
 }
 // Read navigation identity only. The injected reader is shared with native fixtures.
 typealias SessionAXRead = (error: AXError, value: CFTypeRef?)
 func navigationSession(_ root: AXUIElement, pid: pid_t, client: String?, appName: String,
                        read: (AXUIElement, String) -> SessionAXRead, foreground: () -> pid_t?,
-                       now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) -> FrontmostSession {
+                       now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+                       enableManualAccessibility: (() -> Void)? = nil) -> FrontmostSession {
     guard foreground() == pid else { return FrontmostSession() }
     let deadline = now() + 0.18
     var incomplete = false
@@ -103,6 +129,7 @@ func navigationSession(_ root: AXUIElement, pid: pid_t, client: String?, appName
         window = found
     }
     var result = FrontmostSession()
+    var sawAgyWebArea = false
     let windowScanIncomplete = incomplete
     let document = urlString(value(window, kAXDocumentAttribute))
     let documentId = navigationId(document)
@@ -111,12 +138,16 @@ func navigationSession(_ root: AXUIElement, pid: pid_t, client: String?, appName
         let previous = incomplete
         defer { incomplete = previous }
         var focus = element(value(root, kAXFocusedUIElementAttribute)), outerRoute: String?
-        for _ in 0..<32 {
+        for _ in 0..<64 {
             guard let node = focus else { return nil }
             if CFEqual(node, window) { return outerRoute }
             let role = string(node, kAXRoleAttribute)
             guard !role.isEmpty, role != "AXWindow" else { return nil }
-            if role == "AXWebArea" { outerRoute = navigationId(urlString(value(node, kAXURLAttribute))) }
+            if role == "AXWebArea" {
+                let address = urlString(value(node, kAXURLAttribute))
+                if antigravityLocalOrigin(address) != nil { sawAgyWebArea = true }
+                outerRoute = navigationId(address)
+            }
             focus = element(value(node, kAXParentAttribute))
         }
         return nil
@@ -143,6 +174,7 @@ func navigationSession(_ root: AXUIElement, pid: pid_t, client: String?, appName
             if insideWeb { continue } // An embedded preview is not the main document.
             let address = urlString(value(node, kAXURLAttribute))
             if client == "agy" {
+                if antigravityLocalOrigin(address) != nil { sawAgyWebArea = true }
                 if let id = navigationId(address) { ids.insert(id) }
                 continue
             }
@@ -185,6 +217,7 @@ func navigationSession(_ root: AXUIElement, pid: pid_t, client: String?, appName
     if client == "agy" {
         if let focusedAgyId { ids.insert(focusedAgyId) }
         if ids.count == 1 && (documentId != nil || focusedAgyId != nil || !incomplete) { result.id = ids.first! }
+        else if ids.isEmpty && !sawAgyWebArea { enableManualAccessibility?() }
         return result
     }
     // Observed conflicts are never repaired by choosing the traversal's first match.
@@ -203,7 +236,8 @@ func navigationSession(_ root: AXUIElement, pid: pid_t, client: String?, appName
     else if headings.count == 1 { result.title = headings.first! }
     return result
 }
-func frontmostSession(_ app: NSRunningApplication, client: String?) -> FrontmostSession {
+func frontmostSession(_ app: NSRunningApplication, client: String?,
+                      enableManualAccessibility: (() -> Void)? = nil) -> FrontmostSession {
     guard app.bundleIdentifier != "com.stablyai.orca", AXIsProcessTrusted() else { return FrontmostSession() }
     let root = AXUIElementCreateApplication(app.processIdentifier)
     AXUIElementSetMessagingTimeout(root, 0.03)
@@ -212,12 +246,13 @@ func frontmostSession(_ app: NSRunningApplication, client: String?) -> Frontmost
             var value: CFTypeRef?
             let error = AXUIElementCopyAttributeValue(element, name as CFString, &value)
             return (error, value)
-        }, foreground: { NSWorkspace.shared.frontmostApplication?.processIdentifier })
+        }, foreground: { NSWorkspace.shared.frontmostApplication?.processIdentifier },
+        enableManualAccessibility: enableManualAccessibility)
 }
 
 func checkNavigationFixtures() {
     var nodes: [(AXUIElement, [String: CFTypeRef])] = [], errors: [String: AXError] = [:], calls: [String] = []
-    var activePID: pid_t = 42, clock = 0.0, timeoutAt = "", switchAt = ""
+    var activePID: pid_t = 42, clock = 0.0, timeoutAt = "", switchAt = "", manualAXRequests = 0
     func node(_ fields: [String: CFTypeRef]) -> AXUIElement {
         let item = AXUIElementCreateApplication(pid_t(900000 + nodes.count)); nodes.append((item, fields)); return item
     }
@@ -232,7 +267,7 @@ func checkNavigationFixtures() {
     func reset(_ title: String = "Window fallback") {
         nodes[index(window)].1 = [kAXRoleAttribute: "AXWindow" as CFString, kAXTitleAttribute: title as CFString]
         nodes[index(root)].1 = [kAXFocusedWindowAttribute: window]
-        errors = [:]; calls = []; activePID = 42; clock = 0; timeoutAt = ""; switchAt = ""
+        errors = [:]; calls = []; activePID = 42; clock = 0; timeoutAt = ""; switchAt = ""; manualAXRequests = 0
     }
     func collect(_ client: String = "codex") -> FrontmostSession {
         navigationSession(root, pid: 42, client: client, appName: client == "codex" ? "Codex" : "Claude", read: { item, name in
@@ -240,7 +275,7 @@ func checkNavigationFixtures() {
             if requested == timeoutAt { clock = 1 }; if requested == switchAt { activePID = 99 }
             if let error = errors[requested] { return (error, nil) }
             if let value = nodes[index(item)].1[name] { return (.success, value) }; return (.attributeUnsupported, nil)
-        }, foreground: { activePID }, now: { clock })
+        }, foreground: { activePID }, now: { clock }, enableManualAccessibility: { manualAXRequests += 1 })
     }
     func place(_ leaf: AXUIElement, depth: Int, parent: String = "AXGroup") {
         var current = node([kAXRoleAttribute: parent as CFString, kAXChildrenAttribute: [leaf] as CFArray])
@@ -362,17 +397,46 @@ func checkNavigationFixtures() {
     reset("Antigravity"); children(window, [agyWindowButton, agyWeb])
     errors[key(window, kAXDocumentAttribute)] = .cannotComplete
     errors[key(agyWindowButton, kAXChildrenAttribute)] = .cannotComplete
-    check(collect("agy").id == agyId && !calls.contains(key(agyWindowButton, kAXChildrenAttribute)), "Antigravity 忽略原生窗口控件和可选文档属性的读取错误")
+    check(collect("agy").id == agyId && !calls.contains(key(agyWindowButton, kAXChildrenAttribute)) && manualAXRequests == 0, "Antigravity 忽略原生窗口控件和可选文档属性的读取错误")
     reset("Antigravity"); children(window, [agyWeb, timedSibling])
     set(root, kAXFocusedUIElementAttribute, agyInput)
     timeoutAt = key(timedSibling, kAXChildrenAttribute)
-    check(collect("agy").id == agyId && !calls.contains(key(agyInput, kAXValueAttribute)), "Antigravity 同窗焦点确认会话且不读取输入内容")
+    check(collect("agy").id == agyId && !calls.contains(key(agyInput, kAXValueAttribute)) && manualAXRequests == 0, "Antigravity 同窗焦点确认会话且不读取输入内容")
+    var deepFocus = agyWeb
+    for _ in 0..<40 { deepFocus = node([kAXRoleAttribute: "AXGroup" as CFString, kAXParentAttribute: deepFocus]) }
+    let agyDeepInput = node([kAXRoleAttribute: "AXTextArea" as CFString, kAXParentAttribute: deepFocus])
+    reset("Antigravity"); children(window, [agyWeb, timedSibling])
+    set(root, kAXFocusedUIElementAttribute, agyDeepInput)
+    timeoutAt = key(timedSibling, kAXChildrenAttribute)
+    check(collect("agy").id == agyId, "Antigravity 深层焦点链仍可回溯到同窗对话页")
+    reset("Antigravity"); children(window, [agyWeb, timedSibling])
+    set(root, kAXFocusedUIElementAttribute, agyInput)
+    timeoutAt = key(timedSibling, kAXChildrenAttribute)
     let background = node([kAXRoleAttribute: "AXWindow" as CFString])
     set(agyWeb, kAXParentAttribute, background); clock = 0
     check(collect("agy").id.isEmpty, "Antigravity 拒绝其他窗口的焦点证据")
     let previewShell = node([kAXRoleAttribute: "AXWebArea" as CFString, kAXParentAttribute: window])
     set(agyWeb, kAXParentAttribute, previewShell); children(window, [previewShell, timedSibling]); clock = 0
     check(collect("agy").id.isEmpty, "Antigravity 拒绝嵌套预览的路由")
+    reset("Antigravity"); children(window, [agyWindowButton])
+    check(collect("agy").id.isEmpty && manualAXRequests == 1, "Antigravity 未暴露本地网页节点时请求开启 AXManualAccessibility")
+    let agyCurtain = node([kAXRoleAttribute: "AXWebArea" as CFString, kAXURLAttribute: "data:text/html,<html></html>" as CFString, kAXParentAttribute: window])
+    reset("Antigravity"); children(window, [agyCurtain])
+    check(collect("agy").id.isEmpty && manualAXRequests == 1, "Antigravity 仅有背景遮罩 data URL 时仍请求开启 AXManualAccessibility")
+    let agyHome = node([kAXRoleAttribute: "AXWebArea" as CFString, kAXURLAttribute: "https://127.0.0.1:63197/" as CFString, kAXParentAttribute: window])
+    reset("Antigravity"); children(window, [agyHome])
+    check(collect("agy").id.isEmpty && manualAXRequests == 0, "Antigravity 已暴露本地首页网页节点时不再请求 AXManualAccessibility")
+    reset("Claude"); children(window, [agyWindowButton])
+    check(collect("claude").id.isEmpty && manualAXRequests == 0, "非 Antigravity 客户端不请求 AXManualAccessibility")
+    reset("Antigravity"); activePID = 99; children(window, [agyWindowButton])
+    check(collect("agy").id.isEmpty && manualAXRequests == 0, "前台进程不匹配时不请求 AXManualAccessibility")
+    var gate = AntigravityAXGate()
+    check(gate.shouldRequest(pid: 100, launchedAt: 10, now: 0), "新 Antigravity 进程首次允许启用 AXManualAccessibility")
+    check(!gate.shouldRequest(pid: 100, launchedAt: 10, now: 2.0), "2 秒轮询窗口内不重复设置，避免重置 Electron 防抖")
+    check(!gate.shouldRequest(pid: 100, launchedAt: 10, now: 14.9), "冷却期内不重复设置 AXManualAccessibility")
+    check(gate.shouldRequest(pid: 100, launchedAt: 10, now: 15.0), "超过冷却期后允许有限重试")
+    check(gate.shouldRequest(pid: 200, launchedAt: 20, now: 2.0), "重启后的新 PID 立即允许启用 AXManualAccessibility")
+    check(gate.shouldRequest(pid: 100, launchedAt: 25, now: 2.0), "复用 PID 但启动时间变化时立即允许启用 AXManualAccessibility")
     reset(); activePID = 99; check(collect().title.isEmpty && calls.isEmpty, "A different initial foreground PID prevents all AX reads")
     reset(); switchAt = key(window, kAXTitleAttribute)
     check(collect().title.isEmpty, "A foreground PID change during collection discards all identity")
@@ -908,12 +972,15 @@ struct LensVisibility {
     private var targetClient: String?
     private var targetPid: Int?
     private var visibleHint = FrontmostSession()
+    private var antigravityAXGate = AntigravityAXGate()
     private var supportedForeground = false
     private var targetRevision = 0
     private var detectionRequested = false
     private var reportedAccessibility: Bool?
     private var origin: URL!
-    private var selection = ""
+    private var selection = "", orcaSession = ""
+    private var snapshotTask: Task<Void, Never>?
+    private var snapshotToken = 0
     private var view = UserDefaults.standard.string(forKey: "view") == "model" ? "model" : "budget"
     private var theme = UserDefaults.standard.string(forKey: "theme") ?? "auto"
     private var uiStyle = LensUIStyle.load()
@@ -1345,6 +1412,29 @@ struct LensVisibility {
     @objc private func workspaceChanged(_ notification: Notification) {
         if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication { follow(app) }
     }
+    private func scanFrontmostSession(_ app: NSRunningApplication, client: String?) -> FrontmostSession {
+        var enabledManualAX = false
+        let pid = app.processIdentifier
+        let launchedAt = app.launchDate?.timeIntervalSinceReferenceDate
+        let hint = frontmostSession(app, client: client) { [self] in
+            guard client == "agy",
+                  NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
+                  self.antigravityAXGate.shouldRequest(pid: pid, launchedAt: launchedAt, now: ProcessInfo.processInfo.systemUptime) else { return }
+            let target = AXUIElementCreateApplication(pid)
+            AXUIElementSetMessagingTimeout(target, 0.15)
+            let error = AXUIElementSetAttributeValue(target, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+            self.traceEvent("agy-manual-ax-\(error.rawValue)")
+            enabledManualAX = (error == .success)
+        }
+        if enabledManualAX {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 2_300_000_000)
+                guard let self, self.targetPid == Int(pid), self.targetClient == "agy", self.visibleHint.id.isEmpty else { return }
+                await self.refreshBall()
+            }
+        }
+        return hint
+    }
     private func follow(_ app: NSRunningApplication) {
         let bundle = app.bundleIdentifier ?? ""
         traceEvent("foreground-" + bundle)
@@ -1360,7 +1450,7 @@ struct LensVisibility {
         }
         targetRevision += 1; supportedForeground = supported
         targetClient = client; targetPid = supported ? Int(app.processIdentifier) : nil
-        visibleHint = supported ? frontmostSession(app, client: client) : FrontmostSession()
+        visibleHint = supported ? scanFrontmostSession(app, client: client) : FrontmostSession()
         selection = ""; dispatch("context-lens-active", ["session": "", "reason": "正在定位当前对话"])
         updateBall(nil, client: "等待对话", help: "自动跟随活跃对话")
         closeOrbit(reason: "foreground")
@@ -1421,7 +1511,7 @@ struct LensVisibility {
         let terminal = terminalHost(bundle: app.bundleIdentifier ?? "")
         guard client != nil || terminal else { dispatch("context-lens-detection", ["state": "waiting"]); return }
         supportedForeground = true; targetClient = client; targetPid = Int(app.processIdentifier)
-        if current?.bundleIdentifier != Bundle.main.bundleIdentifier { visibleHint = frontmostSession(app, client: client) }
+        if current?.bundleIdentifier != Bundle.main.bundleIdentifier { visibleHint = scanFrontmostSession(app, client: client) }
         targetRevision += 1
         detectionRequested = true; traceEvent("manual-foreground-scan")
         dispatch("context-lens-detection", ["state": "loading"])
@@ -1488,7 +1578,7 @@ struct LensVisibility {
             }
         }
         if let app = NSWorkspace.shared.frontmostApplication, app.bundleIdentifier != Bundle.main.bundleIdentifier, supportedForeground, Int(app.processIdentifier) == targetPid {
-            let hint = frontmostSession(app, client: targetClient)
+            let hint = scanFrontmostSession(app, client: targetClient)
             if hint != visibleHint {
                 let identityChanged = hint.id != visibleHint.id || hint.id.isEmpty && hint.title != visibleHint.title
                     || targetClient == nil && (hint.tty != visibleHint.tty || hint.cwd != visibleHint.cwd)
@@ -1514,15 +1604,30 @@ struct LensVisibility {
             guard revision == targetRevision else { return }
             guard let data else { return }
             let next = data["selected"] as? String ?? ""
-            if next != selection { updateBall(nil, client: "正在读取", help: "自动跟随活跃对话") }
+            let host = data["orcaSession"] as? String ?? ""
+            if next != selection || host != orcaSession {
+                targetRevision += 1; refreshRevision = targetRevision; orcaSession = host
+                snapshotTask?.cancel(); snapshotTask = nil
+                updateBall(nil, client: "正在读取", help: "自动跟随活跃对话")
+            }
             selection = next
             let reason = data["reason"] as? String ?? "正在定位当前对话"
-            dispatch("context-lens-active", ["session": selection, "reason": reason])
+            dispatch("context-lens-active", ["session": selection, "reason": reason, "orcaSession": orcaSession])
         }
         guard validSession(selection) else { updateBall(nil, client: "等待对话", help: "自动跟随活跃对话"); return }
-        let key = selection, mode = view, revision = targetRevision
+        guard snapshotTask == nil else { return }
+        snapshotToken += 1
+        let token = snapshotToken, key = selection, mode = view, revision = targetRevision
+        snapshotTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.readBallSnapshot(key: key, mode: mode, revision: revision)
+            if self.snapshotToken == token { self.snapshotTask = nil }
+        }
+    }
+    private func readBallSnapshot(key: String, mode: String, revision: Int) async {
         var url = URLComponents(url: origin.appendingPathComponent("api/snapshot"), resolvingAgainstBaseURL: false)!
-        url.queryItems = [URLQueryItem(name: "session", value: key), URLQueryItem(name: "view", value: mode)]
+        url.queryItems = [URLQueryItem(name: "session", value: key), URLQueryItem(name: "view", value: mode), URLQueryItem(name: "git", value: "0")]
+        if !orcaSession.isEmpty { url.queryItems?.append(URLQueryItem(name: "orcaSession", value: orcaSession)) }
         do {
             let data = try await json(url.url!)
             guard key == selection, mode == view, revision == targetRevision,
@@ -1537,8 +1642,8 @@ struct LensVisibility {
             let cost = data["cost"] as? [String: Any] ?? [:]
             if let amount = cost["amount"] as? Double, amount.isFinite {
                 let currency = cost["currency"] as? String ?? "USD"
-                orbitView.labels[.cost]?.value = (currency == "USD" ? "$" : currency == "CNY" ? "¥" : currency + " ") + String(format: "%.2f", amount)
-            } else { orbitView.labels[.cost]?.value = "—" }
+                orbitView.labels[.cost]?.value = (cost["complete"] as? Bool == false ? "≥" : "") + (currency == "USD" ? "$" : currency == "CNY" ? "¥" : currency + " ") + String(format: amount > 0 && amount < 0.01 ? "%.3g" : "%.2f", amount)
+            } else { orbitView.labels[.cost]?.value = (cost["unpricedModels"] as? [String])?.isEmpty == false ? "未定价" : "—" }
             let activity = data["activity"] as? [String: Any]
             for island in [LensIsland.commands, .skills, .mcp] {
                 let total = (activity?[island.rawValue] as? [String: Any])?["total"] as? Double
@@ -1550,15 +1655,20 @@ struct LensVisibility {
                 orbitView.labels[.runtime]?.value = (timing?["startAccuracy"] as? String == "observed" ? "≈" : "") + (hours > 0 ? String(format: "%dh %02dm", hours, seconds / 60 % 60) : String(format: "%dm %02ds", seconds / 60, seconds % 60))
                 orbitView.labels[.runtime]?.toolTip = String(format: "会话时长 %02d:%02d:%02d", hours, seconds / 60 % 60, seconds % 60)
             } else { orbitView.labels[.runtime]?.value = "—" }
-            let tool = client
-            let name = ["claude": "Claude", "codex": "Codex", "agy": "Antigravity", "opencode": "OpenCode", "mimocode": "MiMo", "deepseek": "DeepSeek", "zcode": "ZCode"][tool] ?? tool
+            let tool = session["agent"] as? String ?? client
+            let name = ["claude": "Claude", "codex": "Codex", "agy": "Antigravity", "antigravity": "Antigravity", "opencode": "OpenCode", "mimocode": "MiMo", "deepseek": "DeepSeek", "zcode": "ZCode"][tool] ?? tool
             let model = (session["modelName"] ?? session["model"]) as? String ?? ""
             let contextMode = context["view"] as? String ?? mode
             let help = tool == "claude" ? "当前会话上下文窗口" : tool == "agy" && contextMode == "budget" ? "上下文预算" : contextMode == "budget" ? "压缩预算" : "模型窗口"
+            var summary = [model, help].filter { !$0.isEmpty && $0 != "unknown" }
+            if value == nil && context["usedTokens"] is NSNumber { summary.append("已用 token") }
+            for (key, label) in [("remainingWindowTokens", "窗口剩余"), ("remainingBeforeCompaction", "距自动压缩")] {
+                if let count = context[key] as? NSNumber { summary.append(label + " " + count.stringValue + " token") }
+            }
             updateBall(value, usedTokens: context["usedTokens"] as? Double, client: name,
-                       help: model.isEmpty || model == "unknown" ? help : "\(model)\n\(help)",
+                       help: summary.joined(separator: "\n"),
                        estimated: context["windowEstimated"] as? Bool == true)
-        } catch { networkError = true }
+        } catch { /* 自动轮询在下一轮重试。 */ }
     }
     @discardableResult private func clearUnidentifiedDesktopSelection() -> Bool {
         guard ["codex", "claude", "agy"].contains(targetClient ?? ""), visibleHint.id.isEmpty, visibleHint.title.isEmpty else { return false }
@@ -1568,10 +1678,10 @@ struct LensVisibility {
         return true
     }
     private func updateBall(_ percent: Double?, usedTokens: Double? = nil, client: String, help: String, estimated: Bool = false) {
-        let readingTokens = client == "Claude" ? nil : usedTokens
+        let readingTokens = percent == nil ? usedTokens : nil
         let reading = (estimated && percent != nil ? "≈" : "") + contextReading(percent, usedTokens: readingTokens)
         orbitView.labels[.context]?.value = reading
-        if percent == nil && !["Claude", "Codex", "Antigravity", "OpenCode", "MiMo", "DeepSeek", "ZCode"].contains(client) { for island in LensIsland.allCases { orbitView.labels[island]?.value = "—" } }
+        if ["正在读取", "等待对话"].contains(client) { for island in LensIsland.allCases { orbitView.labels[island]?.value = "—" } }
         ballView.percent = percent; ballView.usedTokens = readingTokens; ballView.windowEstimated = estimated
         ballView.toolTip = "\(client)\n\(help)"; ballView.needsDisplay = true
         let value = reading == "—" ? "\(client) 未知" : "\(client) \(reading)"
@@ -1627,7 +1737,7 @@ struct LensVisibility {
             applyTheme()
             if body["action"] == "ready" {
                 webReady = true; sendEnvironment(); applyUIStyle(); deliverSettings()
-                dispatch("context-lens-active", ["session": selection, "reason": "自动跟随活跃对话"])
+                dispatch("context-lens-active", ["session": selection, "reason": "自动跟随活跃对话", "orcaSession": orcaSession])
                 dispatch("context-lens-island", activeIsland.rawValue)
             }
             Task { await refreshBall() }
@@ -1700,7 +1810,7 @@ struct LensVisibility {
             }
         }
         app.updateBall(nil, usedTokens: 170461, client: "Claude", help: "当前会话上下文窗口")
-        check(app.ballView.usedTokens == nil && app.orbitView.labels[.context]?.value == "—", "Claude 缺少窗口占比时不能用 token 数替代主读数")
+        check(app.ballView.usedTokens == 170461 && app.orbitView.labels[.context]?.value == "170.5k", "Claude 缺少窗口容量时显示已用 token")
         app.updateBall(12.5, usedTokens: 170461, client: "Claude", help: "当前会话上下文窗口")
         check(app.ballView.percent == 12.5 && app.ballView.usedTokens == nil && app.orbitView.labels[.context]?.value == "12.5%", "Claude 主读数使用窗口百分比")
         app.updateBall(nil, usedTokens: 170461, client: "Codex", help: "")

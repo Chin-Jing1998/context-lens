@@ -1,16 +1,18 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { getClaudeConfigDir } from '../claude-config-dir.js';
 import { readDocument } from './settings.js';
 import { sessionKey, validId, type SessionFile } from './sessions.js';
 import { ClaudeDesktopSessions, claudeDesktopSessions } from './claude-desktop.js';
 import { agyId, agyRoots } from './agy.js';
-import { isOrcaApp, isOrcaTerminalHost, orcaPanePid, orcaSelectedTab, orcaWorkspace, withinWorkspace } from './orca.js';
+import { isOrcaApp, isOrcaTerminalHost, orcaPaneAgent, orcaForegroundSelection, orcaPanePid, orcaWorkspace, withinWorkspace } from './orca.js';
+
+import { readOrcaSession, orcaLocalPath, orcaAccountRoots, type OrcaSession } from './orca-session.js';
 
 interface Running { key: string; pid: number; evidence: string }
-export interface ActiveResult { selected: string | null; reason: string; candidates: Running[] }
+export interface ActiveResult { orcaSession?: string; selected: string | null; reason: string; candidates: Running[] }
 export interface VisibleSessionHint { id?: string; title?: string; cwd?: string; tty?: string }
 export interface ActiveSessionInfo { id: string; client: string; surface?: 'desktop' | 'cli'; parentId?: string; title?: string; cwd: string; lastUserAt?: number }
 export interface WindowsProcess { ProcessId: number; ParentProcessId: number; Name: string; CommandLine?: string | null }
@@ -20,9 +22,10 @@ export function isClaudeProcess(command: string): boolean {
 export function windowsResumeCandidates(files: ActiveSessionInfo[], processes: WindowsProcess[]): Running[] {
   const available = new Set(files.filter(file => !file.parentId).map(sessionKey));
   return processes.flatMap(process => {
-    const client = /^codex(?:\.exe)?$/i.test(process.Name) ? 'codex' : /^claude(?:\.exe)?$/i.test(process.Name) ? 'claude' : null;
-    const id = /(?:^|\s)(?:resume|--resume|--session-id)(?:\s+|=)["']?([a-zA-Z0-9_-]{1,100})(?:["']?(?:\s|$))/.exec(process.CommandLine || '')?.[1];
-    return client && id && available.has(`${client}:${id}`) && Number.isSafeInteger(process.ProcessId) && process.ProcessId > 1
+    const agent = /^(codex|claude|agy)(?:\.exe)?$/i.exec(process.Name);
+    const client = agent?.[1].toLowerCase();
+    const id = /(?:^|\s)(?:resume|--resume|--session-id|--conversation-id)(?:\s+|=)["']?([a-zA-Z0-9_-]{1,100})(?:["']?(?:\s|$))/.exec(process.CommandLine || '')?.[1];
+    return client && id && (client !== 'agy' || agyId.test(id)) && available.has(`${client}:${id}`) && Number.isSafeInteger(process.ProcessId) && process.ProcessId > 1
       ? [{ key: `${client}:${id}`, pid: process.ProcessId, evidence: 'Windows 进程显式会话参数' }] : [];
   });
 }
@@ -85,8 +88,25 @@ export function codexResumeCandidates(output: string, files: ActiveSessionInfo[]
   });
 }
 
+export function orcaChatActive(host: OrcaSession | undefined, available: ReadonlySet<string>, client?: string): ActiveResult {
+  const native = orcaAgentSessionResult(host?.nativeKey ?? null, available, client);
+  if (!host) return native;
+  if (native.selected) return { ...native, orcaSession: host.id };
+  return { ...native, selected: client ? null : 'orca:' + host.id, reason: '已跟随 Orca 前台代理对话' };
+}
+
+export function orcaAgentSessionResult(key: string | null, available: ReadonlySet<string>, client?: string): ActiveResult {
+  const selected = key && available.has(key) && (!client || key.startsWith(`${client}:`)) ? key : null;
+  return { selected, candidates: [], reason: selected ? '已跟随 Orca 前台代理对话' : '等待 Orca 前台唯一会话' };
+}
+
 /** Read live ownership evidence, never infer the active session from the newest historical log. */
 export class ActiveSessions {
+  private paneAgent?: OrcaSession;
+  private windowsOwners: Running[] = [];
+  private ownersPending = false;
+  terminalSession(id: string): OrcaSession | undefined { return this.paneAgent?.id === id ? this.paneAgent : undefined; }
+
   private at = 0;
   private running: Running[] = [];
   private parents = new Map<number, number>();
@@ -138,22 +158,35 @@ export class ActiveSessions {
     }
     if (targetPid && isOrcaApp(this.commands.get(targetPid) ?? '')) {
       const workspace = orcaWorkspace();
+      const selection = workspace ? orcaForegroundSelection(workspace) : undefined;
+      if (!workspace || !selection) return orcaAgentSessionResult(null, available, client);
+      if (selection.kind === 'agent-session') {
+        const host = selection.sessionId ? readOrcaSession(selection.sessionId, workspace.id, undefined, false) : undefined;
+        return orcaChatActive(host, available, client);
+      }
+      if (selection.kind === 'other') {
+        return { selected: null, candidates: [], reason: '等待 Orca 前台唯一会话' };
+      }
+      const tab = selection.tabId;
+      this.paneAgent = orcaPaneAgent(workspace, tab);
+      if (this.paneAgent?.nativeKey && available.has(this.paneAgent.nativeKey)) {
+        return { selected: this.paneAgent.nativeKey, orcaSession: this.paneAgent.id, candidates: [], reason: '已跟随 Orca 当前终端会话' };
+      }
       const owners = [...this.commands].filter(([, command]) => isOrcaTerminalHost(command)).map(([pid]) => pid);
       const scoped = running.filter(candidate => {
         const local = inProcessTree(candidate.pid, targetPid, this.parents);
-        if (!workspace) return local;
         const file = files.find(file => sessionKey(file) === candidate.key);
-        return !!file && withinWorkspace(file.cwd, workspace.cwd)
+        return !!file && withinWorkspace(orcaLocalPath(file.cwd, workspace.wslDistro) ?? '', workspace.cwd)
           && (local || owners.some(pid => inProcessTree(candidate.pid, pid, this.parents)));
       });
-      const tab = workspace && workspace.terminals > 0 ? orcaSelectedTab(workspace) : undefined;
-      const needsPane = !!workspace && (tab !== undefined || workspace.terminals > 1 || new Set(scoped.map(candidate => candidate.key)).size > 1);
-      const pane = workspace && tab !== null && (needsPane || !scoped.length && workspace.terminals === 1)
-        ? orcaPanePid(workspace, undefined, tab) : undefined;
-      let result = chooseActive(needsPane && !pane ? [] : scoped, this.parents, pane);
-      if (workspace && pane && !result.candidates.length && process.platform === 'darwin'
+      const pane = orcaPanePid(workspace, undefined, tab);
+      let result = chooseActive(pane ? scoped : [], this.parents, pane);
+      if (pane && !result.candidates.length && process.platform === 'darwin'
         && (inProcessTree(pane, targetPid, this.parents) || owners.some(pid => inProcessTree(pane, pid, this.parents)))) {
         result = chooseActive(this.resumedCodex(files, pane, workspace.cwd), this.parents);
+      }
+      if (!result.selected && this.paneAgent && !client && !result.candidates.length) {
+        return { selected: 'orca:' + this.paneAgent.id, candidates: [], reason: '已跟随 Orca 前台终端代理' };
       }
       if (!result.selected) result.reason = '等待 Orca 前台唯一会话';
       return result;
@@ -177,6 +210,44 @@ export class ActiveSessions {
     } catch { return []; }
   }
 
+  private scanWindowsAgy(files: ActiveSessionInfo[], rows: WindowsProcess[]): void {
+    const pids = rows.filter(row => /^agy\.exe$/i.test(row.Name)).map(row => row.ProcessId);
+    const keys = new Set(files.filter(f => f.client === 'agy' && f.surface === 'cli' && !f.parentId).map(sessionKey));
+    this.running.push(...this.windowsOwners.filter(r => pids.includes(r.pid) && keys.has(r.key)));
+    if (this.ownersPending || !pids.length || !keys.size) return;
+    const locks = new Map<string, string>();
+    for (const root of new Set([agyRoots().cli, ...orcaAccountRoots().agy])) {
+      // WSL 的锁属于 Linux 内核，使用 Orca 提供的窗格与原生会话关联。
+      if (root.startsWith('\\\\')) continue;
+      const dir = path.join(root, 'presence');
+      try {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          const id = entry.name.slice(0, -5), key = 'agy:' + id;
+          if (entry.isFile() && entry.name.endsWith('.lock') && keys.has(key) && agyId.test(id)) locks.set(path.join(dir, entry.name), key);
+        }
+      } catch { /* 这个账户当前没有进程会话锁。 */ }
+    }
+    if (!locks.size) { this.windowsOwners = []; return; }
+    const script = fs.readFileSync(new URL('../../desktop/windows/agy-presence.ps1', import.meta.url), 'utf8');
+    this.ownersPending = true;
+    const child = execFile(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe'),
+      ['-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],
+      { timeout: 12000, maxBuffer: 262144, windowsHide: true }, (error, output) => {
+        this.ownersPending = false;
+        this.windowsOwners = [];
+        if (error) return;
+        try {
+          const owners = JSON.parse(output.replace(/^\uFEFF/, ''));
+          for (const row of owners) {
+            const key = locks.get(row.file);
+            if (key && pids.includes(row.pid)) this.windowsOwners.push({ key, pid: row.pid, evidence: 'AGY 进程持有会话锁' });
+          }
+        } catch { /* 进程可能已经退出。 */ }
+      });
+    child.stdin?.on('error', () => {});
+    child.stdin?.end(JSON.stringify({ pids, files: [...locks.keys()] }));
+  }
+
   private scan(files: ActiveSessionInfo[]): void {
     this.at = Date.now(); this.running = []; this.parents.clear(); this.error = '';
     if (!['darwin', 'win32'].includes(process.platform)) { this.error = '自动定位目前支持 macOS 和 Windows'; return; }
@@ -195,6 +266,7 @@ export class ActiveSessions {
           this.parents.set(row.ProcessId, row.ParentProcessId); commands.set(row.ProcessId, row.Name + ' ' + (row.CommandLine || ''));
         }
         this.running.push(...windowsResumeCandidates(files, rows));
+        this.scanWindowsAgy(files, rows);
       } else {
         const ps = execFileSync('/bin/ps', ['-axo', 'pid=,ppid=,comm='], { encoding: 'utf8', timeout: 1500, maxBuffer: 2 * 1024 * 1024 });
         for (const line of ps.split('\n')) {

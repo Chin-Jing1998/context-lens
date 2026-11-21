@@ -1,7 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { once } from 'node:events';
+import { spawn, spawnSync } from 'node:child_process';
 import { runInNewContext } from 'node:vm';
 import { windowsResumeCandidates, chooseActive, isClaudeProcess } from '../dist/lens/active.js';
 const require = createRequire(import.meta.url), { canOpenGithub, fit } = require('../desktop/windows/guards.cjs');
@@ -43,7 +47,7 @@ test('Windows icon contains full PNG images from 16 through 256 pixels', () => {
   for (let i = 0; i < count; i++) { const offset = ico.readUInt32LE(6 + i * 16 + 12); assert.equal(ico.subarray(offset, offset + 8).toString('hex'), '89504e470d0a1a0a'); }
 });
 
-test('Windows 的 Claude 主读数始终使用窗口占比，缺失时不退回预算或 token 数', () => {
+test('Windows 的 Claude 主读数优先使用窗口占比，缺少分母时显示已用 token', () => {
   const source = readFileSync(new URL('../desktop/windows/main.cjs', import.meta.url), 'utf8');
   const start = source.indexOf('function surface() {');
   const code = source.slice(start, source.indexOf('function collapse()', start));
@@ -63,7 +67,7 @@ test('Windows 的 Claude 主读数始终使用窗口占比，缺失时不退回�
   for (const windowPercent of [null, undefined, NaN, -1]) {
     const unknown = render('claude', { ...context, windowPercent });
     assert.equal(unknown.percent, null);
-    assert.equal(unknown.values.context, '—');
+    assert.equal(unknown.values.context, '170461');
   }
   const codex = render('codex', context);
   assert.equal(codex.percent, context.percent);
@@ -97,4 +101,39 @@ test('actual Windows ball and orbit centers render token fallbacks and clear the
   assert.deepEqual(render(null, '170.5k'), { ball: '170.5k', center: '170.5k' });
   assert.deepEqual(render(null, undefined), { ball: '—', center: '—' });
   assert.deepEqual(render(null, '0'), { ball: '0', center: '0' });
+});
+
+test('Windows 切换 A/B/A 后丢弃上一代尚未完成的快照', async () => {
+  const source = readFileSync(new URL('../desktop/windows/main.cjs', import.meta.url), 'utf8');
+  const code = source.slice(source.indexOf('async function readSnapshot('),source.indexOf('function startWatcher()'));
+  const pending = [], paints = [];
+  const context = { revision:1, selection:'claude:a', preferences:{view:'model'}, snapshot:null, snapshotRequest:undefined,
+    URLSearchParams, read:() => new Promise(resolve => pending.push(resolve)), surface:() => paints.push(context.snapshot.marker) };
+  const fetch = runInNewContext(code + '\nreadSnapshot',context);
+  const first = fetch('claude:a',1,'model','h1');
+  context.revision=2;context.selection='orca:b';const second = fetch('orca:b',2,'model','');
+  context.revision=3;context.selection='claude:a';const last = fetch('claude:a',3,'model','h2');
+  pending[2]({session:{client:'claude',id:'a'},marker:'新 A'});await last;
+  pending[0]({session:{client:'claude',id:'a'},marker:'旧 A'});await first;
+  pending[1]({session:{client:'orca',id:'b'},marker:'B'});await second;
+  assert.deepEqual(paints,['新 A']);
+});
+
+test('Windows 按实际文件占用定位 AGY 锁并过滤非本地对话路由', {skip:process.platform!=='win32'}, async t => {
+  const dir=mkdtempSync(join(tmpdir(),'lens-owners-'));
+  const held=join(dir,'a.lock'), idle=join(dir,'b.lock');writeFileSync(held,'');writeFileSync(idle,'');
+  const ps=join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe');
+  const args=command=>['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(command,'utf16le').toString('base64')];
+  const holder=spawn(ps,args("$file=[IO.File]::OpenRead($env:LENS_TEST_LOCK);[Console]::WriteLine('ready');[Console]::ReadLine();$file.Close()"),
+    {env:{...process.env,LENS_TEST_LOCK:held},windowsHide:true});
+  t.after(async()=>{if(holder.exitCode===null){const exit=once(holder,'exit'); holder.stdin.end('\n'); await exit;} rmSync(dir,{recursive:true,force:true});});
+  await once(holder.stdout,'data');
+  const script=readFileSync(new URL('../desktop/windows/agy-presence.ps1',import.meta.url),'utf8');
+  const result=spawnSync(ps,args(script),{input:JSON.stringify({pids:[holder.pid],files:[held,idle]}),encoding:'utf8',timeout:15000});
+  assert.equal(result.status,0,result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout),[{pid:holder.pid,file:held}]);
+  const watcher=readFileSync(new URL('../desktop/windows/foreground.ps1',import.meta.url),'utf8').split('[Console]::OutputEncoding')[0];
+  const uuid='38380000-2222-4333-8444-555555555555';
+  const check=spawnSync(ps,args(watcher+"\nGet-AgyRouteId 'http://127.0.0.1:7000/c/"+uuid+"'; Get-AgyRouteId 'https://example.com/c/"+uuid+"'"),{encoding:'utf8',timeout:10000});
+  assert.equal(check.status,0,check.stderr);assert.equal(check.stdout.trim(),uuid);
 });

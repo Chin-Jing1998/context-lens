@@ -149,7 +149,7 @@ test('Antigravity 从两个数据根定位会话、读取活动 WAL 并按响应
   const index = new sqlite.DatabaseSync(path.join(cli, 'conversation_summaries.db'));
   index.prepare('INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, NULL)').run(oldId, '较早会话', '[]', at(1), at(1));
   index.close();
-  writeFileSync(path.join(cli, 'conversations', oldId + '.pb'), '');
+  // 迁移后的布局只保留索引和同一会话目录中的转录。
   const history = path.join(cli, 'brain', oldId, '.system_generated', 'logs');
   mkdirSync(history, { recursive: true });
   const transcript = [{ type: 'PLANNER_RESPONSE', step_index: 3, model: 'gemini', input_tokens: 17, cache_read_tokens: 90,

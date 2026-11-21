@@ -1,8 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseActive, codexResumeCandidates } from '../dist/lens/active.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { chooseActive, codexResumeCandidates, orcaAgentSessionResult } from '../dist/lens/active.js';
 import { lastUserActivity } from '../dist/lens/sessions.js';
-import { isOrcaApp, isOrcaTerminalHost, orcaPanePid, orcaWorkspace, withinWorkspace } from '../dist/lens/orca.js';
+import {
+  isOrcaApp, isOrcaTerminalHost, orcaAgentSessionKey, orcaForegroundSelection,
+  orcaPanePid, orcaSelectedTab, orcaWorkspace, withinWorkspace,
+} from '../dist/lens/orca.js';
 
 test('Orca 前台识别只使用本机工作区和已连接的选中窗格', () => {
   const cwd = process.cwd(), id = 'local-worktree';
@@ -89,4 +96,151 @@ test('background output, tool results and synthetic inputs cannot move the activ
     { type: 'user', timestamp: outputAt, isSidechain: true, message: { content: 'Agent input' } },
   ], 'claude'), Date.parse(userAt));
   assert.equal(lastUserActivity([{ type: 'user', timestamp: 'invalid', message: { content: 'Input' } }], 'claude'), undefined);
+});
+
+test('Orca 前台结构化代理会话与选项卡识别只采信本机工作区的唯一选中项', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'context-lens-orca-'));
+  try {
+    const profileDir = path.join(root, 'profiles', 'default');
+    fs.mkdirSync(profileDir, { recursive: true });
+    fs.writeFileSync(path.join(root, 'orca-profile-index.json'), JSON.stringify({ activeProfileId: 'default' }));
+
+    const profileDb = new DatabaseSync(path.join(profileDir, 'profile-state.db'));
+    profileDb.exec('CREATE TABLE profile_state_document_parts (domain TEXT NOT NULL, part_key TEXT NOT NULL, payload TEXT NOT NULL)');
+    const setPart = (key, value) => {
+      const partKey = JSON.stringify(key);
+      profileDb.prepare("DELETE FROM profile_state_document_parts WHERE domain='workspaceSession' AND part_key=?").run(partKey);
+      profileDb.prepare("INSERT INTO profile_state_document_parts (domain, part_key, payload) VALUES ('workspaceSession', ?, ?)").run(partKey, JSON.stringify(value));
+    };
+
+    const domainDb = new DatabaseSync(path.join(root, 'agent-session-domain.db'));
+    domainDb.exec('CREATE TABLE agent_session_records (session_id TEXT PRIMARY KEY, record_json TEXT NOT NULL)');
+    const setRecord = (sessionId, rec) => {
+      domainDb.prepare('INSERT OR REPLACE INTO agent_session_records (session_id, record_json) VALUES (?, ?)').run(sessionId, JSON.stringify(rec));
+    };
+
+    const wtId = 'repo::/tmp/project::workspace:1';
+    const workspace = { id: wtId, cwd: '/tmp/project', terminals: 0 };
+    const agyUuidOld = '11111111-1111-4111-8111-111111111111';
+    const agyUuidNew = '22222222-2222-4222-8222-222222222222';
+    const claudeUuid = '33333333-3333-4333-8333-333333333333';
+    const codexUuid = '44444444-4444-4444-8444-444444444444';
+
+    // 1. Antigravity structured agent-session with multi-link chain and provenHandleLinkId
+    setPart(['activeWorktreeId'], wtId);
+    setPart(['activeWorkspaceExecutionHostId'], 'local');
+    setPart(['activeTabId'], null);
+    setPart(['activeTabIdByWorktree', wtId], null);
+    setPart(['activeTabTypeByWorktree', wtId], 'agent-session');
+    setPart(['activeGroupIdByWorktree', wtId], 'group-1');
+    setPart(['tabGroupLayouts', wtId], { type: 'leaf', groupId: 'group-1' });
+    setPart(['tabGroups', wtId], [{ id: 'group-1', worktreeId: wtId, activeTabId: 'structured-agent-session-orca-agy' }]);
+    setPart(['unifiedTabs', wtId], [{
+      id: 'structured-agent-session-orca-agy', entityId: 'orca-agy', groupId: 'group-1',
+      worktreeId: wtId, executionHostId: 'local', contentType: 'agent-session', agentSessionAgent: 'antigravity',
+    }]);
+    setRecord('orca-agy', {
+      sessionId: 'orca-agy', provider: 'antigravity',
+      location: { executionHostId: 'local', workspaceId: wtId },
+      lease: { provenHandleLinkId: 'antigravity-2' },
+      providerHandleChain: [
+        { linkId: 'antigravity-1', handle: { transport: 'acp', agent: 'antigravity', nativeId: agyUuidOld } },
+        { linkId: 'antigravity-2', handle: { transport: 'acp', agent: 'antigravity', nativeId: agyUuidNew } },
+      ],
+    });
+    assert.deepEqual(orcaForegroundSelection(workspace, root), { kind: 'agent-session', sessionId: 'orca-agy' });
+    assert.equal(orcaSelectedTab(workspace, root), null);
+    assert.equal(orcaAgentSessionKey(workspace, 'orca-agy', root), `agy:${agyUuidNew}`);
+
+    // 2. Claude, Codex, OpenCode and empty draft chat records
+    setRecord('orca-claude', {
+      sessionId: 'orca-claude', provider: 'claude',
+      location: { executionHostId: 'local', workspaceId: wtId },
+      lease: { provenHandleLinkId: null },
+      providerHandleChain: [{ linkId: 'claude-1', handle: { provider: 'claude', sessionId: claudeUuid, leafUuid: null } }],
+    });
+    setRecord('orca-codex', {
+      sessionId: 'orca-codex', provider: 'codex',
+      location: { executionHostId: 'local', workspaceId: wtId },
+      lease: { provenHandleLinkId: 'codex-1' },
+      providerHandleChain: [{ linkId: 'codex-1', handle: { provider: 'codex', threadId: codexUuid } }],
+    });
+    setRecord('orca-opencode', {
+      sessionId: 'orca-opencode', provider: 'opencode',
+      location: { executionHostId: 'local', workspaceId: wtId },
+      lease: { provenHandleLinkId: null },
+      providerHandleChain: [{ linkId: 'oc-1', handle: { transport: 'acp', agent: 'opencode', nativeId: 'ses_abc123' } }],
+    });
+    setRecord('orca-draft', {
+      sessionId: 'orca-draft', provider: 'antigravity',
+      location: { executionHostId: 'local', workspaceId: wtId },
+      lease: { provenHandleLinkId: null },
+      providerHandleChain: [],
+    });
+    setRecord('orca-remote', {
+      sessionId: 'orca-remote', provider: 'claude',
+      location: { executionHostId: 'ssh:box', workspaceId: wtId },
+      lease: { provenHandleLinkId: null },
+      providerHandleChain: [{ linkId: 'claude-1', handle: { provider: 'claude', sessionId: claudeUuid, leafUuid: null } }],
+    });
+    setRecord('orca-other-wt', {
+      sessionId: 'orca-other-wt', provider: 'claude',
+      location: { executionHostId: 'local', workspaceId: 'other-worktree' },
+      lease: { provenHandleLinkId: null },
+      providerHandleChain: [{ linkId: 'claude-1', handle: { provider: 'claude', sessionId: claudeUuid, leafUuid: null } }],
+    });
+    assert.equal(orcaAgentSessionKey(workspace, 'orca-claude', root), `claude:${claudeUuid}`);
+    assert.equal(orcaAgentSessionKey(workspace, 'orca-codex', root), `codex:${codexUuid}`);
+    assert.equal(orcaAgentSessionKey(workspace, 'orca-opencode', root), 'opencode:ses_abc123');
+    assert.equal(orcaAgentSessionKey(workspace, 'orca-draft', root), null);
+    assert.equal(orcaAgentSessionKey(workspace, 'orca-remote', root), null);
+    assert.equal(orcaAgentSessionKey(workspace, 'orca-other-wt', root), null);
+
+    // 3. Split groups: active group selects uniquely; missing activeGroupId refuses to guess
+    setPart(['tabGroupLayouts', wtId], { type: 'split', first: { type: 'leaf', groupId: 'group-1' }, second: { type: 'leaf', groupId: 'group-2' } });
+    setPart(['tabGroups', wtId], [
+      { id: 'group-1', worktreeId: wtId, activeTabId: 'structured-agent-session-orca-agy' },
+      { id: 'group-2', worktreeId: wtId, activeTabId: 'structured-agent-session-orca-claude' },
+    ]);
+    setPart(['unifiedTabs', wtId], [
+      { id: 'structured-agent-session-orca-agy', entityId: 'orca-agy', groupId: 'group-1', worktreeId: wtId, executionHostId: 'local', contentType: 'agent-session' },
+      { id: 'structured-agent-session-orca-claude', entityId: 'orca-claude', groupId: 'group-2', worktreeId: wtId, executionHostId: 'local', contentType: 'agent-session' },
+    ]);
+    setPart(['activeGroupIdByWorktree', wtId], 'group-2');
+    assert.deepEqual(orcaForegroundSelection(workspace, root), { kind: 'agent-session', sessionId: 'orca-claude' });
+    setPart(['activeGroupIdByWorktree', wtId], null);
+    assert.deepEqual(orcaForegroundSelection(workspace, root), { kind: 'agent-session', sessionId: null });
+
+    // 4. Remote tab inside local worktree is rejected
+    setPart(['activeGroupIdByWorktree', wtId], 'group-2');
+    setPart(['unifiedTabs', wtId], [
+      { id: 'structured-agent-session-orca-claude', entityId: 'orca-claude', groupId: 'group-2', worktreeId: wtId, executionHostId: 'ssh:box', contentType: 'agent-session' },
+    ]);
+    assert.deepEqual(orcaForegroundSelection(workspace, root), { kind: 'agent-session', sessionId: null });
+
+    // 5. Terminal tab compatibility (legacy & unifiedTabs) and non-agent browser tab
+    setPart(['activeTabTypeByWorktree', wtId], 'terminal');
+    setPart(['activeTabId'], 'term-tab-1');
+    setPart(['activeTabIdByWorktree', wtId], 'term-tab-1');
+    assert.deepEqual(orcaForegroundSelection(workspace, root), { kind: 'terminal', tabId: 'term-tab-1' });
+    assert.equal(orcaSelectedTab(workspace, root), 'term-tab-1');
+
+    setPart(['activeTabTypeByWorktree', wtId], 'browser');
+    assert.deepEqual(orcaForegroundSelection(workspace, root), { kind: 'other' });
+    assert.equal(orcaSelectedTab(workspace, root), null);
+
+    // 6. Active result contract respects available sessions and client filter
+    const available = new Set([`agy:${agyUuidNew}`, `claude:${claudeUuid}`]);
+    assert.deepEqual(orcaAgentSessionResult(`agy:${agyUuidNew}`, available), {
+      selected: `agy:${agyUuidNew}`, candidates: [], reason: '已跟随 Orca 前台代理对话',
+    });
+    assert.equal(orcaAgentSessionResult(`agy:${agyUuidNew}`, available, 'claude').selected, null);
+    assert.equal(orcaAgentSessionResult(`codex:${codexUuid}`, available).selected, null);
+    assert.equal(orcaAgentSessionResult(null, available).reason, '等待 Orca 前台唯一会话');
+
+    profileDb.close();
+    domainDb.close();
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

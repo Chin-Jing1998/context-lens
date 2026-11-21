@@ -18,7 +18,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: node --test tests/lens-updates.test.js tests/lens-active.test.js tests/windows-desktop.test.js
+      - run: node --import ./tests/clean-env.js --test tests/lens-updates.test.js tests/lens-active.test.js tests/lens-clients.test.mjs tests/lens-orca-window.test.js tests/windows-desktop.test.js
       - run: npm run build:windows
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -26,6 +26,9 @@ jobs:
         shell: pwsh
         run: |
           $report = Join-Path $PWD 'desktop/build/windows/startup-check.json'
+          $env:CONTEXT_LENS_SMOKE_ORCA_ROOT = Join-Path $env:RUNNER_TEMP 'lens-orca-window'
+          node tests/fixtures/orca-window.mjs $env:CONTEXT_LENS_SMOKE_ORCA_ROOT
+          if ($LASTEXITCODE -ne 0) { throw 'Orca fixture creation failed' }
           $exe = Join-Path $PWD 'desktop/build/windows/win-unpacked/Context Lens.exe'
           $process = Start-Process -FilePath $exe -ArgumentList '--smoke-test', $report -PassThru
           if (-not $process.WaitForExit(45000)) { $process.Kill(); throw 'Desktop startup timed out' }

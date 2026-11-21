@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Context Lens</title><link rel="stylesheet" href="/style.css"></head>
+<head><meta charset="utf-8"><meta name="author" content="Chin_Jing1998"><meta name="dcterms.modified" content="2026-11-21"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Context Lens</title><link rel="stylesheet" href="/style.css"></head>
 <body>
 <svg class="symbol-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
 <symbol id="i-lens" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></symbol>
@@ -23,6 +23,7 @@
 <section class="context-panel surface" aria-labelledby="context-title">
 <div class="section-heading"><h1 id="context-title">上下文</h1><span id="context-model" class="caption" hidden></span></div>
 <div class="context-value"><strong id="context-percent" class="number hero-number">—</strong><div class="context-budget"><p class="budget-total"><span id="context-used" class="number">—</span><span id="context-capacity" hidden><span class="muted"> / </span><span id="context-limit" class="number">—</span></span><span class="caption"> tokens</span></p></div></div>
+<p id="context-remaining" class="budget-total" hidden></p>
 <p id="context-budget-info" class="budget-total" hidden></p>
 <div class="context-allocation"><div id="segments" class="segments" role="group" aria-label="上下文分类占用"></div><div id="context-segment-tooltip" class="segment-tooltip" role="tooltip" hidden><span class="segment-tooltip-heading"><span id="segment-tooltip-swatch" class="swatch" aria-hidden="true"></span><strong id="segment-tooltip-name"></strong></span><span class="segment-tooltip-value"><strong id="segment-tooltip-tokens" class="number"></strong><span>Tokens</span></span></div></div><p id="context-notice" class="context-notice" role="status" hidden></p>
 <div id="context-tabs" class="detail-tabs" role="tablist" aria-label="上下文页面" hidden><button id="context-overview-tab" type="button" role="tab" aria-selected="true" aria-controls="context-overview-page" data-detail-page="overview">分类占用</button><button id="context-messages-tab" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="context-messages-page" data-detail-page="messages" hidden>对话细分</button><button id="context-compactions-tab" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="context-compactions-page" data-detail-page="compactions" hidden>压缩记录</button></div>

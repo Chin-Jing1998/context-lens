@@ -31,9 +31,10 @@ const heights = { context: 320, usage: 520, cost: 420, commands: 500, skills: 50
 let ball, orbit, detail, tray, backend, origin, watcher, watcherStartup, pollTimer, foreground = null;
 let island = 'context', selection = '', snapshot = null, orbitOpen = false, pinned = false, settingsOpen = false, hidden = false, forced = false, refreshing = false, revision = 0, dragOrigin;
 const contentHeights = {};
+let orcaSession = '', snapshotRequest;
 let settingsWidth = 420;
 let watcherAvailable = false;
-const validSession = value => typeof value === 'string' && /^(claude|codex|opencode|mimocode|deepseek|zcode):[a-zA-Z0-9_-]{1,100}$/.test(value);
+const validSession = value => typeof value === 'string' && /^(claude|codex|agy|orca|opencode|mimocode|deepseek|zcode):[a-zA-Z0-9_-]{1,100}$/.test(value);
 const emit = (window, name, data) => { if (window && !window.isDestroyed() && !window.webContents.isLoading()) window.webContents.send('lens-event', name, data); };
 const environment = () => emit(detail, 'context-lens-environment', { desktopConnected: true, platform: process.platform, accessibilityTrusted: watcherAvailable, reduceMotion: preferences.reduceMotion || nativeTheme.prefersReducedMotion, systemReduceMotion: nativeTheme.prefersReducedMotion });
 function placeBall(x, y) {
@@ -61,13 +62,16 @@ function surface() {
   const claude = snapshot?.session?.client === 'claude';
   const rawPercent = claude ? context?.windowPercent : context?.percent;
   const percent = Number.isFinite(rawPercent) && rawPercent >= 0 ? rawPercent : null;
-  const tokens = claude ? null : context?.usedTokens;
+  const tokens = context?.usedTokens;
   const values = { context: percent === null ? Number.isFinite(tokens) && tokens >= 0 ? count(tokens) : '—' : percent.toFixed(1) + '%',
-    usage: totals ? (totals.complete ? '' : '≥') + count(totals.input + totals.output) : '—',
-    cost: typeof cost?.amount === 'number' ? (cost.currency === 'USD' ? '$' : cost.currency === 'CNY' ? '¥' : cost.currency + ' ') + cost.amount.toFixed(2) : '—',
+    usage: totals && (totals.requests > 0 || totals.input + totals.output > 0) ? (totals.complete ? '' : '≥') + count(totals.input + totals.output) : '—',
+    cost: typeof cost?.amount === 'number' ? (cost.complete ? '' : '≥') + (cost.currency === 'USD' ? '$' : cost.currency === 'CNY' ? '¥' : cost.currency + ' ') + (cost.amount > 0 && cost.amount < .01 ? Number(cost.amount.toPrecision(3)).toString() : cost.amount.toFixed(2)) : cost?.unpricedModels?.length ? '未定价' : '—',
     commands: activityCount('commands'), skills: activityCount('skills'), mcp: activityCount('mcp'),
     runtime: seconds === null ? '—' : (timing.startAccuracy === 'observed' ? '≈' : '') + (seconds >= 3600 ? Math.floor(seconds / 3600) + 'h ' + String(Math.floor(seconds / 60) % 60).padStart(2, '0') + 'm' : Math.floor(seconds / 60) + 'm ' + String(seconds % 60).padStart(2, '0') + 's') };
-  const data = { style: surfaceStyle(), reduceMotion: preferences.reduceMotion || nativeTheme.prefersReducedMotion, percent, values, island };
+  const summary = [snapshot?.session?.modelName || snapshot?.session?.model, percent === null && Number.isFinite(tokens) ? '已用 token' : '',
+    Number.isFinite(context?.remainingWindowTokens) ? '窗口剩余 ' + context.remainingWindowTokens.toLocaleString('zh-CN') + ' token' : '',
+    Number.isFinite(context?.remainingBeforeCompaction) ? '距自动压缩 ' + context.remainingBeforeCompaction.toLocaleString('zh-CN') + ' token' : ''].filter(s => s && s !== 'unknown').join('\n');
+  const data = { summary, estimated: context?.windowEstimated === true, style: surfaceStyle(), reduceMotion: preferences.reduceMotion || nativeTheme.prefersReducedMotion, percent, values, island };
   emit(ball, 'surface', { ...data, surface: 'ball' }); emit(orbit, 'surface', { ...data, surface: 'orbit' });
 }
 function collapse() { orbitOpen = false; pinned = false; settingsOpen = false; forced = false; orbit.hide(); detail.hide(); }
@@ -79,6 +83,7 @@ function showIsland(name) {
 function enterSettings() { if (!settingsOpen) settingsWidth = 420 + presets[preferences.uiTheme][4]; settingsOpen = pinned = true; fitDetail(); }
 function settings() { hidden = false; forced = true; enterSettings(); detail.show(); emit(detail, 'context-lens-command', 'settings'); }
 function toolFor(name, title) {
+  if (/^Antigravity$/i.test(name)) return 'agy';
   const value = (name + ' ' + title).toLowerCase();
   for (const tool of ['codex', 'claude', 'opencode', 'mimocode', 'deepseek', 'zcode']) if (value.includes(tool)) return tool;
   return null;
@@ -86,9 +91,9 @@ function toolFor(name, title) {
 function follow(next) {
   if (!next.pid || next.pid === process.pid || /^context lens$/i.test(next.name) || /^electron$/i.test(next.name)) return;
   const orca = /^orca$/i.test(next.name);
-  const client = orca ? null : toolFor(next.name, next.title);
   const terminal = orca || /^(windowsterminal|wt|powershell|pwsh|cmd|conhost)$/i.test(next.name);
-  const supported = Boolean(client || terminal), identity = next.pid + ':' + next.title;
+  const client = terminal ? null : toolFor(next.name, next.title);
+  const supported = Boolean(client || terminal), identity = [next.pid, next.title, next.visibleId ?? ''].join(':');
   if (foreground?.identity === identity) return;
   foreground = { ...next, client, supported, identity };
   revision++; selection = ''; snapshot = null; emit(detail, 'context-lens-active', { session: '', reason: '正在定位当前对话' }); surface();
@@ -104,21 +109,37 @@ async function refresh(manual = false) {
     if (process.platform === 'win32' && !foreground?.supported) { if (manual) emit(detail, 'context-lens-detection', { state: 'waiting' }); return; }
     const target = foreground;
     const query = new URLSearchParams(); if (target?.pid) query.set('pid', String(target.pid)); if (target?.client) query.set('client', target.client);
-    const id = /^orca$/i.test(target?.name ?? '') ? undefined
+    const id = target?.client === 'agy' ? target.visibleId : /^orca$/i.test(target?.name ?? '') ? undefined
       : target?.title.match(/(?:[a-f0-9]{8}-){1}[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i)?.[0];
     if (id) query.set('visibleId', id);
     // Only exact unique local titles can select a visible conversation.
-    if (target?.client && !id && !/^(windowsterminal|wt|powershell|pwsh|cmd|conhost)$/i.test(target.name)) {
+    if (target?.client && target.client !== 'agy' && !id && !/^(windowsterminal|wt|powershell|pwsh|cmd|conhost)$/i.test(target.name)) {
       const title = target.title.replace(/\s*[-—|]\s*(?:Codex|Claude(?: Code)?)\s*$/i, '').trim(); if (title && title !== target.name) query.set('visibleTitle', title);
     }
     const active = await read('/api/active?' + query);
     if (revision !== currentRevision) return;
     const next = validSession(active.selected) ? active.selected : '';
-    if (next !== selection) { selection = next; snapshot = null; surface(); emit(detail, 'context-lens-active', { session: selection, reason: active.reason }); }
-    if (selection) { const data = await read('/api/snapshot?' + new URLSearchParams({ session: selection, view: preferences.view })); if (revision !== currentRevision) return; snapshot = data; }
+    const host = active.orcaSession || '';
+    if (next !== selection || host !== orcaSession) {
+      revision++; selection = next; orcaSession = host; snapshot = null; surface();
+      emit(detail, 'context-lens-active', { session: next, orcaSession: host, reason: active.reason });
+    }
+    if (selection) void readSnapshot(selection, revision, preferences.view, host);
     surface(); if (manual) emit(detail, 'context-lens-detection', { state: selection ? 'recognized' : 'waiting' });
   } catch { if (manual) emit(detail, 'context-lens-detection', { state: 'failed' }); }
   finally { refreshing = false; environment(); }
+}
+async function readSnapshot(key, generation, view, host) {
+  if (snapshotRequest?.generation === generation && snapshotRequest.view === view) return;
+  const request = { generation, view };
+  snapshotRequest = request;
+  try {
+    const data = await read('/api/snapshot?' + new URLSearchParams({ session: key, view, git: '0', ...(host && {orcaSession: host}) }));
+    if (snapshotRequest !== request || generation !== revision || key !== selection || view !== preferences.view
+      || data.session?.client + ':' + data.session?.id !== key) return;
+    snapshot = data; surface();
+  } catch { /* 在下一次轮询重新读取当前对话。 */ }
+  finally { if (snapshotRequest === request) snapshotRequest = undefined; }
 }
 function startWatcher() {
   if (process.platform !== 'win32') return Promise.resolve(false);
@@ -168,7 +189,7 @@ ipcMain.on('lens-action', (event, data) => {
     case 'drag-end': dragOrigin = null; save(); break;
     case 'ready':
       if (!fromDetail) return;
-      emit(detail, 'context-lens-ui-style', style()); emit(detail, 'context-lens-island', island); emit(detail, 'context-lens-active', { session: selection, reason: '自动跟随活跃对话' }); environment(); surface(); break;
+      emit(detail, 'context-lens-ui-style', style()); emit(detail, 'context-lens-island', island); emit(detail, 'context-lens-active', { session: selection, orcaSession, reason: '自动跟随活跃对话' }); environment(); surface(); break;
     case 'state': if (!fromDetail) return; if (['budget', 'model'].includes(data.view)) preferences.view = data.view; if (['auto', 'light', 'dark'].includes(data.theme)) preferences.theme = data.theme; nativeTheme.themeSource = preferences.theme === 'auto' ? 'system' : preferences.theme; save(); surface(); void refresh(); break;
     case 'ui-style': if (!fromDetail || !presets[data.uiTheme]) return; preferences.uiTheme = data.uiTheme; save(); emit(detail, 'context-lens-ui-style', style()); fitDetail(); surface(); break;
     case 'motion-preference': if (!fromDetail) return; preferences.reduceMotion = data.reduceMotion === 'true'; save(); environment(); surface(); break;
@@ -205,7 +226,23 @@ app.whenReady().then(async () => {
     const health = await read('/api/health');
     const items = await orbit.webContents.executeJavaScript("document.querySelectorAll('.orbit-sector').length");
     const updateTab = await detail.webContents.executeJavaScript("Boolean(document.getElementById('check-updates'))");
-    const data = { ok: health.app === 'context-lens' && items === 7 && updateTab && foregroundReady !== false, platform: process.platform, version: app.getVersion(), islands: items, themes: Object.keys(presets).length, updateTab, foregroundReady, origin, electron: process.versions.electron, os: os.release() };
+    const orcaReadings = [];
+    if (process.env.CONTEXT_LENS_SMOKE_ORCA_ROOT) {
+      for (const [id, expected] of [['window','73%'], ['tokens','36.7k'], ['window','73%']]) {
+        selection = 'orca:' + id; revision++;
+        snapshot = null; surface();
+        await readSnapshot(selection, revision, preferences.view, '');
+        let reading;
+        for (let attempt = 0; attempt < 20; attempt++) {
+          reading = await ball.webContents.executeJavaScript("document.getElementById('ball-value').textContent");
+          if (reading === expected) break;
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        if (reading !== expected) throw new Error('Orca 悬浮球读数不符 ' + reading + ' / ' + expected);
+        orcaReadings.push(reading);
+      }
+    }
+    const data = { orcaReadings, ok: health.app === 'context-lens' && items === 7 && updateTab && foregroundReady !== false, platform: process.platform, version: app.getVersion(), islands: items, themes: Object.keys(presets).length, updateTab, foregroundReady, origin, electron: process.versions.electron, os: os.release() };
     fs.mkdirSync(path.dirname(path.resolve(smokeFile)), { recursive: true }); fs.writeFileSync(smokeFile, JSON.stringify(data, null, 2)); app.isQuitting = true; watcher?.kill(); backend.kill(); app.exit(data.ok ? 0 : 1); return;
   }
   tray = new Tray(nativeImage.createFromPath(path.join(root, 'desktop/assets/ContextLens.ico')));

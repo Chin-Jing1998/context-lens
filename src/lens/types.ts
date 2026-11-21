@@ -19,6 +19,8 @@ export interface Context {
   denominator: number | null; percent: number | null; windowPercent: number | null; view: 'budget' | 'model';
   segments: Segment[]; warnings: string[]; updatedAt: string | null;
   windowEstimated?: boolean;
+  remainingWindowTokens?: number;
+  remainingBeforeCompaction?: number;
   messageBreakdown?: MessageSegment[];
 }
 export type MessageKind = 'user' | 'assistant' | 'thinking' | 'toolCall' | 'toolResult' | 'tools' | 'system' | 'file' | 'plan' | 'summary' | 'other';
@@ -107,7 +109,7 @@ export interface SessionTelemetry {
 }
 
 export interface HudSnapshot {
-  session: Omit<SessionInfo, 'client'> & { client: string }; context: Context;
+  session: Omit<SessionInfo, 'client'> & { client: string; agent?: string }; context: Context;
   totals: { main: Totals; agents: Totals; all: Totals; agentCount: number };
   cache: CacheState; cost: CostEstimate; nativeCostUsd: number | null;
   activity?: SessionActivity;

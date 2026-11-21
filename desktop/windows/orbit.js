@@ -35,7 +35,9 @@ host.onEvent((name, detail) => {
   for (const [key, value] of Object.entries(detail.style || {})) root.dataset[key] = value;
   root.dataset.reduceMotion = String(detail.reduceMotion === true); document.body.dataset.surface = detail.surface;
   const percent = Number.isFinite(detail.percent) ? Math.max(0, detail.percent) : null;
-  const text = percent === null ? typeof detail.values?.context === 'string' ? detail.values.context : '—' : Math.round(percent) + '%';
+  ball.title = detail.summary || '上下文';
+  ball.setAttribute('aria-label', detail.summary || '展开环形岛');
+  const text = percent === null ? typeof detail.values?.context === 'string' ? detail.values.context : '—' : (detail.estimated ? '≈' : '') + Math.round(percent) + '%';
   const ballValue = document.getElementById('ball-value'); reading.textContent = ballValue.textContent = text;
   for (const item of [reading, ballValue]) item.style.fontSize = text.length > 4 ? '12px' : '';
   const arc = 2 * Math.PI * 23; document.getElementById('ball-progress').style.strokeDasharray = `${percent === null ? 0 : arc * Math.min(100, percent) / 100} ${arc}`;

@@ -12,7 +12,7 @@ export interface CostQuery {
   period?: string; start?: string; end?: string; timeZone?: string; tool?: string; page?: number;
   sessionScope?: string;
 }
-export interface CostAmount { amount: number | null; complete: boolean; requests: number }
+export interface CostAmount { amount: number | null; complete: boolean; requests: number; unpriced?: boolean }
 export interface CostPair { period: CostAmount; cumulative: CostAmount }
 export interface CostReport {
   range: { period: CostPeriod; start: string; end: string; timeZone: string };
@@ -58,6 +58,7 @@ function add(target: CostAmount, value: CostAmount): void {
   if (target.requests === 0) target.amount = value.amount;
   else if (value.amount !== null) target.amount = (target.amount ?? 0) + value.amount;
   target.requests += value.requests; target.complete &&= value.complete;
+  if (value.unpriced) target.unpriced = true;
 }
 const key = (tool: string, id: string) => JSON.stringify([tool, id]);
 
@@ -98,7 +99,7 @@ export function buildCostReport(sessions: CostSession[], config: LensConfig, que
     const date = day(format, new Date(time)); if (date > range.end) continue;
     const cost = estimateCost([row], config, true, catalog);
     cost.unpricedModels.forEach(model => unpriced.add(model));
-    const value: CostAmount = { amount: cost.amount, complete: cost.complete, requests: 1 };
+    const value: CostAmount = { amount: cost.amount, complete: cost.complete, requests: 1, ...(cost.unpricedModels.length && { unpriced: true }) };
     const m = models.get(row.model) ?? { model: row.model || '未知模型', ...pair() };
     const id = key(session.tool, session.id);
     const s = conversations.get(id) ?? { tool: session.tool, toolName: session.toolName, id: session.id, title: session.title, lastAt: row.at, ...pair() };

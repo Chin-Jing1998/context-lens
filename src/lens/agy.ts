@@ -38,13 +38,20 @@ function regular(file: string): fs.Stats | undefined {
 }
 
 export function agyHistory(root: string, id: string): string | undefined {
-  if (!agyId.test(id) || !regular(path.join(root, 'conversations', `${id}.pb`))) return undefined;
+  if (!agyId.test(id)) return undefined;
+  // 目录、文件和索引共同确认归属，迁移后的转录可以独立于 .pb 存在。
+  const parts = ['brain', id, '.system_generated', 'logs'];
+  let directory = root;
+  for (const part of parts) {
+    directory = path.join(directory, part);
+    try { if (!fs.lstatSync(directory).isDirectory()) return undefined; } catch { return undefined; }
+  }
   const file = path.join(root, 'brain', id, '.system_generated', 'logs', 'transcript.jsonl');
   return regular(file) ? file : undefined;
 }
 
 export function agySessionHistory(file: SessionFile): string | undefined {
-  return file.client === 'agy' && file.surface === 'cli' && file.file.endsWith('.db')
+  return file.client === 'agy' && file.file.endsWith('.db')
     ? agyHistory(path.dirname(path.dirname(file.file)), file.id) : undefined;
 }
 
@@ -75,21 +82,28 @@ function workspace(value: unknown): string {
 }
 
 const indexes = new Map<string, { stamp: string; rows: Record<string, unknown>[] }>();
-export function discoverAgySessions(roots: AgyRoots = agyRoots()): SessionFile[] {
+export function discoverAgySessions(roots: AgyRoots = agyRoots(), cliRoots: string[] = []): SessionFile[] {
   const byId = new Map<string, SessionFile[]>();
-  for (const surface of ['desktop', 'cli'] as const) {
-    const root = roots[surface];
+  const locations: (readonly ['desktop' | 'cli', string | undefined])[] = [
+    ['desktop', roots.desktop], ...[...new Set([roots.cli, ...cliRoots])].map(root => ['cli', root] as const),
+  ];
+  for (const [surface, root] of locations) {
     if (!root) continue;
     const index = path.join(root, 'conversation_summaries.db'), directory = path.join(root, 'conversations');
     try {
-      if (!fs.lstatSync(directory).isDirectory() || !regular(index)) continue;
+      if (!regular(index)) continue;
+      if (fs.existsSync(directory) && !fs.lstatSync(directory).isDirectory()) continue;
       const stamp = agyStamp(index), old = indexes.get(index);
       let rows = old?.rows ?? [];
       if (old?.stamp !== stamp) {
         try {
           const db = open(index);
-          try { rows = db.prepare(`SELECT conversation_id, title, workspace_uris, last_modified_time,
-            last_user_input_time, parent_conversation_id FROM conversation_summaries`).all(); }
+          try {
+            const columns = new Set(db.prepare('PRAGMA table_info(conversation_summaries)').all().map(r => r.name));
+            const optional = ['title', 'workspace_uris', 'last_modified_time', 'last_user_input_time', 'parent_conversation_id']
+              .map(name => columns.has(name) ? name : 'NULL AS ' + name);
+            rows = db.prepare('SELECT conversation_id,' + optional.join(',') + ' FROM conversation_summaries').all();
+          }
           finally { db.close(); }
           if (indexes.size >= 8 && !indexes.has(index)) indexes.delete(indexes.keys().next().value!);
           indexes.set(index, { stamp, rows });
@@ -99,7 +113,7 @@ export function discoverAgySessions(roots: AgyRoots = agyRoots()): SessionFile[]
         const id = row.conversation_id;
         if (typeof id !== 'string' || !agyId.test(id)) continue;
         let file = path.join(directory, `${id}.db`), stat = regular(file);
-        if (!stat && surface === 'cli') {
+        if (!stat) {
           const history = agyHistory(root, id);
           if (history) { file = history; stat = regular(file); }
         }
@@ -158,14 +172,18 @@ export function readAgySession(file: SessionFile, usageOnly = false): ParsedSess
     if (identity?.cascade_id !== id) throw new Error('Antigravity 会话数据库的身份与索引不符');
     const result: ParsedSession = { info, used: null, capacity: null, requests: [], categories: {},
       runtime: {}, warnings: [], complete: true, compacted: false };
-    const hasSteps = db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='steps'").get();
+    const columns = (table: 'steps' | 'gen_metadata') => new Set(db.prepare('PRAGMA table_info(' + table + ')').all().map(r => r.name));
+    const steps = columns('steps');
+    const hasSteps = ['idx', 'step_type', 'metadata'].every(column => steps.has(column));
     const metadataAt = hasSteps ? db.prepare(`SELECT metadata FROM steps WHERE idx=? AND length(metadata)<=${maxBlob}`) : undefined;
     const stepTime = (index: number) => {
       const metadata = metadataAt?.get(index)?.metadata;
       return metadata instanceof Uint8Array ? timestamp(fields(metadata, [1]).get(1)) : undefined;
     };
-    const entries = db.prepare(`SELECT idx, length(data) AS bytes, CASE WHEN length(data) <= ${maxBlob} THEN data END AS data
-      FROM gen_metadata ORDER BY idx DESC`).iterate();
+    const generationColumns = columns('gen_metadata');
+    const hasGeneration = generationColumns.has('idx') && generationColumns.has('data');
+    const entries = hasGeneration ? db.prepare(`SELECT idx, length(data) AS bytes, CASE WHEN length(data) <= ${maxBlob} THEN data END AS data
+      FROM gen_metadata ORDER BY idx DESC`).iterate() : [];
     let bytes = 0, last: number | null = null, first: number | null = null, sameModel = true;
     const models = new Map<number, Set<string>>();
     const observe = (stamp?: string) => {

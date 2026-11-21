@@ -1,3 +1,9 @@
+---
+author: Chin_Jing1998
+last_modified_by: Chin_Jing1998
+revision_date: 2026-11-21
+---
+
 # Context Lens 桌面应用
 
 Context Lens 以悬浮球和七个环形岛展示当前会话的上下文、用量、费用、命令行、技能、MCP 与运行信息。点击悬浮球展开环形岛，点击各岛打开其详情；按 Escape 收起，设置入口同时位于托盘菜单中。
@@ -50,7 +56,7 @@ Windows 安装版可以选择安装目录并创建桌面及开始菜单快捷方
 
 ### Antigravity
 
-macOS 支持独立 Antigravity 应用和 `agy` CLI。桌面悬浮球跟随前台的 Antigravity 对话。终端内可通过进程会话锁自动识别唯一的 `agy` 会话，也可用 `context-lens list --client agy` 查找会话，再用 `context-lens watch --session agy:<ID>` 查看。源码环境的 AGY 读取使用 Node.js 24 的 SQLite 模块。
+macOS 和 Windows 支持独立 Antigravity 应用和 `agy` CLI。桌面悬浮球跟随前台的 Antigravity 对话。终端内可通过进程会话锁自动识别唯一的 `agy` 会话，也可用 `context-lens list --client agy` 查找会话，再用 `context-lens watch --session agy:<ID>` 查看。源码环境的 AGY 读取使用 Node.js 24 的 SQLite 模块。
 
 会话数据库提供当前上下文预算。`agy` 的原生状态行也提供完整窗口、占用率和已上报的订阅额度。可在该次 CLI 启动中接入采样：
 
@@ -64,17 +70,17 @@ agy --settings '{"statusLine":{"type":"command","command":"context-lens agy-stat
 
 ### Orca
 
-在 macOS 前台 Orca 工作区内运行本机 Agent 时，Context Lens 将工作区与终端进程关联到本地会话。多个终端会话按能唯一验证的选中窗格定位。
+macOS 和 Windows 按 Orca 当前工作区和选中标签跟随结构化聊天，终端按选中窗格定位。Windows 支持 Orca 登记的 WSL 发行版。结构化聊天可直接显示 Orca 回合记录中的模型、窗口和运行状态。逐请求用量和费用来自对应 agent 的本地记录。
 
 ### 第三方模型与单价
 
 自动计价使用 OpenAI、Anthropic、Google、DeepSeek、Xiaomi MiMo 和 Z.ai 的官方 API 美元单价，并按每次请求的模型、时间、服务档位及适用的输入量区间选择。官方仅公布日历日期时，按 UTC 日界线切换单价。费用逐项计算未缓存输入、缓存读取、缓存写入和输出。OpenAI 请求的缓存写入时长未记录时，费用按最低适用写入价计算下限。上下文容量采用当前会话实际上报的窗口。
 
-自定义单价保存在 `~/.config/context-lens/config.json` 的 `prices` 中。设置 `CONTEXT_LENS_HOME` 时使用该目录下的 `config.json`。按响应模型完整标识填写 `input`、`output`、`cacheRead`、`cacheWrite`，每项单位为配置币种金额／百万 token。`input` 对应未缓存输入。计价依次匹配精确模型单价、`*` 通配单价和官方单价。显式 `0` 表示免费。
+自定义单价保存在 `~/.config/context-lens/config.json` 的 `prices` 中。设置 `CONTEXT_LENS_HOME` 时使用该目录下的 `config.json`。按响应模型完整标识填写 `input`、`output`、`cacheRead`、`cacheWrite`，每项单位为配置币种金额／百万 token。`input` 对应未缓存输入。计价依次匹配精确模型单价、`*` 通配单价和官方单价。显式 `0` 表示免费。`codex/` 路由的 GPT 响应保留完整名称，可按对应的官方模型计价。部分请求有价时显示金额下限，已知用量全部缺价时显示“未定价”。
 
 若悬浮球显示“等待对话”，应先检查当前对话是否已被定位，而不是先修改模型名或单价。macOS 的 Claude Desktop 会话识别支持 `/code/local_…` 与 `/epitaxy/local_…` 路由，并排除本地桌面壳层；多个实际会话页面仍视为歧义，不会选择最近更新的日志代替当前对话。
 
-Claude 的悬浮球、上下文详情与设置预览主读数均表示当前会话的上下文窗口占用率，优先使用同一会话最新状态栏采样中的 `context_window.used_percentage`；缺少有效原生占比时，使用最后一次请求的完整输入 token 数除以实际上报的窗口容量，不累加历史请求或输出 token。首次响应、压缩后的零占位以及过期、跨会话数据不能覆盖有效读数。没有可靠占比或容量时显示未知，token 数只保留在详情中。
+悬浮球优先显示当前口径的占用率。Claude 的主读数采用完整上下文窗口。只有已用 token 时，球面显示数量并隐藏进度环。悬停及上下文详情显示实际模型、窗口剩余 token 和已知自动压缩阈值的剩余量。
 
 压缩预算作为独立字段展示，手动预算不会改写主读数的窗口分母。分类数据保留所选的预算或窗口口径。状态栏采样与结构化 `/context` 记录均未提供容量时，窗口读数保持未知。
 
