@@ -1524,8 +1524,9 @@ struct LensVisibility {
               let json = String(data: encoded, encoding: .utf8) else { return }
         web.evaluateJavaScript("window.dispatchEvent(new CustomEvent('\(name)',{detail:\(json)}))", completionHandler: nil)
     }
-    private func json(_ url: URL) async throws -> [String: Any] {
-        let (data, response) = try await URLSession.shared.data(for: URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 4))
+    private func json(_ url: URL, timeout: TimeInterval = 4) async throws -> [String: Any] {
+        let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: timeout)
+        let (data, response) = try await URLSession.shared.data(for: request)
         guard (response as? HTTPURLResponse)?.statusCode == 200,
               let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw URLError(.badServerResponse) }
         return object
@@ -1632,7 +1633,8 @@ struct LensVisibility {
         url.queryItems = [URLQueryItem(name: "session", value: key), URLQueryItem(name: "view", value: mode), URLQueryItem(name: "git", value: "0")]
         if !orcaSession.isEmpty { url.queryItems?.append(URLQueryItem(name: "orcaSession", value: orcaSession)) }
         do {
-            let data = try await json(url.url!)
+            // 首次汇总长对话及子代理可能超过前台探测时限，切换对话时由快照任务取消请求。
+            let data = try await json(url.url!, timeout: URLSession.shared.configuration.timeoutIntervalForRequest)
             guard key == selection, mode == view, revision == targetRevision,
                   let session = data["session"] as? [String: Any], let client = session["client"] as? String,
                   let id = session["id"] as? String, "\(client):\(id)" == key else { return }
